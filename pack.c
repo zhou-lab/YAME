@@ -10,6 +10,7 @@ static int usage() {
   fprintf(stderr, "Usage: kycg pack [options] <in.bed> <out.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -24,9 +25,10 @@ static int usage() {
 
 int main_pack(int argc, char *argv[]) {
 
-  int c;
-  while ((c = getopt(argc, argv, "h"))>=0) {
+  int c; int verbose=0;
+  while ((c = getopt(argc, argv, "vh"))>=0) {
     switch (c) {
+    case 'v': verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -51,7 +53,10 @@ int main_pack(int argc, char *argv[]) {
   }
   free(line);
   wzclose(fh);
-  fprintf(stderr, "Vector of length %"PRId64" loaded\n", n);
+  if (verbose) {
+    fprintf(stderr, "[%s:%d] Vector of length %"PRId64" loaded\n", __func__, __LINE__, n);
+    fflush(stderr);
+  }
 
   /* see if rle gives shorter storage */
   int64_t n_rle=0;
@@ -81,8 +86,12 @@ int main_pack(int argc, char *argv[]) {
   *((uint16_t*) (s_rle+n_rle+1)) = l;
   sum_l += l;
   n_rle += 3;
-  fprintf(stderr, "RLE sum: %"PRIu64"\n", sum_l);
-  fprintf(stderr, "N_vec: %"PRId64"; N_rle: %"PRId64"\n", n>>3, n_rle);
+
+  if (verbose) {
+    fprintf(stderr, "[%s:%d] RLE sum: %"PRIu64"\n", __func__, __LINE__, sum_l);
+    fprintf(stderr, "[%s:%d] N_vec: %"PRId64"; N_rle: %"PRId64"\n", __func__, __LINE__, n>>3, n_rle);
+    fflush(stderr);
+  }
 
   FILE *out = fopen(argv[optind], "wb");
   uint8_t fmt; uint64_t dat;
@@ -91,13 +100,19 @@ int main_pack(int argc, char *argv[]) {
     fmt = 1; fwrite(&fmt, sizeof(uint8_t), 1, out);
     fwrite(&n_rle, sizeof(int64_t), 1, out);
     fwrite(s_rle, 1, n_rle, out);
-    fputs("Stored as Run-length-encoded vector\n", stderr);
+    if (verbose) {
+      fprintf(stderr, "[%s:%d] Stored as RLE vector\n", __func__, __LINE__);
+      fflush(stderr);
+    }
   } else {                      /* plain vector */
     dat = 1; fwrite(&dat, sizeof(uint64_t), 1, out); /* number of columns */
     fmt = 0; fwrite(&fmt, 1, 1, out);
     fwrite(&n, sizeof(int64_t), 1, out);
     fwrite(s, 1, (n>>3)+1, out);
-    fputs("Stored as bit-vector.\n", stderr);
+    if (verbose) {
+      fprintf(stderr, "[%s:%d] Stored as bit-vector.\n", __func__, __LINE__);
+      fflush(stderr);
+    }
   }
   fclose(out);
 

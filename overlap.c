@@ -44,7 +44,7 @@ static unsigned char* read_vec(FILE *fh, int64_t *n) {
   wzfread(&fmt, 1, 1, fh);
   if (fmt == 0) {               /* bit vector */
     wzfread(n, sizeof(int64_t), 1, fh);
-    s = malloc((*n)>>3);
+    s = malloc(((*n)>>3)+1);
     wzfread(s, 1, ((*n)>>3)+1, fh);
     return s;
     
@@ -52,12 +52,11 @@ static unsigned char* read_vec(FILE *fh, int64_t *n) {
     int64_t n_rle; wzfread(&n_rle, sizeof(int64_t), 1, fh);
     unsigned char *s_rle = malloc(n_rle);
     wzfread(s_rle, 1, n_rle, fh);
-
     int i;
     *n=0;
     for (i=0; i<n_rle/3; ++i)
       (*n) += *((uint16_t*) (s_rle+i*3+1));
-    s = calloc((*n)>>3, 1); size_t sum;
+    s = calloc(((*n)>>3)+1, 1); size_t sum;
     for (i=0, sum=0; i<n_rle/3; ++i) {
       uint16_t l = *((uint16_t*) (s_rle+i*3+1));
       if (s_rle[i*3] == 1) {
@@ -68,6 +67,7 @@ static unsigned char* read_vec(FILE *fh, int64_t *n) {
       }
       sum += l;
     }
+    free(s_rle);
 
     return s;
     

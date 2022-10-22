@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 # dependencies: kycg, testFisher.R bedtools
 # source ~/repo/KnowYourCG/sh/testEnrichment.sh
-# testEnrichment ~/references/mm10/annotation/cpg/cpg_nocontig.bed.gz /mnt/isilon/zhou_lab/projects/20191221_references/mm10/features/EnsRegBuild.20220710.bed.gz /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/AllTestedCPG.bed /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/NegSig.5.CPGonly.bed /scr1/users/zhouw3/tmp/FeatureAggregationtest3
+# testEnrichment ~/references/mm10/annotation/cpg/cpg_nocontig.bed.gz /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/AllTestedCPG.bed /mnt/isilon/zhou_lab/projects/20191221_references/mm10/featuresHQ_cg/ /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/NegSig.5.CPGonly.bed /scr1/users/zhouw3/tmp/FeatureAggregationtest3
 
 function set_environment {
     ref=$1                      # assume sorted, three columns
@@ -14,9 +14,9 @@ function set_environment {
 }
 
 function bed2cg {
-  ref=$1
-  bed=$2
-  out=$3
+  local ref=$1
+  local bed=$2
+  local out=$3
   bedtools intersect -a $ref -b $bed -sorted -c |
     cut -f4 | kycg pack - $out
 }
@@ -34,66 +34,37 @@ function testEnrichment() (     # this spawn a subshell
     echo "Temp Dir:  $TMPFDR"
     echo "================="
 
-    base=$(basename ${qry})
     mkdir -p $TMPFDR
     rm -rf $TMPFDR/*
     mkdir -p $(dirname $out)
 
     if [[ $qry != *.cg ]]; then
+      echo "Packing query to $TMPFDR/$(basename $qry).cg"
+      echo "To save time, please provide .cg file (converted using bed2cg)"
       bed2cg $ref $qry $TMPFDR/$(basename $qry).cg
       qry=$TMPFDR/$(basename $qry).cg
     fi
 
     if [[ $uni == "na" || $ref == $uni ]]; then
-      uni=""
+      uni_opt=""
     else
       if [[ $uni != *.cg ]]; then
+        echo "Packing universe to $TMPFDR/$(basename $uni).cg"
+        echo "To save time, please provide .cg file (converted using bed2cg)"
         bed2cg $ref $uni $TMPFDR/$(basename $uni).cg
         uni=$TMPFDR/$(basename $uni).cg
       fi
-      uni="-u $uni"
+      uni_opt="-u $uni"
     fi
 
+    echo "Testing overlaps..."
     if [[ -f $fea ]]; then
-      kycg overlap $uni {} $f | testFisher.R stdin >$out
+      kycg overlap $uni_opt {} $f | testFisher.R stdin >$out
     elif [[ -d $fea ]]; then
       find $fea -name '*.cg' | while read f; do
-        kycg overlap $uni $qry $f | awk -v f=$f '{print $0,f;}'
+        kycg overlap $uni_opt $qry $f | awk -v f=$f '{print $0,f;}'
       done | testFisher.R stdin >$out
     fi
-
-    #   if [[ "$opt" != "skip_check" ]]; then
-	  #     echo "Confirming inputs are sorted..."
-	  #     if ! (zcat -f ${qry} | LC_ALL=C sort -k1,1 -k2,2n -C); then
-	  #       echo "Query is unsorted. Sorting to $TMPFDR/in_q ..."
-	  #       zcat -f ${qry} | cut -f1-3 | sortbed >$TMPFDR/in_q
-	  #       echo "Sorting done. You can save time by providing a sorted query."
-	  #       qry=$TMPFDR/in_q
-	  #     fi
-	  #     (zcat -f ${ref} | sort -k1,1 -k2,2n -C) || (>&2 echo "Reference unsorted! Abort."; exit 1)
-	  #     (zcat -f ${uni} | sort -k1,1 -k2,2n -C) || (>&2 echo "Universe unsorted! Abort."; exit 1)
-	  #     (zcat -f ${fea} | sort -k1,1 -k2,2n -C) || (>&2 echo "Feature unsorted! Abort."; exit 1)
-    #   fi
-
-    #   echo "Creating the universe..."
-    #   bedtools intersect -a ${ref} -b ${uni} -sorted -wo | cut -f1-3 | uniq >$TMPFDR/in_u
     
-    #   echo "Computing overlaps..."
-    #   bedtools intersect -a $TMPFDR/in_u -b ${fea} -loj -sorted | bedtools intersect -a - -b ${qry} -loj -sorted |
-	  # awk 'BEGIN{FS=OFS="\t"}{if($9==".") {$9=0;} else {$9=1;}print $1,$2,$3,$7,$9;}' |
-	  # sort -k4,4 -k1,1 -k2,2n -T $TMPFDR |
-	  # bedtools groupby -g 1-4 -c 5 -o sum |
-	  # awk 'BEGIN{FS=OFS="\t"}{if($5>0) $5=1; print;}' >$TMPFDR/overlaps
-    #   echo "Tallying counts..."
-    #   n_q=$(bedtools intersect -a $TMPFDR/in_u -b $qry -sorted | wc -l)
-    #   n_u=$(cat $TMPFDR/in_u | wc -l)
-    #   awk -v n_q=$n_q -v n_u=$n_u 'BEGIN{FS=OFS="\t"}
-    #   $4!="."{k=$1":"$2"_"$3; if(k!=k0 || g!=$4) {if($5==0) {cnt0[$4]+=1;} if($5==1) {cnt1[$4]+=1;} features[$4]=1;} k0=k; g=$4;}
-    #   END{print "Feature\tnfmq\tnfq\tnq\tnu";
-    #   for(i in features){if(cnt0[i]==""){cnt0[i]=0;} if(cnt1[i]==""){cnt1[i]=0;} print i,cnt0[i],cnt1[i],n_q,n_u;}}' $TMPFDR/overlaps >$TMPFDR/stat_cnts
-    #   echo "Generating statistics..."
-    #   Rscript ~/repo/labtools/Rutils/testFisher.R $TMPFDR/stat_cnts ${out}
-
-    #   echo "Created temporary folder $TMPFDR. Feel free to delete."
-    #   echo "All completed."
+    echo "All completed."
 )
