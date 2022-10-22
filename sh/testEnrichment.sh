@@ -59,7 +59,7 @@ function testEnrichment() (     # this spawn a subshell
 
     echo "Testing overlaps..."
     if [[ -f $fea ]]; then
-      kycg overlap $uni_opt {} $f | testFisher.R stdin >$out
+      kycg overlap $uni_opt $qry $fea | testFisher.R stdin >$out
     elif [[ -d $fea ]]; then
       find $fea -name '*.cg' | while read f; do
         kycg overlap $uni_opt $qry $f | awk -v f=$f '{print $0,f;}'
