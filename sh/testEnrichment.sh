@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 # dependencies: kycg, testFisher.R bedtools
 # source ~/repo/KnowYourCG/sh/testEnrichment.sh
-# testEnrichment ~/references/mm10/annotation/cpg/cpg_nocontig.bed.gz /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/AllTestedCPG.bed /mnt/isilon/zhou_lab/projects/20191221_references/mm10/featuresHQ_cg/ /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/NegSig.5.CPGonly.bed /scr1/users/zhouw3/tmp/FeatureAggregationtest3
+# testEnrichment ~/references/mm10/annotation/cpg/cpg_nocontig.bed.gz /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/AllTestedCPG.bed /mnt/isilon/zhou_lab/projects/20191221_references/mm10/featuresHQ/ /scr1/users/zhouw3/projects/20220609_ExpressionMethylationCorrelation/20220815_Clark/Output/EBcells/NegSig.5.CPGonly.bed /scr1/users/zhouw3/tmp/FeatureAggregationtest3
 
 function set_environment {
     ref=$1                      # assume sorted, three columns
