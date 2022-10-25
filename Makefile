@@ -40,11 +40,11 @@ $(LHTSLIB) :
 ### subcommands ###
 ###################
 
-pack.o: pack.c
+%.o: %.c
 	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
 
-overlap.o: overlap.c
-	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
+# overlap.o: overlap.c
+# 	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
 
 # chunk.o: chunk.c
 # 	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
@@ -55,10 +55,14 @@ overlap.o: overlap.c
 # bundle.o: bundle.c
 # 	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
 
-LIBS=pack.o overlap.o $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
 
-kycg: $(LIBS) main.c
-	gcc $(CFLAGS) main.c -o $@ $(LIBS) $(CLIB)
+SOURCES := $(wildcard *.c)
+OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
+
+LIBS=$(OBJECTS) $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
+
+kycg: $(LIBS)
+	gcc $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
 
 
 ## clean just src

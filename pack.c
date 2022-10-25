@@ -2,14 +2,14 @@
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "wzmisc.h"
-#include "wzbed.h"
+#include "kycg.h"
 
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: kycg pack [options] <in.bed> <out.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    -f        format (0,1,2,3,4,a)\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -17,17 +17,31 @@ static int usage() {
   return 1;
 }
 
+/* static void process_2quaternaryVec(char *fname, char *fname_out) { */
+/* } */
+
+/* static void process_3um(char *fname, char *fname_out) { */
+/* } */
+
 /* The header design, 17 bytes
-   uint64_t x 1: num columns
+   uint64_t x 1: signature, used for validation
    uint8_t x 1: format (0=vec; 1=rle)
    uint64_t x 1: length (n_cgs or n_bytes for rle)
 */
 
+void process_0binaryVec(char *fname, char *fname_out, int verbose);
+void process_a(char *fname, char *fname_out, int verbose);
+void process_1byteRLE(char *fname, char *fname_out, int verbose);
+void process_4fractionNA(char *fname, char *fname_out, int verbose);
+void process_5byteRLE(char *fname, char *fname_out, int verbose);
+
+
 int main_pack(int argc, char *argv[]) {
 
-  int c; int verbose=0;
-  while ((c = getopt(argc, argv, "vh"))>=0) {
+  int c; int verbose=0; char fmt='a';
+  while ((c = getopt(argc, argv, "f:vh"))>=0) {
     switch (c) {
+    case 'f': fmt = optarg[0]; break;
     case 'v': verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -38,84 +52,114 @@ int main_pack(int argc, char *argv[]) {
     usage(); 
     wzfatal("Please supply input and output file.\n"); 
   }
-  
-  gzFile fh = wzopen(argv[optind++]);
-  char *line = NULL;
-  int64_t n=0, m=1<<22; int64_t n1=0;
-  char *s=calloc(m, 1);
-  while (gzFile_read_line(fh, &line) > 0) {
-    if (line[0] != '0') {
-      s[n>>3] |= (1<<(n&0x7));
-      n1++;
-    }
-    n++;
-    if (n>m-2) { m<<=1; s=realloc(s,m); }
-  }
-  free(line);
-  wzclose(fh);
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %"PRId64" loaded\n", __func__, __LINE__, n);
-    fflush(stderr);
-  }
 
-  /* see if rle gives shorter storage */
-  int64_t n_rle=0;
-  uint8_t *s_rle = NULL;
-  int64_t i=0; uint16_t l=0; uint8_t u0=0;
-  uint64_t sum_l=0;
-  for (i=0, l=0; i<n; ++i) {
-    /* unsigned char u = s[i>>3] & (1<<(n&0x7)); */
-    uint8_t u = (s[i>>3]>>(i&0x7))&0x1;
-    /* either not the same as before or reach block size max */
-    if ((l != 0 && u != u0) || l+2 >= 1<<15) {
-      s_rle = realloc(s_rle, n_rle+3);
-      s_rle[n_rle] = u0;
-      *((uint16_t*) (s_rle+n_rle+1)) = l;
-      sum_l += l;
-      n_rle += 3;
-      l = 1;
-    } else {
-      ++l;
-    }
-    u0 = u;
+  switch (fmt) {
+  case 'a': {
+    cgdata_t *cg = fmt0_read_uncompressed(argv[optind], verbose);
+    fmta_tryBinary2byteRLE_ifsmaller(cg);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
+    break;
   }
-  /* the last rle */
-  s_rle = realloc(s_rle, n_rle+3);
-  s_rle[n_rle] = u0;
-  /* s_rle[n_rle+1] = l; */
-  *((uint16_t*) (s_rle+n_rle+1)) = l;
-  sum_l += l;
-  n_rle += 3;
-
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] RLE sum: %"PRIu64"\n", __func__, __LINE__, sum_l);
-    fprintf(stderr, "[%s:%d] N_vec: %"PRId64"; N_rle: %"PRId64"\n", __func__, __LINE__, n>>3, n_rle);
-    fflush(stderr);
+  case '0': {
+    cgdata_t *cg = fmt0_read_uncompressed(argv[optind], verbose);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
   }
-
-  FILE *out = fopen(argv[optind], "wb");
-  uint8_t fmt; uint64_t dat;
-  if (n>>3 > n_rle) {           /* rle */
-    dat = 1; fwrite(&dat, sizeof(uint64_t), 1, out); /* number of columns */
-    fmt = 1; fwrite(&fmt, sizeof(uint8_t), 1, out);
-    fwrite(&n_rle, sizeof(int64_t), 1, out);
-    fwrite(s_rle, 1, n_rle, out);
-    if (verbose) {
-      fprintf(stderr, "[%s:%d] Stored as RLE vector\n", __func__, __LINE__);
-      fflush(stderr);
-    }
-  } else {                      /* plain vector */
-    dat = 1; fwrite(&dat, sizeof(uint64_t), 1, out); /* number of columns */
-    fmt = 0; fwrite(&fmt, 1, 1, out);
-    fwrite(&n, sizeof(int64_t), 1, out);
-    fwrite(s, 1, (n>>3)+1, out);
-    if (verbose) {
-      fprintf(stderr, "[%s:%d] Stored as bit-vector.\n", __func__, __LINE__);
-      fflush(stderr);
-    }
+  case '1': {
+    cgdata_t *cg = fmt1_read_uncompressed(argv[optind], verbose);
+    fmt1_compress(cg);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
+    break;
   }
-  fclose(out);
-
-  free(s); free(s_rle);
+  /* case '2': process_2quaternaryVec(argv[optind], argv[optind+1]); break; */
+  case '3': {
+    cgdata_t *cg = fmt3_read_uncompressed(argv[optind], verbose);
+    fmt3_compress(cg);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
+    break;
+  }
+  case '4': {
+    cgdata_t *cg = fmt4_read_uncompressed(argv[optind], verbose);
+    fmt4_compress(cg);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
+    break;
+  }
+  case '5': {
+    cgdata_t *cg = fmt5_read_uncompressed(argv[optind], verbose);
+    fmt5_compress(cg);
+    cgdata_write(argv[optind+1], cg, verbose);
+    free_cgdata(cg);
+    break;
+  }
+  default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
+  }
   return 0;
+}
+
+static void unpack_5byteRLE(uint8_t *s, uint64_t n) {
+  uint64_t i=0, j;
+  for (i=0; i<n; ++i) {
+    if (s[i] & (1<<7)) {
+      int offset = 6;
+      for (offset = 6; offset >= 0; offset -= 2) {
+        if ((s[i]>>offset) & 0x2) {
+          fputc(((s[i]>>offset) & 0x1)+'0', stdout);
+          /* fputc('\n', stdout); */
+          fprintf(stdout, "\t%u\n", s[i]);
+        } else {
+          break;
+        }
+      }
+    } else {
+      for (j=0; j < s[i]; ++j) {
+        fputc('2', stdout);
+        fputc('\n', stdout);
+      }
+    }
+  }
+}
+
+int main_unpack(int argc, char *argv[]) {
+
+  int c; int verbose = 0;
+  while ((c = getopt(argc, argv, "vh"))>=0) {
+    switch (c) {
+    case 'v': verbose = 1; break;
+    case 'h': return usage(); break;
+    default: usage(); wzfatal("Unrecognized option: %c.\n", c);
+    }
+  }
+
+  if (optind + 1 > argc) { 
+    usage(); 
+    wzfatal("Please supply input file.\n"); 
+  }
+
+  FILE *fh = fopen(argv[optind],"rb");
+  uint64_t sig;
+  fread(&sig, sizeof(uint64_t), 1, fh);
+  if (sig != CGSIG) {
+    wzfatal("Unmatched signature. File corrupted.\n");
+  }
+  
+  char fmt;
+  fread(&fmt, sizeof(char), 1, fh);
+  uint64_t n;
+  fread(&n, sizeof(uint64_t), 1, fh);
+  uint8_t *s = malloc(n);
+  fread(s, 1, n, fh);
+  
+  switch (fmt) {
+  /* case '0': unpack_0binaryVec(s, n, verbose); break; */
+  /* case '1': unpack_1byteRLE(s, n, verbose); break; */
+  /* case '4': unpack_4fractionNA(s, n, verbose); break; */
+  case '5': unpack_5byteRLE(s, n); break;
+  default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
+  }
+  return 0;
+  
 }
