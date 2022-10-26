@@ -14,7 +14,6 @@ static int is_float(char *s) {
   return 1;
 }
 
-
 cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname);
@@ -27,7 +26,7 @@ cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
     } else {
       s[n++] = -1.0;
     }
-    if (n>m-2) { m<<=1; s=realloc(s, m*sizeof(float)); }
+    if (n+2>m) { m<<=1; s=realloc(s, m*sizeof(float)); }
   }
   free(line);
   wzclose(fh);
@@ -43,27 +42,29 @@ cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
   return cg;
 }
 
+/* 32 bit
+   1 (1bit) + run length of NA (31 bits)
+   0 (1bit) + floating number (always positive)
+ */
 void fmt4_compress(cgdata_t *cg) {
 
-  uint64_t n = 0;
-  uint8_t *s = NULL;
+  uint64_t n=0, m=1<<20;
+  uint32_t *s = calloc(sizeof(uint32_t), m);
   uint64_t i = 0; uint32_t l = 0;
+  uint32_t *s0 = (uint32_t*) cg->s;
   for (i=0, l=0; i<cg->n; ++i) {
     /* either not the same as before or reach block size max */
-    if (cg->s[i] > 0 || l+2 >= 1<<15) {
+    if (!(s0[i] & (1ul<<31)) || l+2 >= (1ul<<31)) {
       if (l > 0) {
-        s = realloc(s, n+5);
-        s[n] = 0;
-        *((uint32_t*) (s+n+1)) = l;
-        n += 5;
+        if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+        s[n++] = ((1<<31) | l);
         l = 0;
       }
 
-      if (cg->s[i] > 0) {
-        s = realloc(s, n+5);
-        s[n] = 1;
-        ((float*)(s+n+1))[0] = cg->s[i];
-        n += 5;
+      if (!(s0[i] & (1ul<<31))) {
+        if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+        memcpy(s+n, s0+i, sizeof(float_t));
+        n++;
         l = 0;
       }
     } else {
@@ -72,25 +73,40 @@ void fmt4_compress(cgdata_t *cg) {
   }
   /* the last rle */
   if (l > 0) {
-    s = realloc(s, n+5);
-    s[n] = 0;
-    *((uint32_t*) (s+n+1)) = l;
-    n += 5;
+    if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+    s[n++] = ((1<<31) | l);
   }
+  fprintf(stdout, "%u\n", s[0]);
+  fprintf(stdout, "%u\n", s[1]);
   
   free(cg->s);
-  cg->s = s;
-  cg->n = n;
+  cg->s = (uint8_t*) s;
+  cg->n = n*4;
   cg->compressed = 1;
 }
 
-void process_4fractionNA(char *fname, char *fname_out, int verbose) {
-  float *s; uint64_t n = read_fractionVec(fname, &s, verbose);
-  uint8_t *sr; uint64_t nr = fractionVec2RLE(s, n, &sr);
-  write_bytevec(fname_out, sr, nr, '4', verbose, "fractionNA vector");
-  free(s); free(sr);
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] N: %zu; nr: %zu\n", __func__, __LINE__, n, nr);
-    fflush(stderr);
+cgdata_t* fmt4_decompress(cgdata_t *cg) {
+
+  uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
+  uint32_t *s0 = (uint32_t*) cg->s;
+  float_t *s = calloc(m, sizeof(float_t));
+
+  for(i=0; i< cg->n>>2; ++i) {
+    if (s0[i] >> 31) {
+      l = s0[i]<<1>>1;
+      if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(float_t));}
+      for (j=0; j<l; ++j) s[n++] = -1.0;
+    } else {
+      if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(float_t));}
+      memcpy(s+n, s0+i, sizeof(float_t));
+      n++;
+    }
   }
+
+  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
+  cg2->s = (uint8_t*) s;
+  cg2->n = n;
+  cg2->compressed = 0;
+  cg2->fmt = '4';
+  return cg2;
 }

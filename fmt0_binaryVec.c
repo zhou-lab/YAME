@@ -11,7 +11,7 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
       s[n>>3] |= (1<<(n&0x7));
     }
     n++;
-    if (n>m-2) { m<<=1; s=realloc(s,m); }
+    if (n+2>m) { m<<=1; s=realloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -26,10 +26,4 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
   cg->fmt = '0';
   return cg;
 }
-
-/* void process_0binaryVec(char *fname, char *fname_out, int verbose) { */
-/*   uint8_t *s; uint64_t n = read_binary(fname, &s, verbose); */
-/*   write_bytevec(fname_out, s, (n>>3)+1, '0', verbose, "bit vector"); */
-/*   free(s); */
-/* } */
 

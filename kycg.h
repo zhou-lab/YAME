@@ -26,6 +26,7 @@ typedef struct cgdata_t {
 } cgdata_t;
 
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
+  uint64_t n = 0;
   switch(cg->fmt) {
   case '0': n = (cg->n>>3)+1; break;
   default: n = cg->n;
@@ -33,19 +34,37 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   return n;
 }
 
-static inline free_cgdata(cgdata_t *cg) {
+static inline void free_cgdata(cgdata_t *cg) {
   if(cg->s) free(cg->s);
   free(cg);
 }
 
+void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
+
+cgdata_t *fmt0_read_uncompressed(char *fname, int verbose);
+void fmt0_compress(cgdata_t *cg);
+
+cgdata_t *fmt1_read_uncompressed(char *fname, int verbose);
+void fmt1_compress(cgdata_t *cg);
+cgdata_t* fmt1_decompress(cgdata_t *cg);
+
 cgdata_t *fmt3_read_uncompressed(char *fname, int verbose);
 void fmt3_compress(cgdata_t *cg);
+cgdata_t* fmt3_decompress(cgdata_t *cg);
+
+cgdata_t *fmt4_read_uncompressed(char *fname, int verbose);
+void fmt4_compress(cgdata_t *cg);
+cgdata_t* fmt4_decompress(cgdata_t *cg);
+
+cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
+void fmt5_compress(cgdata_t *cg);
+cgdata_t* fmt5_decompress(cgdata_t *cg);
 
 static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
 
   FILE *out = fopen(fname_out, "wb");
   uint64_t sig = CGSIG; fwrite(&sig, sizeof(uint64_t), 1, out);
-  fwrite(&fmt, sizeof(uint8_t), 1, out);
+  fwrite(&cg->fmt, sizeof(uint8_t), 1, out);
   fwrite(&cg->n, sizeof(uint64_t), 1, out);
   fwrite(cg->s, 1, cgdata_nbytes(cg), out);
   fclose(out);
@@ -54,6 +73,23 @@ static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
     fprintf(stderr, "[%s:%d] Stored as Format %c\n", __func__, __LINE__, cg->fmt);
     fflush(stderr);
   }
+}
+
+static inline cgdata_t* read_cg(const char *fname) {
+  FILE *fh = fopen(fname,"rb");
+
+  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
+
+  uint64_t sig;
+  fread(&sig, sizeof(uint64_t), 1, fh);
+  if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
+  fread(&cg->fmt, sizeof(char), 1, fh);
+  fread(&cg->n, sizeof(uint64_t), 1, fh);
+  cg->s = malloc(cgdata_nbytes(cg));
+  fread(cg->s, 1, cgdata_nbytes(cg), fh);
+  /* fprintf(stdout, "0s[0]: %u\n", cg->s[0]); */
+  fclose(fh);
+  return cg;
 }
 
 #endif /* _TBMATE_H */

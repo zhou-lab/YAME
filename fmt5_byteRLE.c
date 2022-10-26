@@ -9,7 +9,7 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
   uint8_t *s = calloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
     s[n++] = line[0]-'0';
-    if (n>m-2) { m<<=1; s=realloc(s,m); }
+    if (n+2>m) { m<<=1; s=realloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -25,7 +25,10 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
   return cg;
 }
 
-
+/*
+  8 bits = 0 (1bit) | run length of NA
+  8 bits = 1 (1bit) | value (1bit) + 1 (1bit) | value (1bit) + 1 (1bit) | value (1bit)
+ */
 void fmt5_compress(cgdata_t *cg) {
   uint64_t n = 0;
   uint8_t *s = NULL;
@@ -78,13 +81,31 @@ void fmt5_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-void process_5byteRLE(char *fname, char *fname_out, int verbose) {
-  uint8_t *s; uint64_t n = read_byteVector(fname, &s, verbose);
-  uint8_t *sr; uint64_t nr = byteVec2RLE(s, n, &sr);
-  write_bytevec(fname_out, sr, nr, '5', verbose, "byte RLE vector 5");
-  free(s); free(sr);
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] N_CpGs: %"PRId64"; N_bytes: %"PRId64"\n", __func__, __LINE__, n, nr);
-    fflush(stderr);
+cgdata_t* fmt5_decompress(cgdata_t *cg) {
+  uint64_t i = 0, m = 1<<20,n = 0, j=0;
+  uint8_t *s = calloc(m, sizeof(uint8_t));
+
+  for (i=0; i<cg->n; ++i) {
+    if (cg->s[i] & (1<<7)) {
+      int offset = 6;
+      if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint8_t));}
+      for (offset = 6; offset >= 0; offset -= 2) {
+        if ((cg->s[i]>>offset) & 0x2) {
+          s[n++] = ((cg->s[i]>>offset) & 0x1);
+        } else {
+          break;
+        }
+      }
+    } else {
+      if (n+cg->s[i]+10>m) {m=n+cg->s[i]+10; m<<=1; s = realloc(s, m*sizeof(uint8_t));}
+      for (j=0; j < cg->s[i]; ++j) s[n++] = 2;
+    }
   }
+
+  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
+  cg2->s = (uint8_t*) s;
+  cg2->n = n;
+  cg2->compressed = 0;
+  cg2->fmt = '5';
+  return cg2;
 }

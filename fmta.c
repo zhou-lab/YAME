@@ -2,7 +2,7 @@
 
 void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
 
-  int64_t n=0;
+  uint64_t n = 0;
   uint8_t *s = NULL;
   uint64_t i=0; uint16_t l=0; uint8_t u0=0;
   for (i=0, l=0; i<cg->n; ++i) {
@@ -36,14 +36,3 @@ void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
 }
 
 
-void process_a(char *fname, char *fname_out, int verbose) {
-  uint8_t *s; uint64_t n = read_binary(fname, &s, verbose);
-  uint8_t *sr; uint64_t nr = binary2byteRLE(s, n, &sr);
-  if (n>>3 > nr) write_bytevec(fname_out, sr, nr, '1', verbose, "RLE vector");
-  else write_bytevec(fname_out, s, (n>>3)+1, '0', verbose, "bit vector");
-  free(s); free(sr);
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] N_vec: %"PRId64"; nr: %"PRId64"\n", __func__, __LINE__, n>>3, nr);
-    fflush(stderr);
-  }
-}

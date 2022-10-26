@@ -1,15 +1,14 @@
 #include "kycg.h"
-#include "pack.h"
 
 cgdata_t* fmt1_read_uncompressed(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname);
   char *line = NULL;
   uint64_t n = 0, m=1<<22;
-  *s = calloc(m, 1);
+  uint8_t *s = calloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
-    (*s)[n++] = line[0];
-    if (n>m-2) { m<<=1; *s=realloc(*s,m); }
+    s[n++] = line[0];
+    if (n+2>m) { m<<=1; s=realloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -50,8 +49,26 @@ void fmt1_compress(cgdata_t *cg) {
   s[n] = u0;
   *((uint16_t*) (s+n+1)) = l;
   n += 3;
+  
   free(cg->s);
   cg->s = s;
   cg->n = n;
   cg->compressed = 1;
+}
+
+cgdata_t* fmt1_decompress(cgdata_t *cg) {
+  uint64_t i=0, j=0, n=0, m=1<<20;
+  uint8_t *s = calloc(m, 1);
+  for (i=0; i<cg->n; i+=3) {
+    uint16_t l = ((uint16_t*) (cg->s+i+1))[0];
+    if (n+l+2>m) {m=n+l+2; m<<=1; s = realloc(s, m);}
+    for (j=0; j<l; ++j) s[n++] = cg->s[i];
+  }
+  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
+  cg2->s = (uint8_t*) s;
+  cg2->n = n;
+  cg2->compressed = 0;
+  cg2->fmt = '1';
+
+  return cg2;
 }
