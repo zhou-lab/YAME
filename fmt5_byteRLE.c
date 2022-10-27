@@ -1,6 +1,7 @@
 #include "kycg.h"
 
 
+/* the input has only 0,1,2 */
 cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname);

@@ -64,6 +64,9 @@ void fmt5_compress(cgdata_t *cg);
 cgdata_t fmt5_decompress(cgdata_t *cg);
 
 cgdata_t decompress(cgdata_t *cg);
+void compress(cgdata_t *cg);
+
+cgdata_t slice(cgdata_t *cg, uint64_t beg, uint64_t end);
 
 static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
 

@@ -10,11 +10,11 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -f        format 0: 1 byte for 8 binary cpgs\n");
-  fprintf(stderr, "                     1: value (1byte) + runlen (2bytes)\n");
+  fprintf(stderr, "                     1: value (1byte) + runlen (2bytes). Input is one ASCII\n");
   fprintf(stderr, "                     a: format 0 or format 1, whichever is smaller (default)\n");
   fprintf(stderr, "                     3: MU RLE + ladder byte \n");
   fprintf(stderr, "                     4: fraction / NA-RLE (32bytes)\n");
-  fprintf(stderr, "                     5: 2-bit + NA-RLE\n");
+  fprintf(stderr, "                     5: 2-bit + NA-RLE. Input has only 0,1,2.\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
