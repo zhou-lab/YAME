@@ -25,6 +25,8 @@ typedef struct cgdata_t {
   char fmt;
 } cgdata_t;
 
+DEFINE_VECTOR(cgdata_v, cgdata_t)
+
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   uint64_t n = 0;
   switch(cg->fmt) {
@@ -43,22 +45,25 @@ void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
 
 cgdata_t *fmt0_read_uncompressed(char *fname, int verbose);
 void fmt0_compress(cgdata_t *cg);
+cgdata_t fmt0_decompress(cgdata_t *cg);
 
 cgdata_t *fmt1_read_uncompressed(char *fname, int verbose);
 void fmt1_compress(cgdata_t *cg);
-cgdata_t* fmt1_decompress(cgdata_t *cg);
+cgdata_t fmt1_decompress(cgdata_t *cg);
 
 cgdata_t *fmt3_read_uncompressed(char *fname, int verbose);
 void fmt3_compress(cgdata_t *cg);
-cgdata_t* fmt3_decompress(cgdata_t *cg);
+cgdata_t fmt3_decompress(cgdata_t *cg);
 
 cgdata_t *fmt4_read_uncompressed(char *fname, int verbose);
 void fmt4_compress(cgdata_t *cg);
-cgdata_t* fmt4_decompress(cgdata_t *cg);
+cgdata_t fmt4_decompress(cgdata_t *cg);
 
 cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
 void fmt5_compress(cgdata_t *cg);
-cgdata_t* fmt5_decompress(cgdata_t *cg);
+cgdata_t fmt5_decompress(cgdata_t *cg);
+
+cgdata_t decompress(cgdata_t *cg);
 
 static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
 
@@ -75,21 +80,62 @@ static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
   }
 }
 
-static inline cgdata_t* read_cg(const char *fname) {
-  FILE *fh = fopen(fname,"rb");
+/* static inline cgdata_t* read_cg(const char *fname) { */
+/*   FILE *fh = fopen(fname,"rb"); */
 
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
+/*   cgdata_t *cg = calloc(sizeof(cgdata_t),1); */
+
+/*   uint64_t sig; */
+/*   fread(&sig, sizeof(uint64_t), 1, fh); */
+/*   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n"); */
+/*   fread(&cg->fmt, sizeof(char), 1, fh); */
+/*   fread(&cg->n, sizeof(uint64_t), 1, fh); */
+/*   cg->s = malloc(cgdata_nbytes(cg)); */
+/*   fread(cg->s, 1, cgdata_nbytes(cg), fh); */
+/*   /\* fprintf(stdout, "0s[0]: %u\n", cg->s[0]); *\/ */
+/*   fclose(fh); */
+/*   return cg; */
+/* } */
+
+typedef struct cgfile_t {
+  gzFile fh;
+  int n;                        /* number of samples read */
+} cgfile_t;
+
+static inline cgfile_t open_cgfile(const char *fname) {
+  cgfile_t cgf = {0};
+  cgf.fh = gzopen(fname, "rb");
+  cgf.n = 0;
+  return cgf;
+}
+
+static inline cgdata_t read_cg(cgfile_t *cgf) {
+  
+  cgdata_t cg = {0};
 
   uint64_t sig;
-  fread(&sig, sizeof(uint64_t), 1, fh);
+  if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return cg;
+  
   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  fread(&cg->fmt, sizeof(char), 1, fh);
-  fread(&cg->n, sizeof(uint64_t), 1, fh);
-  cg->s = malloc(cgdata_nbytes(cg));
-  fread(cg->s, 1, cgdata_nbytes(cg), fh);
-  /* fprintf(stdout, "0s[0]: %u\n", cg->s[0]); */
-  fclose(fh);
+  gzfread(&cg.fmt, sizeof(char), 1, cgf->fh);
+  gzfread(&cg.n, sizeof(uint64_t), 1, cgf->fh);
+  cg.s = malloc(cgdata_nbytes(&cg));
+  gzfread(cg.s, 1, cgdata_nbytes(&cg), cgf->fh);
+  cgf->n++;
+  /* fprintf(stdout, "0s[0]: %u\n", cg.s[0]); */
   return cg;
+}
+
+/* this function is memory intensive if there are many samples */
+static inline cgdata_v* read_cg_all(cgfile_t *cgf) {
+
+  cgdata_v *cgs = init_cgdata_v(10);
+  while (1) {
+    cgdata_t cg = read_cg(cgf);
+    if (cg.n >0) push_cgdata_v(cgs, cg);
+    else break;
+  }
+  return cgs;
 }
 
 #endif /* _TBMATE_H */

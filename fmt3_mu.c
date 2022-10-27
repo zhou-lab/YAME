@@ -101,7 +101,7 @@ void fmt3_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t* fmt3_decompress(cgdata_t *cg) {
+cgdata_t fmt3_decompress(cgdata_t *cg) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0, l=0;
   uint64_t *s = calloc(m, sizeof(uint64_t));
   uint64_t U=0,M=0;
@@ -133,10 +133,10 @@ cgdata_t* fmt3_decompress(cgdata_t *cg) {
       i += 8;
     }
   }
-  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
-  cg2->s = (uint8_t*) s;
-  cg2->n = n;
-  cg2->compressed = 0;
-  cg2->fmt = '3';
+  cgdata_t cg2 = {0};
+  cg2.s = (uint8_t*) s;
+  cg2.n = n;
+  cg2.compressed = 0;
+  cg2.fmt = '3';
   return cg2;
 }

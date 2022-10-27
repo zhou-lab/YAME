@@ -9,7 +9,12 @@ static int usage() {
   fprintf(stderr, "Usage: kycg pack [options] <in.bed> <out.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -f        format (0,1,2,3,4,a)\n");
+  fprintf(stderr, "    -f        format 0: 1 byte for 8 binary cpgs\n");
+  fprintf(stderr, "                     1: value (1byte) + runlen (2bytes)\n");
+  fprintf(stderr, "                     a: format 0 or format 1, whichever is smaller (default)\n");
+  fprintf(stderr, "                     3: MU RLE + ladder byte \n");
+  fprintf(stderr, "                     4: fraction / NA-RLE (32bytes)\n");
+  fprintf(stderr, "                     5: 2-bit + NA-RLE\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");

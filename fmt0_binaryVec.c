@@ -1,5 +1,6 @@
 #include "kycg.h"
 
+/* 8 bit for 8 cpgs, each is binary */
 cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname);
@@ -27,3 +28,14 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
   return cg;
 }
 
+cgdata_t fmt0_decompress(cgdata_t *cg) {
+
+  cgdata_t cg2 = {0};
+  cg2.s = malloc(cg->n>>3);
+  memcpy(cg2.s, cg->s, cg->n>>3);
+  cg2.n = cg->n;
+  cg2.compressed = 0;
+  cg2.fmt = '0';
+
+  return cg2;
+}

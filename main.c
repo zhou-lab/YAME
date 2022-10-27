@@ -41,6 +41,7 @@ const int unit_base[40] = {
 int main_pack(int argc, char *argv[]);
 int main_overlap(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
+int main_split(int argc, char *argv[]);
 
 static int usage()
 {
@@ -64,6 +65,7 @@ int main(int argc, char *argv[]) {
   if (strcmp(argv[1], "pack") == 0) ret = main_pack(argc-1, argv+1);
   else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
+  else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   /* else if (strcmp(argv[1], "bundle") == 0) ret = main_bundle(argc-1, argv+1); */
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);

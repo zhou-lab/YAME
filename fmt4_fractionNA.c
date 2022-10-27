@@ -44,7 +44,7 @@ cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
 
 /* 32 bit
    1 (1bit) + run length of NA (31 bits)
-   0 (1bit) + floating number (always positive)
+   0 (1bit) + floating number (always positive) (31bit, the sign bit is always 0)
  */
 void fmt4_compress(cgdata_t *cg) {
 
@@ -85,7 +85,7 @@ void fmt4_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t* fmt4_decompress(cgdata_t *cg) {
+cgdata_t fmt4_decompress(cgdata_t *cg) {
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
   uint32_t *s0 = (uint32_t*) cg->s;
@@ -103,10 +103,10 @@ cgdata_t* fmt4_decompress(cgdata_t *cg) {
     }
   }
 
-  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
-  cg2->s = (uint8_t*) s;
-  cg2->n = n;
-  cg2->compressed = 0;
-  cg2->fmt = '4';
+  cgdata_t cg2 = {0};
+  cg2.s = (uint8_t*) s;
+  cg2.n = n;
+  cg2.compressed = 0;
+  cg2.fmt = '4';
   return cg2;
 }

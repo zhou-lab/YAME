@@ -26,8 +26,8 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
 }
 
 /*
-  8 bits = 0 (1bit) | run length of NA
-  8 bits = 1 (1bit) | value (1bit) + 1 (1bit) | value (1bit) + 1 (1bit) | value (1bit)
+  8 bits = 0 (1bit) | run length of NA (7bits)
+  8 bits = 1 (1bit)|value (1bit) + 1 (1bit)|value (1bit) + ...
  */
 void fmt5_compress(cgdata_t *cg) {
   uint64_t n = 0;
@@ -81,7 +81,7 @@ void fmt5_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t* fmt5_decompress(cgdata_t *cg) {
+cgdata_t fmt5_decompress(cgdata_t *cg) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0;
   uint8_t *s = calloc(m, sizeof(uint8_t));
 
@@ -102,10 +102,10 @@ cgdata_t* fmt5_decompress(cgdata_t *cg) {
     }
   }
 
-  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
-  cg2->s = (uint8_t*) s;
-  cg2->n = n;
-  cg2->compressed = 0;
-  cg2->fmt = '5';
+  cgdata_t cg2 = {0};
+  cg2.s = (uint8_t*) s;
+  cg2.n = n;
+  cg2.compressed = 0;
+  cg2.fmt = '5';
   return cg2;
 }

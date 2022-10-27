@@ -26,6 +26,7 @@ cgdata_t* fmt1_read_uncompressed(char *fname, int verbose) {
 
 /* compressed:
    3byte --- value (1byte) + run len (2bytes)
+   value is unrestricted ASCII
  */
 void fmt1_compress(cgdata_t *cg) {
   uint64_t n = 0;
@@ -56,7 +57,7 @@ void fmt1_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t* fmt1_decompress(cgdata_t *cg) {
+cgdata_t fmt1_decompress(cgdata_t *cg) {
   uint64_t i=0, j=0, n=0, m=1<<20;
   uint8_t *s = calloc(m, 1);
   for (i=0; i<cg->n; i+=3) {
@@ -64,11 +65,11 @@ cgdata_t* fmt1_decompress(cgdata_t *cg) {
     if (n+l+2>m) {m=n+l+2; m<<=1; s = realloc(s, m);}
     for (j=0; j<l; ++j) s[n++] = cg->s[i];
   }
-  cgdata_t *cg2 = calloc(sizeof(cgdata_t),1);
-  cg2->s = (uint8_t*) s;
-  cg2->n = n;
-  cg2->compressed = 0;
-  cg2->fmt = '1';
+  cgdata_t cg2 = {0};
+  cg2.s = (uint8_t*) s;
+  cg2.n = n;
+  cg2.compressed = 0;
+  cg2.fmt = '1';
 
   return cg2;
 }
