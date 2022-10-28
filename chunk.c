@@ -39,10 +39,12 @@ int main_chunk(int argc, char *argv[]) {
 
   cgfile_t cgf = open_cgfile(fname);
   cgdata_t cg = read_cg(&cgf);
-  cgdata_t cg2 = decompress(&cg);
+  cgdata_t cg2 = {0};
+  decompress(&cg, &cg2);
   uint64_t i=0;
+  cgdata_t cg3 = {0};
   for (i=0; i<=(cg2.n/chunk_size); ++i) {
-    cgdata_t cg3 = slice(&cg2, i*chunk_size, (i+1)*chunk_size-1);
+    slice(&cg2, i*chunk_size, (i+1)*chunk_size-1, &cg3);
     recompress(&cg3);
     char *tmp = malloc(strlen(outdir) + 1000);
     sprintf(tmp, "%s/%llu", outdir, i);

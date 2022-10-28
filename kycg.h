@@ -44,25 +44,25 @@ static inline void free_cgdata(cgdata_t *cg) {
 void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
 
 cgdata_t *fmt0_read_uncompressed(char *fname, int verbose);
-cgdata_t fmt0_decompress(cgdata_t *cg);
+void fmt0_decompress(cgdata_t *cg, cgdata_t *expanded);
 
 cgdata_t *fmt1_read_uncompressed(char *fname, int verbose);
 void fmt1_compress(cgdata_t *cg);
-cgdata_t fmt1_decompress(cgdata_t *cg);
+void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded);
 
 cgdata_t *fmt3_read_uncompressed(char *fname, int verbose);
 void fmt3_compress(cgdata_t *cg);
-cgdata_t fmt3_decompress(cgdata_t *cg);
+void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded);
 
 cgdata_t *fmt4_read_uncompressed(char *fname, int verbose);
 void fmt4_compress(cgdata_t *cg);
-cgdata_t fmt4_decompress(cgdata_t *cg);
+void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded);
 
 cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
 void fmt5_compress(cgdata_t *cg);
-cgdata_t fmt5_decompress(cgdata_t *cg);
+void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded);
 
-cgdata_t decompress(cgdata_t *cg);
+void decompress(cgdata_t *cg, cgdata_t *expanded);
 void recompress(cgdata_t *cg);
 
 static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {

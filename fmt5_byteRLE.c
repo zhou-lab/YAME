@@ -82,7 +82,7 @@ void fmt5_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t fmt5_decompress(cgdata_t *cg) {
+void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0;
   uint8_t *s = calloc(m, sizeof(uint8_t));
 
@@ -103,10 +103,8 @@ cgdata_t fmt5_decompress(cgdata_t *cg) {
     }
   }
 
-  cgdata_t cg2 = {0};
-  cg2.s = (uint8_t*) s;
-  cg2.n = n;
-  cg2.compressed = 0;
-  cg2.fmt = '5';
-  return cg2;
+  expanded->s = (uint8_t*) s;
+  expanded->n = n;
+  expanded->compressed = 0;
+  expanded->fmt = '5';
 }

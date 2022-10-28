@@ -49,44 +49,46 @@ static void print_cg1(cgdata_t *cg, uint64_t i) {
 
 static void print_cg(cgdata_t *cg) {
 
-  cgdata_t cg2 = decompress(cg);
+  cgdata_t expanded = {0};
+  decompress(cg, &expanded);
   uint64_t i;
-  for (i=0; i<cg2.n; ++i) {
-    print_cg1(&cg2, i); fputc('\n', stdout);
+  for (i=0; i<expanded.n; ++i) {
+    print_cg1(&expanded, i); fputc('\n', stdout);
   }
-  free(cg2.s);
+  free(expanded.s);
 }
 
 static void print_cgs_chunk(cgdata_v *cgs, uint64_t s) {
-  uint64_t i,k; cgdata_v *cgs_d = init_cgdata_v(cgs->size);
-  for (k=0; k<cgs->size; ++k)
-    *next_ref_cgdata_v(cgs_d) = decompress(ref_cgdata_v(cgs, k));
-
-  uint64_t n = get_cgdata_v(cgs_d,0).n;
-  cgdata_t *sliced = calloc(n, sizeof(cgdata_t));
-  for (i=0; i<=(n/chunk_size); ++i) {
-    for (j=0; j<cgs_d->size; ++j) {
-      free(sliced[j]);
-      sliced[j] = slice(&cg2, i*chunk_size, (i+1)*chunk_size-1);
-    
-    
-    free(cg3.s);
-  }
-
-  
-  for (i=0; i<ref_cgdata_v(cgs_d,0)->n; ++i) {
+  uint64_t i,k,m;
+  cgdata_t expanded = {0};
+  decompress(ref_cgdata_v(cgs, 0), &expanded);
+  uint64_t n = expanded.n;
+  cgdata_t *sliced = calloc(cgs->size, sizeof(cgdata_t));
+  for (m=0; m <= n/s; ++m) {
     for (k=0; k<cgs->size; ++k) {
-      if(k) fputc('\t', stdout);
-      print_cg1(ref_cgdata_v(cgs_d,k),i);
+      decompress(ref_cgdata_v(cgs, k), &expanded);
+      slice(&expanded, m*s, (m+1)*s-1, &sliced[k]);
     }
-    fputc('\n', stdout);
+    for (i=0; i<sliced[k].n; ++i) {
+      for (k=0; k<cgs->size; ++k) {
+        if(k) fputc('\t', stdout);
+        print_cg1(&sliced[k],i);
+      }
+      fputc('\n', stdout);
+    }
   }
+
+  for (k=0; k<cgs->size; ++k) free(sliced[k].s);
+  free(expanded.s); free(sliced);
 }
 
 static void print_cgs(cgdata_v *cgs) {
   uint64_t i,k; cgdata_v *cgs_d = init_cgdata_v(cgs->size);
-  for (k=0; k<cgs->size; ++k)
-    *next_ref_cgdata_v(cgs_d) = decompress(ref_cgdata_v(cgs, k));
+  cgdata_t *expanded;
+  for (k=0; k<cgs->size; ++k) {
+    expanded = next_ref_cgdata_v(cgs_d);
+    decompress(ref_cgdata_v(cgs, k), expanded);
+  }
   for (i=0; i<ref_cgdata_v(cgs_d,0)->n; ++i) {
     for (k=0; k<cgs->size; ++k) {
       if(k) fputc('\t', stdout);
@@ -119,7 +121,7 @@ int main_unpack(int argc, char *argv[]) {
   cgfile_t cgf = open_cgfile(argv[optind]);
   if (read_all) {
     cgdata_v *cgs = read_cg_all(&cgf);
-    if (c) print_cgs_chunk(cgs, s);
+    if (chunk) print_cgs_chunk(cgs, chunk_size);
     else print_cgs(cgs);
     uint64_t i;
     for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);

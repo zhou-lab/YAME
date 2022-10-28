@@ -33,9 +33,10 @@ int main_dim(int argc, char *argv[]) {
   for (i=0; ; ++i) {
     cgdata_t cg = read_cg(&cgf);
     if (cg.n == 0) break;
-    cgdata_t cgd = decompress(&cg);
-    fprintf(stdout, "%d\t%"PRIu64"\n", i+1, cgd.n);
-    free(cgd.s); free(cg.s);
+    cgdata_t expanded = {0};
+    decompress(&cg, &expanded);
+    fprintf(stdout, "%d\t%"PRIu64"\n", i+1, expanded.n);
+    free(expanded.s); free(cg.s);
   }
   
   return 0;

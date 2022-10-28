@@ -85,7 +85,7 @@ void fmt4_compress(cgdata_t *cg) {
   cg->compressed = 1;
 }
 
-cgdata_t fmt4_decompress(cgdata_t *cg) {
+void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
   uint32_t *s0 = (uint32_t*) cg->s;
@@ -103,10 +103,8 @@ cgdata_t fmt4_decompress(cgdata_t *cg) {
     }
   }
 
-  cgdata_t cg2 = {0};
-  cg2.s = (uint8_t*) s;
-  cg2.n = n;
-  cg2.compressed = 0;
-  cg2.fmt = '4';
-  return cg2;
+  expanded->s = (uint8_t*) s;
+  expanded->n = n;
+  expanded->compressed = 0;
+  expanded->fmt = '4';
 }
