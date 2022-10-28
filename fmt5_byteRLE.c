@@ -15,7 +15,7 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cgdata_t *cg = calloc(sizeof(cgdata_t),1);

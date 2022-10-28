@@ -47,7 +47,7 @@ int main_chunk(int argc, char *argv[]) {
     slice(&cg2, i*chunk_size, (i+1)*chunk_size-1, &cg3);
     recompress(&cg3);
     char *tmp = malloc(strlen(outdir) + 1000);
-    sprintf(tmp, "%s/%llu", outdir, i);
+    sprintf(tmp, "%s/%lu", outdir, i);
     cgdata_write(tmp, &cg3, verbose);
     free(cg3.s); free(tmp);
   }
