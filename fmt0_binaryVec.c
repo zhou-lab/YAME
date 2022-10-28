@@ -17,7 +17,7 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %zu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cgdata_t *cg = calloc(sizeof(cgdata_t),1);
@@ -29,7 +29,6 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
 }
 
 cgdata_t fmt0_decompress(cgdata_t *cg) {
-
   cgdata_t cg2 = {0};
   cg2.s = malloc(cg->n>>3);
   memcpy(cg2.s, cg->s, cg->n>>3);
@@ -39,3 +38,5 @@ cgdata_t fmt0_decompress(cgdata_t *cg) {
 
   return cg2;
 }
+
+

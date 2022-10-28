@@ -1,15 +1,12 @@
 #include "kycg.h"
 
-cgdata_t slice(cgdata_t *cg, uint64_t beg, uint64_t end) {
+void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
   if (end > cg->n) end = cg->n;
   if (end < beg) wzfatal("Slicing negative span.");
 
-  uint8_t *s = (uint8_t*) cg->s;
-  cgdata_t cg2 = {0};
-  cg2.s = malloc((end-beg+1)*sizeof(uint8_t));
-  memcpy(cg2.s, cg->s, (end-beg+1)*sizeof(uint8_t));
-  cg2.n = end - beg + 1;
-  cg2.compressed = 0;
-  cg2.fmt = 5;
-  return cg2;
+  cg_sliced->s = realloc(cg_sliced->s, (end-beg+1)*sizeof(uint8_t));
+  memcpy(cg_sliced->s, cg->s, (end-beg+1)*sizeof(uint8_t));
+  cg_sliced->n = end - beg + 1;
+  cg_sliced->compressed = 0;
+  cg_sliced->fmt = 5;
 }
