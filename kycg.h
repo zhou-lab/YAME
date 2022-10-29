@@ -62,23 +62,32 @@ cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
 void fmt5_compress(cgdata_t *cg);
 void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded);
 
+cgdata_t *fmt6_read_uncompressed(char *fname, int verbose);
+void fmt6_compress(cgdata_t *cg);
+void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded);
+
 void decompress(cgdata_t *cg, cgdata_t *expanded);
 void recompress(cgdata_t *cg);
 
 static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
-  if (end > cg->n) end = cg->n;
+  if (end > cg->n-1) end = cg->n-1;
   if (end < beg) wzfatal("Slicing negative span.");
 
   cg_sliced->s = realloc(cg_sliced->s, (end-beg+1)*sizeof(uint8_t));
-  memcpy(cg_sliced->s, cg->s, (end-beg+1)*sizeof(uint8_t));
+  memcpy(cg_sliced->s, cg->s+beg, (end-beg+1)*sizeof(uint8_t));
   cg_sliced->n = end - beg + 1;
   cg_sliced->compressed = 0;
-  cg_sliced->fmt = 5;
+  cg_sliced->fmt = '5';
 }
 
-static inline void cgdata_write(char *fname_out, cgdata_t *cg, int verbose) {
+static inline void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
 
-  FILE *out = fopen(fname_out, "wb");
+  FILE *out;
+  if (fname_out)
+    out = fopen(fname_out, mode);
+  else
+    out = stdout;
+  
   uint64_t sig = CGSIG; fwrite(&sig, sizeof(uint64_t), 1, out);
   fwrite(&cg->fmt, sizeof(uint8_t), 1, out);
   fwrite(&cg->n, sizeof(uint64_t), 1, out);
@@ -120,20 +129,22 @@ static inline cgfile_t open_cgfile(const char *fname) {
   return cgf;
 }
 
-static inline cgdata_t read_cg(cgfile_t *cgf) {
-  
-  cgdata_t cg = {0};
-
+static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
   uint64_t sig;
-  if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return cg;
-  
+  if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return 0;
   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  gzfread(&cg.fmt, sizeof(char), 1, cgf->fh);
-  gzfread(&cg.n, sizeof(uint64_t), 1, cgf->fh);
-  cg.s = malloc(cgdata_nbytes(&cg));
-  gzfread(cg.s, 1, cgdata_nbytes(&cg), cgf->fh);
+  gzfread(&(cg->fmt), sizeof(char), 1, cgf->fh);
+  gzfread(&(cg->n), sizeof(uint64_t), 1, cgf->fh);
+  cg->s = realloc(cg->s, cgdata_nbytes(cg));
+  gzfread(cg->s, 1, cgdata_nbytes(cg), cgf->fh);
+  cg->compressed = 1;
   cgf->n++;
-  /* fprintf(stdout, "0s[0]: %u\n", cg.s[0]); */
+  return 1;
+}
+
+static inline cgdata_t read_cg(cgfile_t *cgf) {
+  cgdata_t cg = {0};
+  if (!read_cg_(cgf, &cg)) return cg;
   return cg;
 }
 
@@ -145,6 +156,27 @@ static inline cgdata_v* read_cg_all(cgfile_t *cgf) {
     cgdata_t cg = read_cg(cgf);
     if (cg.n >0) push_cgdata_v(cgs, cg);
     else break;
+  }
+  return cgs;
+}
+
+static inline cgdata_v* read_cgs(cgfile_t *cgf, int64_t beg, int64_t end) {
+
+  if (beg < 0) beg = 0;
+  if (end >= 0 && end < beg) wzfatal("End is smaller than beg");
+
+  cgdata_v *cgs = init_cgdata_v(10);
+  cgdata_t cg = {0};
+  int64_t i=0;
+  for (i=0; end<0 || i<=end; ++i) {
+    read_cg_(cgf, &cg);
+    if (i<beg) continue;
+    if (cg.n>0) {
+      (*next_ref_cgdata_v(cgs)) = cg;
+      cg.s = NULL;
+    } else {
+      break;
+    }
   }
   return cgs;
 }

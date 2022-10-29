@@ -62,7 +62,7 @@ int main_split(int argc, char *argv[]) {
       tmp = malloc(strlen(prefix) + 1000);
       sprintf(tmp, "%s_split_%i.cg", prefix, i+1);
     }
-    cgdata_write(tmp, &cg, verbose);
+    cgdata_write(tmp, &cg, "wb", verbose);
     free(tmp);
     free(cg.s);
   }

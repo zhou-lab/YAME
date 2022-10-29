@@ -103,7 +103,7 @@ void fmt3_compress(cgdata_t *cg) {
 
 void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0, l=0;
-  uint64_t *s = calloc(m, sizeof(uint64_t));
+  uint64_t *s = realloc(expanded->s, m*sizeof(uint64_t));
   uint64_t U=0,M=0;
   while (i < cg->n) {
     if ((cg->s[i] & 0x3) == 0) {

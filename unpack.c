@@ -10,6 +10,11 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
+  fprintf(stderr, "    -a        all samples\n");
+  fprintf(stderr, "    -c        chunk process\n");
+  fprintf(stderr, "    -b        begin (first sample index, default to first sample)\n");
+  fprintf(stderr, "    -e        end (last sample index, default to last sample)\n");
+  fprintf(stderr, "    -s        chunk size (default 1M)\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -43,6 +48,11 @@ static void print_cg1(cgdata_t *cg, uint64_t i) {
     fputc(cg->s[i]+'0', stdout);
     break;
   }
+  case '6': {
+    uint64_t *s = (uint64_t*) cg->s;
+    fprintf(stdout, "%"PRIu64, s[i]);
+    break;
+  }
   default: usage(); wzfatal("Unrecognized format: %c.\n", cg->fmt);
   }
 }
@@ -59,18 +69,18 @@ static void print_cg(cgdata_t *cg) {
 }
 
 static void print_cgs_chunk(cgdata_v *cgs, uint64_t s) {
-  uint64_t i,k,m;
+  uint64_t i,m, k, kn = cgs->size;
   cgdata_t expanded = {0};
   decompress(ref_cgdata_v(cgs, 0), &expanded);
   uint64_t n = expanded.n;
-  cgdata_t *sliced = calloc(cgs->size, sizeof(cgdata_t));
+  cgdata_t *sliced = calloc(kn, sizeof(cgdata_t));
   for (m=0; m <= n/s; ++m) {
-    for (k=0; k<cgs->size; ++k) {
+    for (k=0; k<kn; ++k) {
       decompress(ref_cgdata_v(cgs, k), &expanded);
       slice(&expanded, m*s, (m+1)*s-1, &sliced[k]);
     }
-    for (i=0; i<sliced[k].n; ++i) {
-      for (k=0; k<cgs->size; ++k) {
+    for (i=0; i<sliced[0].n; ++i) {
+      for (k=0; k<kn; ++k) {
         if(k) fputc('\t', stdout);
         print_cg1(&sliced[k],i);
       }
@@ -78,35 +88,38 @@ static void print_cgs_chunk(cgdata_v *cgs, uint64_t s) {
     }
   }
 
-  for (k=0; k<cgs->size; ++k) free(sliced[k].s);
+  for (k=0; k<kn; ++k) free(sliced[k].s);
   free(expanded.s); free(sliced);
 }
 
 static void print_cgs(cgdata_v *cgs) {
-  uint64_t i,k; cgdata_v *cgs_d = init_cgdata_v(cgs->size);
-  cgdata_t *expanded;
-  for (k=0; k<cgs->size; ++k) {
-    expanded = next_ref_cgdata_v(cgs_d);
-    decompress(ref_cgdata_v(cgs, k), expanded);
-  }
-  for (i=0; i<ref_cgdata_v(cgs_d,0)->n; ++i) {
-    for (k=0; k<cgs->size; ++k) {
+  uint64_t i, k, kn = cgs->size;
+  cgdata_t *expanded = calloc(kn, sizeof(cgdata_t));
+  for (k=0; k<kn; ++k)
+    decompress(ref_cgdata_v(cgs, k), expanded+k);
+  for (i=0; i<expanded[0].n; ++i) {
+    for (k=0; k<kn; ++k) {
       if(k) fputc('\t', stdout);
-      print_cg1(ref_cgdata_v(cgs_d,k),i);
+      print_cg1(expanded+k, i);
     }
     fputc('\n', stdout);
   }
+  for (k=0; k<kn; ++k) free(expanded[k].s);
+  free(expanded);
 }
 
 int main_unpack(int argc, char *argv[]) {
 
   int c, verbose = 0, read_all = 0, chunk = 0;
+  int64_t beg = -1, end = -1;
   uint64_t chunk_size = 1000000;
-  while ((c = getopt(argc, argv, "s:avh"))>=0) {
+  while ((c = getopt(argc, argv, "cs:b:e:avh"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
     case 'v': verbose = 1; break;
+    case 'b': beg = atoi(optarg)-1; break;
+    case 'e': end = atoi(optarg)-1; break;
     case 'a': read_all = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -119,8 +132,8 @@ int main_unpack(int argc, char *argv[]) {
   }
 
   cgfile_t cgf = open_cgfile(argv[optind]);
-  if (read_all) {
-    cgdata_v *cgs = read_cg_all(&cgf);
+  if (beg >= 0 || end >= 0 || read_all) {
+    cgdata_v *cgs = read_cgs(&cgf, beg, end);
     if (chunk) print_cgs_chunk(cgs, chunk_size);
     else print_cgs(cgs);
     uint64_t i;

@@ -59,7 +59,7 @@ void fmt1_compress(cgdata_t *cg) {
 
 void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded) {
   uint64_t i=0, j=0, n=0, m=1<<20;
-  uint8_t *s = calloc(m, 1);
+  uint8_t *s = realloc(expanded->s, m);
   for (i=0; i<cg->n; i+=3) {
     uint16_t l = ((uint16_t*) (cg->s+i+1))[0];
     if (n+l+2>m) {m=n+l+2; m<<=1; s = realloc(s, m);}

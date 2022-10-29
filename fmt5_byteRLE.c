@@ -84,7 +84,7 @@ void fmt5_compress(cgdata_t *cg) {
 
 void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0;
-  uint8_t *s = calloc(m, sizeof(uint8_t));
+  uint8_t *s = realloc(expanded->s, m*sizeof(uint8_t));
 
   for (i=0; i<cg->n; ++i) {
     if (cg->s[i] & (1<<7)) {
