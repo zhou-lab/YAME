@@ -45,7 +45,11 @@ static void print_cg1(cgdata_t *cg, uint64_t i) {
     break;
   }
   case '5': {
-    fputc(cg->s[i]+'0', stdout);
+    if (cg->s[i] == 2) {
+      fputs("NA", stdout);
+    } else {
+      fputc(cg->s[i]+'0', stdout);
+    }
     break;
   }
   case '6': {

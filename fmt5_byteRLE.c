@@ -9,7 +9,8 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
   uint64_t n = 0, m=1<<22;
   uint8_t *s = calloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
-    s[n++] = line[0]-'0';
+    if (line[0] == '0' || line[0] == '1') s[n++] = line[0]-'0';
+    else s[n++] = 2;
     if (n+2>m) { m<<=1; s=realloc(s,m); }
   }
   free(line);
