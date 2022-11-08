@@ -36,10 +36,13 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   return n;
 }
 
+/* unit size of uncompressed data */
 static inline uint64_t cgdata_unit_size(cgdata_t *cg) {
   switch(cg->fmt) {
   case '3': return 8; break;
+  case '4': return 4; break;
   case '5': return 1; break;
+  case '6': return 8; break;
   default: return 1;
   }
   return 1;
@@ -89,7 +92,7 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
   if (end < beg) wzfatal("Slicing negative span.");
 
   cg_sliced->s = realloc(cg_sliced->s, (end-beg+1)*cgdata_unit_size(cg));
-  memcpy(cg_sliced->s, cg->s+beg, (end-beg+1)*cgdata_unit_size(cg));
+  memcpy(cg_sliced->s, cg->s+beg*cgdata_unit_size(cg), (end-beg+1)*cgdata_unit_size(cg));
   cg_sliced->n = end - beg + 1;
   cg_sliced->compressed = 0;
   cg_sliced->fmt = cg->fmt;
@@ -145,6 +148,7 @@ static inline cgfile_t open_cgfile(const char *fname) {
 }
 
 static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
+  cg->n = 0;
   uint64_t sig;
   if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return 0;
   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");

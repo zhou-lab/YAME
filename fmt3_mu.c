@@ -82,7 +82,7 @@ void fmt3_compress(cgdata_t *cg) {
           if (M > (1ul<<31)) M = (1ul<<31) - 1;
           if (U > (1ul<<31)) U = (1ul<<31) - 1;
           s = realloc(s, n+8);
-          *((uint64_t*) (s+n)) = (M<<33) | (U<<31) | 3ul;
+          *((uint64_t*) (s+n)) = (M<<33) | (U<<2) | 3ul;
           n += 8;
         }
       }
@@ -120,14 +120,14 @@ void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded) {
     } else if ((cg->s[i] & 0x3) == 2) {
       M = (((uint16_t*) (cg->s+i))[0])>>2;
       U = M & ((1<<7)-1);
-      M = (M>>7) & ((1<<7)-1);
+      M >>= 7;
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint64_t));}
       s[n++] = (M<<32 | U);
       i += 2;
     } else {
       M = (((uint64_t*) (cg->s+i))[0])>>2;
       U = M & ((1ul<<31)-1);
-      M = (M>>7) & ((1ul<<31)-1);
+      M >>= 31;
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint64_t));}
       s[n++] = (M<<32 | U);
       i += 8;
