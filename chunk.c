@@ -4,7 +4,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg chunk [options] <in.cg>\n");
+  fprintf(stderr, "Usage: kycg chunk [options] <in.cg> <outdir>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
@@ -34,9 +34,14 @@ int main_chunk(int argc, char *argv[]) {
   }
 
   char *fname = argv[optind];
-  char *outdir = malloc(strlen(fname)+1000);
-  strcpy(outdir, fname);
-  strcat(outdir, "_chunks");
+  char *outdir;
+  if (argc >= optind + 2)
+    outdir = strdup(argv[optind+1]);
+  else {
+    outdir = malloc(strlen(fname)+1000);
+    strcpy(outdir, fname);
+    strcat(outdir, "_chunks");
+  }
   mkdir(outdir, 0777);
 
   cgfile_t cgf = open_cgfile(fname);

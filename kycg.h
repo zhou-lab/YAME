@@ -105,7 +105,8 @@ static inline void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode,
     out = fopen(fname_out, mode);
   else
     out = stdout;
-  
+
+  if (!cg->compressed) recompress(cg);
   uint64_t sig = CGSIG; fwrite(&sig, sizeof(uint64_t), 1, out);
   fwrite(&cg->fmt, sizeof(uint8_t), 1, out);
   fwrite(&cg->n, sizeof(uint64_t), 1, out);
@@ -140,9 +141,9 @@ typedef struct cgfile_t {
   int n;                        /* number of samples read */
 } cgfile_t;
 
-static inline cgfile_t open_cgfile(const char *fname) {
+static inline cgfile_t open_cgfile(char *fname) { /* for read */
   cgfile_t cgf = {0};
-  cgf.fh = gzopen(fname, "rb");
+  cgf.fh = wzopen(fname);
   cgf.n = 0;
   return cgf;
 }
@@ -198,6 +199,43 @@ static inline cgdata_v* read_cgs(cgfile_t *cgf, int64_t beg, int64_t end) {
     }
   }
   return cgs;
+}
+
+static inline uint32_t compressMU32(uint64_t M, uint64_t U) {
+  /* compress the M and U to 32-bit  */
+  if (M > 0xffff || U > 0xffff) {
+    uint64_t tmp;
+    int im = 0; tmp=M; while(tmp>>16) { tmp>>=1; ++im; }
+    int iu = 0; tmp=U; while(tmp>>16) { tmp>>=1; ++iu; }
+    im = (im>iu ? im : iu);
+    M>>=im; U>>=im;
+  }
+  return (uint32_t) (M<<16|U);
+}
+
+static inline uint64_t sumMUpair(uint64_t MU1, uint64_t MU2) {
+  uint64_t M = (MU1>>32) + (MU2>>32);
+  uint64_t U = (MU1&0xffffffff) + (MU2&0xffffffff);
+  if (M > 0xffffffff || U > 0xffffffff) {
+    uint64_t tmp;
+    int im = 0; tmp=M; while(tmp>>32) { tmp>>=1; ++im; }
+    int iu = 0; tmp=U; while(tmp>>32) { tmp>>=1; ++iu; }
+    im = (im>iu ? im : iu);
+    M>>=im; U>>=im;
+  }
+  return (M<<32|U);
+}
+
+static inline uint64_t MUbinarize(uint64_t MU) {
+  uint64_t M = MU>>32;
+  uint64_t U = MU&0xffffffff;
+  if (M==0 && U==0) {
+    return 0;
+  } else if (M>=U) {
+    return (1ul<<32);
+  } else {
+    return 1ul;
+  }
 }
 
 #endif /* _TBMATE_H */

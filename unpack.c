@@ -22,18 +22,6 @@ static int usage() {
   return 1;
 }
 
-static uint32_t compressMU32(uint64_t M, uint64_t U) {
-  /* compress the M and U to 32-bit  */
-  if (M > 0xffff || U > 0xffff) {
-    uint64_t tmp;
-    int im = 0; tmp=M; while(tmp>>16) { tmp>>=1; ++im; }
-    int iu = 0; tmp=U; while(tmp>>16) { tmp>>=1; ++iu; }
-    im = (im>iu ? im : iu);
-    M>>=im; U>>=im;
-  }
-  return (uint32_t) (M<<16|U);
-}
-
 static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
   switch (cg->fmt) {
   case '0': {
