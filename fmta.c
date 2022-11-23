@@ -10,7 +10,7 @@ void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
     /* either not the same as before or reach block size max */
     if ((l != 0 && u != u0) || l+2 >= 1<<15) {
       s = realloc(s, n+3);
-      s[n] = u0;
+      s[n] = u0+'0';
       *((uint16_t*) (s+n+1)) = l;
       n += 3;
       l = 1;
@@ -21,7 +21,7 @@ void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
   }
   /* the last rle */
   s = realloc(s, n+3);
-  s[n] = u0;
+  s[n] = u0+'0';
   *((uint16_t*) (s+n+1)) = l;
   n += 3;
   if (cg->n>>3 > n) {

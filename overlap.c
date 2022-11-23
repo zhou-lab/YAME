@@ -95,7 +95,7 @@ static cgdata_t read_cg2fmt0(cgfile_t *cgf) {
     cg.s = calloc((cg.n>>3)+1, 1); size_t sum;
     for (i=0, sum=0; i<n_rle/3; ++i) {
       uint16_t l = *((uint16_t*) (s_rle+i*3+1));
-      if (s_rle[i*3] == 1) {
+      if (s_rle[i*3] == '1') {
         size_t j;
         for(j=sum; j<sum+l; ++j) {
           cg.s[j>>3] |= (1<<(j&0x7));
