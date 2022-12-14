@@ -31,7 +31,7 @@ cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cgdata_t *cg = calloc(sizeof(cgdata_t),1);
@@ -76,8 +76,6 @@ void fmt4_compress(cgdata_t *cg) {
     if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
     s[n++] = ((1<<31) | l);
   }
-  fprintf(stdout, "%u\n", s[0]);
-  fprintf(stdout, "%u\n", s[1]);
   
   free(cg->s);
   cg->s = (uint8_t*) s;
@@ -89,7 +87,7 @@ void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
   uint32_t *s0 = (uint32_t*) cg->s;
-  float_t *s = calloc(m, sizeof(float_t));
+  float_t *s = realloc(expanded->s, m*sizeof(float_t));
 
   for(i=0; i< cg->n>>2; ++i) {
     if (s0[i] >> 31) {

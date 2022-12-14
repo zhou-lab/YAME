@@ -46,57 +46,59 @@ int main_pack(int argc, char *argv[]) {
     }
   }
 
-  if (optind + 2 > argc) { 
+  if (optind + 1 > argc) { 
     usage(); 
-    wzfatal("Please supply input and output file.\n"); 
+    wzfatal("Please supply input file.\n"); 
   }
 
+
+  char *fname_out = NULL;
+  if (argc >= optind + 2)
+    fname_out = strdup(argv[optind+1]);
+  
   cgdata_t *cg;
   switch (fmt) {
   case 'a': {
     cg = fmt0_read_uncompressed(argv[optind], verbose);
     fmta_tryBinary2byteRLE_ifsmaller(cg);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
     break;
   }
   case '0': {
     cg = fmt0_read_uncompressed(argv[optind], verbose);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
     break;
   }
   case '1': {
     cg = fmt1_read_uncompressed(argv[optind], verbose);
     fmt1_compress(cg);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
     break;
   }
-    /* case '2': process_2quaternaryVec(argv[optind], argv[optind+1]); break; */
+    /* case '2': process_2quaternaryVec(argv[optind], fname_out); break; */
   case '3': {
     cg = fmt3_read_uncompressed(argv[optind], verbose);
     fmt3_compress(cg);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
     break;
   }
   case '4': {
     cg = fmt4_read_uncompressed(argv[optind], verbose);
     fmt4_compress(cg);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
     break;
   }
   case '5': {
     cg = fmt5_read_uncompressed(argv[optind], verbose);
     fmt5_compress(cg);
-    cgdata_write(argv[optind+1], cg, verbose);
-    free_cgdata(cg);
+    break;
+  }
+  case '6': {
+    cg = fmt6_read_uncompressed(argv[optind], verbose);
+    fmt6_compress(cg);
     break;
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
   }
+  cgdata_write(fname_out, cg, "wb", verbose);
+  free_cgdata(cg);
+
+  if (fname_out) free(fname_out);
   return 0;
 }
 

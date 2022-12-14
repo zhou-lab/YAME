@@ -9,13 +9,14 @@ cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
   uint64_t n = 0, m=1<<22;
   uint8_t *s = calloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
-    s[n++] = line[0]-'0';
+    if (line[0] == '0' || line[0] == '1') s[n++] = line[0]-'0';
+    else s[n++] = 2;
     if (n+2>m) { m<<=1; s=realloc(s,m); }
   }
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cgdata_t *cg = calloc(sizeof(cgdata_t),1);
@@ -84,7 +85,7 @@ void fmt5_compress(cgdata_t *cg) {
 
 void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0;
-  uint8_t *s = calloc(m, sizeof(uint8_t));
+  uint8_t *s = realloc(expanded->s, m*sizeof(uint8_t));
 
   for (i=0; i<cg->n; ++i) {
     if (cg->s[i] & (1<<7)) {

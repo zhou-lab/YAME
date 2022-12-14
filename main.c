@@ -44,6 +44,8 @@ int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
 int main_dim(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
+int main_chunkchar(int argc, char *argv[]);
+int main_rowops(int argc, char *argv[]);
 
 static int usage()
 {
@@ -59,6 +61,8 @@ static int usage()
   fprintf(stderr, "     dim          data dimension\n");
   fprintf(stderr, "     split        split mult-sample data to single-sample data\n");
   fprintf(stderr, "     chunk        chunk data to smaller fragments\n");
+  fprintf(stderr, "     chunkchar    chunk txt to smaller fragments\n");
+  fprintf(stderr, "     rowops       perform row operations\n");
   fprintf(stderr, "\n");
 
   return 1;
@@ -73,6 +77,8 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   else if (strcmp(argv[1], "dim") == 0) ret = main_dim(argc-1, argv+1);
   else if (strcmp(argv[1], "chunk") == 0) ret = main_chunk(argc-1, argv+1);
+  else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);
+  else if (strcmp(argv[1], "rowops") == 0) ret = main_rowops(argc-1, argv+1);
   /* else if (strcmp(argv[1], "bundle") == 0) ret = main_bundle(argc-1, argv+1); */
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
