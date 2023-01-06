@@ -53,7 +53,7 @@ function testEnrichment0() (     # this spawn a subshell
         >&2 echo "Packing universe to $TMPFDR/$(basename $uni).cg"
         >&2 echo "To save time, please provide .cg file (converted using bed2cg)"
         bed2cg $ref $uni | gzip -c >$TMPFDR/$(basename $uni).cg.gz
-        uni=$TMPFDR/$(basename $uni).cg
+        uni=$TMPFDR/$(basename $uni).cg.gz
       fi
       uni_opt="-u $uni"
     fi
