@@ -35,7 +35,7 @@ int main_split(int argc, char *argv[]) {
 
   char **snames = NULL; int snames_n = 0;
   if (fname_snames) {
-    gzFile fh = wzopen(fname_snames);
+    gzFile fh = wzopen(fname_snames, 1);
     char *line = NULL;
     char **fields; int nfields;
     while (gzFile_read_line(fh, &line)>0) {

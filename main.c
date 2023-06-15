@@ -46,6 +46,7 @@ int main_dim(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
 int main_chunkchar(int argc, char *argv[]);
 int main_rowops(int argc, char *argv[]);
+int main_index(int argc, char *argv[]);
 
 static int usage()
 {
@@ -59,6 +60,7 @@ static int usage()
   fprintf(stderr, "     overlap      compute overlap of cg files\n");
   fprintf(stderr, "     unpack       unpack data\n");
   fprintf(stderr, "     dim          data dimension\n");
+  fprintf(stderr, "     index        index samples\n");
   fprintf(stderr, "     split        split mult-sample data to single-sample data\n");
   fprintf(stderr, "     chunk        chunk data to smaller fragments\n");
   fprintf(stderr, "     chunkchar    chunk txt to smaller fragments\n");
@@ -76,6 +78,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   else if (strcmp(argv[1], "dim") == 0) ret = main_dim(argc-1, argv+1);
+  else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
   else if (strcmp(argv[1], "chunk") == 0) ret = main_chunk(argc-1, argv+1);
   else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);
   else if (strcmp(argv[1], "rowops") == 0) ret = main_rowops(argc-1, argv+1);

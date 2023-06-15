@@ -68,7 +68,7 @@ int main_chunk(int argc, char *argv[]) {
     free(cg2.s); free(cg.s);
   }
   free(outdir);
-  gzclose(cgf.fh);
+  bgzf_close(cgf.fh);
   
   return 0;
 }

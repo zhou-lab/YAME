@@ -5,7 +5,6 @@ static int usage() {
   fprintf(stderr, "Usage: kycg dim [options] <in.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -14,10 +13,9 @@ static int usage() {
 
 int main_dim(int argc, char *argv[]) {
 
-  int c, verbose = 0;
+  int c;
   while ((c = getopt(argc, argv, "vh"))>=0) {
     switch (c) {
-    case 'v': verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }

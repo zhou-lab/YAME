@@ -1,5 +1,5 @@
-#ifndef _TBMATE_H
-#define _TBMATE_H
+#ifndef _KYCG_H
+#define _KYCG_H
 
 #include <stdint.h>
 #include <math.h>
@@ -14,6 +14,13 @@
 #include "wzmisc.h"
 #include "wzmisc.h"
 #include "wzbed.h"
+#include "bgzf.h"
+#include "khash.h"
+
+KHASH_MAP_INIT_STR(index, int64_t)  
+#define index_t khash_t(index)
+#define destroyIndex(idx) kh_destroy(index, idx)
+#define DELIMITER "\t"
 
 #define PACKAGE_VERSION "0.1.20221020"
 #define CGSIG 266563789635
@@ -26,6 +33,31 @@ typedef struct cgdata_t {
 } cgdata_t;
 
 DEFINE_VECTOR(cgdata_v, cgdata_t)
+
+/*************************************
+ ** Loads an index from a file.      **
+ *************************************
+ * The index file should be in the following format:
+ *     sample1\tindex1
+ *     sample2\tindex2
+ *     ...
+ *
+ * @param fname_cg The base filename for the index file.
+ * @return A pointer to the loaded index hash table (index_t) if successful, or NULL on failure.
+ *         The caller is responsible for freeing the memory.
+ */
+index_t* loadIndex(char* fname_cg);
+
+/*************************************
+ ** Retrieves the value for a given   **
+ ** sample name from the index.       **
+ *************************************
+ *
+ * @param index The index hash table (index_t).
+ * @param sample_name The sample name to retrieve the index for.
+ * @return The index value for the given sample name if found, or -1 if not found.
+ */
+int64_t getIndex(index_t* index, char* sample_name);
 
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   uint64_t n = 0;
@@ -119,31 +151,18 @@ static inline void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode,
   }
 }
 
-/* static inline cgdata_t* read_cg(const char *fname) { */
-/*   FILE *fh = fopen(fname,"rb"); */
-
-/*   cgdata_t *cg = calloc(sizeof(cgdata_t),1); */
-
-/*   uint64_t sig; */
-/*   fread(&sig, sizeof(uint64_t), 1, fh); */
-/*   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n"); */
-/*   fread(&cg->fmt, sizeof(char), 1, fh); */
-/*   fread(&cg->n, sizeof(uint64_t), 1, fh); */
-/*   cg->s = malloc(cgdata_nbytes(cg)); */
-/*   fread(cg->s, 1, cgdata_nbytes(cg), fh); */
-/*   /\* fprintf(stdout, "0s[0]: %u\n", cg->s[0]); *\/ */
-/*   fclose(fh); */
-/*   return cg; */
-/* } */
-
 typedef struct cgfile_t {
-  gzFile fh;
+  BGZF *fh;
   int n;                        /* number of samples read */
 } cgfile_t;
 
 static inline cgfile_t open_cgfile(char *fname) { /* for read */
   cgfile_t cgf = {0};
-  cgf.fh = wzopen(fname);
+  cgf.fh = bgzf_open(fname, "r");
+  if (cgf.fh == NULL) {
+    fprintf(stderr, "Error opening file %s\n", fname);
+    exit(1);
+  }
   cgf.n = 0;
   return cgf;
 }
@@ -151,22 +170,53 @@ static inline cgfile_t open_cgfile(char *fname) { /* for read */
 static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
   cg->n = 0;
   uint64_t sig;
-  if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return 0;
+  int64_t size;
+  if (cgf->fh->block_length == 0) bgzf_read_block(cgf->fh); /* somehow this is needed for concat'ed bgzipped files */
+  size=bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
+  if(size != sizeof(uint64_t)) return 0;
   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  gzfread(&(cg->fmt), sizeof(char), 1, cgf->fh);
-  gzfread(&(cg->n), sizeof(uint64_t), 1, cgf->fh);
+  bgzf_read(cgf->fh, &(cg->fmt), sizeof(char));
+  bgzf_read(cgf->fh, &(cg->n), sizeof(uint64_t));
   cg->s = realloc(cg->s, cgdata_nbytes(cg));
-  gzfread(cg->s, 1, cgdata_nbytes(cg), cgf->fh);
+  bgzf_read(cgf->fh, cg->s, cgdata_nbytes(cg));
   cg->compressed = 1;
   cgf->n++;
   return 1;
 }
+
+/* static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) { */
+/*   cg->n = 0; */
+/*   uint64_t sig; */
+/*   if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return 0; */
+/*   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n"); */
+/*   gzfread(&(cg->fmt), sizeof(char), 1, cgf->fh); */
+/*   gzfread(&(cg->n), sizeof(uint64_t), 1, cgf->fh); */
+/*   cg->s = realloc(cg->s, cgdata_nbytes(cg)); */
+/*   gzfread(cg->s, 1, cgdata_nbytes(cg), cgf->fh); */
+/*   cg->compressed = 1; */
+/*   cgf->n++; */
+/*   return 1; */
+/* } */
 
 static inline cgdata_t read_cg(cgfile_t *cgf) {
   cgdata_t cg = {0};
   if (!read_cg_(cgf, &cg)) return cg;
   return cg;
 }
+
+/* static inline int read_cg_dry(cgfile_t *cgf) { */
+/*   uint64_t sig; */
+/*   if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) { return 0; } */
+/*   if(sig != CGSIG) { wzfatal("Unmatched signature. File corrupted.\n"); } */
+/*   char fmt; */
+/*   gzfread(&fmt, sizeof(char), 1, cgf->fh); */
+/*   uint64_t n; */
+/*   gzfread(&n, sizeof(uint64_t), 1, cgf->fh); */
+/*   //fprintf(stdout, "%d\n", n); */
+/*   //fflush(stdout); */
+/*   gzseek(cgf->fh, n, SEEK_CUR); */
+/*   return n; */
+/* } */
 
 /* this function is memory intensive if there are many samples */
 static inline cgdata_v* read_cg_all(cgfile_t *cgf) {
@@ -199,6 +249,28 @@ static inline cgdata_v* read_cgs(cgfile_t *cgf, int64_t beg, int64_t end) {
     }
   }
   return cgs;
+}
+
+static inline cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n) {
+    cgdata_v *cgs = init_cgdata_v(10);
+    cgdata_t cg = {0};
+
+    for (int i = 0; i < n; i++) {
+        int64_t index = indices[i];
+        assert(index >= 0);
+
+        // Reposition the file pointer using bgzf_seek
+        assert(bgzf_seek(cgf->fh, index, SEEK_SET) == 0);
+        read_cg_(cgf, &cg);
+        if (cg.n > 0) {
+            (*next_ref_cgdata_v(cgs)) = cg;
+            cg.s = NULL;
+        } else {
+            break;
+        }
+    }
+
+    return cgs;
 }
 
 static inline uint32_t compressMU32(uint64_t M, uint64_t U) {
@@ -238,4 +310,4 @@ static inline uint64_t MUbinarize(uint64_t MU) {
   }
 }
 
-#endif /* _TBMATE_H */
+#endif /* _KYCG_H */

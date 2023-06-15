@@ -84,7 +84,7 @@ typedef struct bed_file_t {
 static inline bed_file_t *init_bed_file(char *file_path) {
   bed_file_t *bed = calloc(1, sizeof(bed_file_t));
   bed->file_path = strdup(file_path);
-  bed->fh = wzopen(bed->file_path);
+  bed->fh = wzopen(bed->file_path, 1);
   bed->targets = 0;
   bed->line = NULL;
   bed->seqname = NULL;

@@ -5,17 +5,24 @@
 #include "wzmisc.h"
 #include "wvec.h"
 
-/*******************************
- ** Open file for reading and **
- ** error handling            **
- *******************************/
-static inline gzFile wzopen(char *path) {
+#define wzclose gzclose
+
+/**
+ * Opens a file for reading, whether it is a plain text file or a gzipped file.
+ *
+ * @param path The path to the file to be opened.
+ *             Use "-" to read from standard input.
+ * @fatal if non-zero, the function will exit upon failure
+ * @return A gzFile handle for the opened file.
+ * @throws An error message and exits the program if the file cannot be opened.
+ */
+static inline gzFile wzopen(char *path, int fatal) {
   gzFile fh;
   if (strcmp(path, "-") == 0) {
     fh = gzdopen(fileno(stdin), "r");
   } else {
     fh = gzopen(path, "r");
-    if (!fh) {
+    if (!fh && fatal) {
       fprintf(stderr, "[%s:%d] Fatal, cannot open file: %s\n",
               __func__, __LINE__, path);
       fflush(stderr);
@@ -25,6 +32,14 @@ static inline gzFile wzopen(char *path) {
   return fh;
 }
 
+/**
+ * Opens a file for writing.
+ *
+ * @param path The path to the file to be opened.
+ *             Use NULL to write to standard output.
+ * @return A FILE pointer for the opened file.
+ * @throws An error message and exits the program if the file cannot be opened.
+ */
 static inline FILE *wzopen_out(char *path) {
    FILE *out;
    if (path) {
@@ -41,19 +56,17 @@ static inline FILE *wzopen_out(char *path) {
    return out;
 }
 
-#define wzclose gzclose
-
-/*****************************
- ** Read one line from file **
- *****************************
-
- * Usage:
- * char *line;
- * gzFile_read_line(fh, &line);
+/**
+ * Reads a line from a gzFile handle.
  *
- * "*s" is either NULL or 
- * previously allocated c-string
- * returns 1 if hitting \n 0 if EOF */
+ * @usage char *line; gzFile_read_line(fh, &line); free(line);
+ * @param fh The gzFile handle to read from.
+ * @param s  A pointer to a character pointer that will hold the read line.
+ *           Either NULL or previously allocated c-string
+ *           The memory for the line is allocated by the function and should be freed by the caller.
+ * @return 1 if a line is successfully read, 0 if end-of-file is reached.
+ * @throws An error message and exits the program if the string pointer is NULL.
+ */
 static inline int gzFile_read_line(gzFile fh, char **s) {
 
   if (s == NULL) {
@@ -77,6 +90,12 @@ static inline int gzFile_read_line(gzFile fh, char **s) {
   return 0;                     /* should not come here */
 }
 
+/**
+ * Counts the number of lines in a gzFile handle.
+ *
+ * @param fh The gzFile handle to count lines in.
+ * @return The number of lines in the file.
+ */
 static inline int gzFile_count_lines(gzFile fh) {
 
   int n = 0;
@@ -88,12 +107,17 @@ static inline int gzFile_count_lines(gzFile fh) {
   return 0;                     /* should not come here */
 }
 
-/****************************
- ** Get one field by index **
- ****************************
- field_index is 0-based
- result creates a new allocated object,
- return 0 if there are not enough fields, 1 if success */
+
+/**
+ * Retrieves a field from a line based on its index and separator.
+ *
+ * @param line         The input line to extract the field from.
+ * @param field_index  The index of the desired field (0-based).
+ * @param sep          The separator character(s) used to split the line into fields.
+ * @param field        A pointer to a character pointer that will hold the extracted field.
+ *                     The memory for the field is allocated by the function and should be freed by the caller.
+ * @return 1 if the field is successfully retrieved, 0 if there are not enough fields.
+ */
 static inline int line_get_field(const char *line, int field_index, const char *sep, char **field) {
 
   char *working = calloc(strlen(line) + 1, sizeof(char));
@@ -124,6 +148,32 @@ Usage:
    free_fields(fields, nfields);
 
    Note: separators/delimiters are not merged - the most likely use-case. */
+
+/**
+ * Retrieves all fields from a line based on a separator.
+ *
+ * @param line     The input line to extract the fields from.
+ * @param sep      The separator character(s) used to split the line into fields.
+ * @param fields   A pointer to a character pointer array that will hold the extracted fields.
+ *                 The memory for the fields and array is allocated by the function and should be freed by the caller.
+ * @param nfields  A pointer to an integer that will store the number of extracted fields.
+ *
+ * Example Usage:
+ * ```c
+ * char **fields;
+ * int nfields;
+ * const char *line = "John,Doe,42";
+ * line_get_fields(line, ",", &fields, &nfields);
+ *
+ * // Access the extracted fields
+ * for (int i = 0; i < nfields; i++) {
+ *     printf("Field %d: %s\n", i, fields[i]);
+ * }
+ *
+ * // Free the memory allocated by line_get_fields
+ * free_fields(fields, nfields);
+ * ```
+ */
 #define free_fields(fds, nfds) free_char_array(fds, nfds)
 static inline void line_get_fields(const char *line, const char *sep, char ***fields, int *nfields) {
 
@@ -144,7 +194,37 @@ static inline void line_get_fields(const char *line, const char *sep, char ***fi
   free(working);
 }
 
-
+/**
+ * Retrieves a specific number of fields from a line based on a separator.
+ *
+ * @param line     The input line to extract the fields from.
+ * @param sep      The separator character(s) used to split the line into fields.
+ * @param fields   A pointer to a character pointer array that will hold the extracted fields.
+ *                 The memory for the fields and array is allocated by the function and should be freed by the caller.
+ * @param nfields  A pointer to an integer that specifies the expected number of extracted fields.
+ *                 If nfields < 0, it will be set to the actual number of extracted fields.
+ * @param aux      A pointer to a character pointer that will store auxiliary memory for parsing.
+ *                 The memory is allocated by the function and should be freed by the caller.
+ * @throws An error message and exits the program if the number of fields extracted does not match the expected number.
+ *
+ * Example Usage:
+ * ```c
+ * char **fields;
+ * int nfields = 3;
+ * const char *line = "John,Doe,42";
+ * char *aux = NULL;
+ * line_get_fields2(line, ",", &fields, &nfields, &aux);
+ *
+ * // Access the extracted fields
+ * for (int i = 0; i < nfields; i++) {
+ *     printf("Field %d: %s\n", i, fields[i]);
+ * }
+ *
+ * // Free the memory allocated by line_get_fields2
+ * free_fields(fields, nfields);
+ * free(aux);
+ * ```
+ */
 static inline void line_get_fields2(
   const char *line, const char *sep, char ***fields, int *nfields, char **aux) {
 

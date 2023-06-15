@@ -2,7 +2,7 @@
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
 cgdata_t* fmt6_read_uncompressed(char *fname, int verbose) {
-  gzFile fh = wzopen(fname);
+  gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<10;
   uint64_t *s = calloc(m, sizeof(uint64_t));

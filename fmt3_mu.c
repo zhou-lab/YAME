@@ -14,7 +14,7 @@ static int is_nonnegative_int(char *s) {
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
 cgdata_t* fmt3_read_uncompressed(char *fname, int verbose) {
-  gzFile fh = wzopen(fname);
+  gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<10;
   uint64_t *s = calloc(m, sizeof(uint64_t));
@@ -46,10 +46,10 @@ cgdata_t* fmt3_read_uncompressed(char *fname, int verbose) {
 }
 
 /* compressed: assume little endian, TODO: use endian swap
-   2byte | U=M=0 -------------- = run len (14 bit) + 0 2bit
-   1byte | U,M in [0,7] ------- = M (3bit) | U (3bit) + 1 2bit
-   2byte | U,M in [0,127]------ = M (7bit) | U (7bit) + 2 2bit
-   8byte | M,U in [128,2**31]-- = M (31bit) | U (31bit) + 3 2bit
+   2byte | U=M=0 -------------- = run len (14 bit) + 0 (2bit)
+   1byte | U,M in [0,7] ------- = M (3bit) | U (3bit) + 1 (2bit)
+   2byte | U,M in [0,127]------ = M (7bit) | U (7bit) + 2 (2bit)
+   8byte | M,U in [128,2**31]-- = M (31bit) | U (31bit) + 3 (2bit)
 */
 void fmt3_compress(cgdata_t *cg) {
   uint8_t *s = NULL;

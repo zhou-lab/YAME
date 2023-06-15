@@ -134,8 +134,8 @@ int main_overlap(int argc, char *argv[]) {
   if (cg_fea.n != cg_qry.n) {
     wzfatal("Feature (%"PRId64") and query (%"PRId64") has different lengths.", cg_fea.n, cg_qry.n);
   }
-  gzclose(cgf_fea.fh);
-  gzclose(cgf_qry.fh);
+  bgzf_close(cgf_fea.fh);
+  bgzf_close(cgf_qry.fh);
 
   size_t m_uni = 0;
   if (upath != NULL) {
@@ -148,7 +148,7 @@ int main_overlap(int argc, char *argv[]) {
     bit_mask(cg_qry.s, cg_uni.s, cg_uni.n);
     m_uni = bit_count(cg_uni);
     free(cg_uni.s); free(upath);
-    gzclose(cgf_uni.fh);
+    bgzf_close(cgf_uni.fh);
   } else { m_uni = cg_fea.n; }
   
   /* FILE *fh_fea = fopen(argv[optind++], "rb"); int64_t n_fea; */

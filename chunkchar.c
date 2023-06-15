@@ -39,7 +39,7 @@ int main_chunkchar(int argc, char *argv[]) {
   strcat(outdir, "_chunks");
   mkdir(outdir, 0777);
 
-  gzFile fh = wzopen(fname);
+  gzFile fh = wzopen(fname, 1);
   char **lines = NULL; uint64_t n = 0;
   char *line = NULL;
   while (gzFile_read_line(fh, &line) > 0) {
