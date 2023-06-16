@@ -130,26 +130,7 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
   cg_sliced->fmt = cg->fmt;
 }
 
-static inline void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
-
-  FILE *out;
-  if (fname_out)
-    out = fopen(fname_out, mode);
-  else
-    out = stdout;
-
-  if (!cg->compressed) recompress(cg);
-  uint64_t sig = CGSIG; fwrite(&sig, sizeof(uint64_t), 1, out);
-  fwrite(&cg->fmt, sizeof(uint8_t), 1, out);
-  fwrite(&cg->n, sizeof(uint64_t), 1, out);
-  fwrite(cg->s, 1, cgdata_nbytes(cg), out);
-  fclose(out);
-
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] Stored as Format %c\n", __func__, __LINE__, cg->fmt);
-    fflush(stderr);
-  }
-}
+void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
 
 typedef struct cgfile_t {
   BGZF *fh;
@@ -158,7 +139,11 @@ typedef struct cgfile_t {
 
 static inline cgfile_t open_cgfile(char *fname) { /* for read */
   cgfile_t cgf = {0};
-  cgf.fh = bgzf_open(fname, "r");
+  if (strcmp(fname, "-")==0) {
+    cgf.fh = bgzf_dopen(fileno(stdin), "r");
+  } else {
+    cgf.fh = bgzf_open(fname, "r");
+  }
   if (cgf.fh == NULL) {
     fprintf(stderr, "Error opening file %s\n", fname);
     exit(1);
@@ -172,7 +157,7 @@ static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
   uint64_t sig;
   int64_t size;
   if (cgf->fh->block_length == 0) bgzf_read_block(cgf->fh); /* somehow this is needed for concat'ed bgzipped files */
-  size=bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
+  size = bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
   if(size != sizeof(uint64_t)) return 0;
   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
   bgzf_read(cgf->fh, &(cg->fmt), sizeof(char));

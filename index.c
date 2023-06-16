@@ -14,7 +14,7 @@ index_t* loadIndex(char* fname_cg) {
 
   gzFile file = wzopen(fname_index, 0);
   if (file == NULL) {
-    printf("Failed to open index file\n");
+    /* fprintf(stderr, "Failed to open index file: %s\n", fname_index); */
     free(fname_index);
     return NULL;
   }

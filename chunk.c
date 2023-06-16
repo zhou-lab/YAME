@@ -60,8 +60,8 @@ int main_chunk(int argc, char *argv[]) {
       char *tmp = malloc(strlen(outdir) + 1000);
       sprintf(tmp, "%s/%lu.cg", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);
-      if (k) cgdata_write(tmp, &cg3, "ab", verbose);
-      else cgdata_write(tmp, &cg3, "wb", verbose);
+      if (k) cgdata_write(tmp, &cg3, "a", verbose);
+      else cgdata_write(tmp, &cg3, "w", verbose);
       free(cg3.s);
       free(tmp);
     }

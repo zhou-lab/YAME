@@ -87,6 +87,11 @@ extern "C" {
 	 */
 	BGZF* bgzf_open(const char* path, const char *mode);
 
+  /**
+	 * Open the specified file for reading or writing or appending.
+	 */
+  BGZF *bgzf_open2(const char *path, const char *mode);
+
 	/**
 	 * Close the BGZF and free all associated resources.
 	 *

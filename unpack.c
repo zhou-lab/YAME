@@ -197,13 +197,14 @@ int main_unpack(int argc, char *argv[]) {
 
   // Extract the requested sample names
   vector_t* sample_names = vector_init();
-
-  // Add the specific samples provided as additional arguments
-  for (int i = optind + 1; i < argc; i++) {
-    char* sample_name = argv[i];
-    int64_t sample_idx = getIndex(idx, sample_name);
-    if (sample_idx != -1) {
-      vector_push(sample_names, sample_name);
+  if (idx) {
+    // Add the specific samples provided as additional arguments
+    for (int i = optind + 1; i < argc; i++) {
+      char* sample_name = argv[i];
+      int64_t sample_idx = getIndex(idx, sample_name);
+      if (sample_idx != -1) {
+        vector_push(sample_names, sample_name);
+      }
     }
   }
 

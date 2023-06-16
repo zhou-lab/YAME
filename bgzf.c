@@ -160,6 +160,30 @@ BGZF *bgzf_open(const char *path, const char *mode)
 	return fp;
 }
 
+BGZF *bgzf_open2(const char *path, const char *mode)
+{
+	BGZF *fp = 0;
+	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
+	if (strchr(mode, 'r') || strchr(mode, 'R')) {
+		_bgzf_file_t fpr;
+		if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
+		fp = bgzf_read_init();
+		fp->fp = fpr;
+	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
+		FILE *fpw;
+		if ((fpw = fopen(path, "w")) == 0) return 0;
+		fp = bgzf_write_init(mode2level(mode));
+		fp->fp = fpw;
+	} else if (strchr(mode, 'a') || strchr(mode, 'A')) {
+		FILE *fpw;
+		if ((fpw = fopen(path, "a")) == 0) return 0;
+		fp = bgzf_write_init(mode2level(mode));
+		fp->fp = fpw;
+  }
+	fp->is_be = ed_is_big();
+	return fp;
+}
+
 BGZF *bgzf_dopen(int fd, const char *mode)
 {
 	BGZF *fp = 0;
