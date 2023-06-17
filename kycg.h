@@ -22,7 +22,7 @@ KHASH_MAP_INIT_STR(index, int64_t)
 #define destroyIndex(idx) kh_destroy(index, idx)
 #define DELIMITER "\t"
 
-#define PACKAGE_VERSION "0.1.20221020"
+#define PACKAGE_VERSION "0.1.20230616"
 #define CGSIG 266563789635
 
 typedef struct cgdata_t {
@@ -34,6 +34,23 @@ typedef struct cgdata_t {
 
 DEFINE_VECTOR(cgdata_v, cgdata_t)
 
+/**
+ * Extracts the index filename from the given filename of the form "fname.cg".
+ *
+ * @param fname_cg The base filename from which to extract the index filename.
+ * @return A dynamically allocated string containing the extracted index filename.
+ *         The caller is responsible for freeing the memory using `free()`.
+ *         Returns NULL if the input filename is NULL or does not match the expected format.
+ *
+ * Example Usage:
+ * ```c
+ * char *fname_index = get_fname_index("data.cg");
+ * printf("Index filename: %s\n", fname_index);
+ * free(fname_index);  // Remember to free the dynamically allocated memory
+ * ```
+ */
+char *get_fname_index(const char *fname_cg);
+
 /*************************************
  ** Loads an index from a file.      **
  *************************************
@@ -42,7 +59,7 @@ DEFINE_VECTOR(cgdata_v, cgdata_t)
  *     sample2\tindex2
  *     ...
  *
- * @param fname_cg The base filename for the index file.
+ * @param fname_index The filename for the index file.
  * @return A pointer to the loaded index hash table (index_t) if successful, or NULL on failure.
  *         The caller is responsible for freeing the memory.
  */
@@ -57,7 +74,7 @@ index_t* loadIndex(char* fname_cg);
  * @param sample_name The sample name to retrieve the index for.
  * @return The index value for the given sample name if found, or -1 if not found.
  */
-int64_t getIndex(index_t* index, char* sample_name);
+int64_t getIndex(index_t* index, const char* sample_name);
 
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   uint64_t n = 0;

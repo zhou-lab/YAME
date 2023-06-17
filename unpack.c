@@ -193,7 +193,8 @@ int main_unpack(int argc, char *argv[]) {
   }
 
   cgfile_t cgf = open_cgfile(argv[optind]);
-  index_t *idx = loadIndex(argv[optind]);
+  char *fname_index = get_fname_index(argv[optind]);
+  index_t *idx = loadIndex(fname_index);
 
   // Extract the requested sample names
   vector_t* sample_names = vector_init();
@@ -202,14 +203,19 @@ int main_unpack(int argc, char *argv[]) {
     for (int i = optind + 1; i < argc; i++) {
       char* sample_name = argv[i];
       int64_t sample_idx = getIndex(idx, sample_name);
-      if (sample_idx != -1) {
+      if (sample_idx == -1) {
+        fprintf(stderr, "Cannot find sample %s in index.\n", sample_name);
+        fflush(stderr);
+        exit(1);
+      } else {
         vector_push(sample_names, sample_name);
       }
     }
   }
 
   // Process the requested samples
-  if (sample_names->size > 0) {
+  if (sample_names->size > 0) { /* specific samples */
+    
     int64_t* indices = malloc(sample_names->size * sizeof(int64_t));
     for (unsigned i = 0; i < sample_names->size; i++) {
       indices[i] = getIndex(idx, vector_get(sample_names, i));
@@ -220,17 +226,23 @@ int main_unpack(int argc, char *argv[]) {
     uint64_t i;
     for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
     free_cgdata_v(cgs);
-  } else if (beg >= 0 || end >= 0 || read_all) {
+    
+  } else if (beg >= 0 || end >= 0 || read_all) { /* all samples */
+
+    /* TODO: use idx instead of running through the data blocks */
     cgdata_v *cgs = read_cgs(&cgf, beg, end);
     if (chunk) print_cgs_chunk(cgs, chunk_size, printfmt3);
     else print_cgs(cgs, printfmt3);
     uint64_t i;
     for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
     free_cgdata_v(cgs);
-  } else {
+    
+  } else {                      /* head -1 */
+    
     cgdata_t cg = read_cg(&cgf);
     print_cg(&cg, printfmt3);
     free(cg.s);
+    
   }
   bgzf_close(cgf.fh);
 
