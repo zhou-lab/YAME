@@ -2,7 +2,7 @@
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "kycg.h"
+#include "cgfile.h"
 #include "vector.h"
 #include "snames.h"
 
@@ -77,16 +77,16 @@ static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
   }
 }
 
-static void print_cg(cgdata_t *cg, int printfmt3) {
+/* static void print_cg(cgdata_t *cg, int printfmt3) { */
 
-  cgdata_t expanded = {0};
-  decompress(cg, &expanded);
-  uint64_t i;
-  for (i=0; i<expanded.n; ++i) {
-    print_cg1(&expanded, i,printfmt3); fputc('\n', stdout);
-  }
-  free(expanded.s);
-}
+/*   cgdata_t expanded = {0}; */
+/*   decompress(cg, &expanded); */
+/*   uint64_t i; */
+/*   for (i=0; i<expanded.n; ++i) { */
+/*     print_cg1(&expanded, i,printfmt3); fputc('\n', stdout); */
+/*   } */
+/*   free(expanded.s); */
+/* } */
 
 static void print_cgs_chunk(cgdata_v *cgs, uint64_t s, int printfmt3) {
   uint64_t i,m, k, kn = cgs->size;
@@ -132,7 +132,7 @@ static void print_cgs(cgdata_v *cgs, int printfmt3) {
 int main_unpack(int argc, char *argv[]) {
 
   int c, read_all = 0, chunk = 0;
-  int64_t beg = -1, end = -1; int printfmt3 = 0;
+  int printfmt3 = 0;
   uint64_t chunk_size = 1000000; char *fname_snames = NULL;
   int head = -1, tail = -1;
   while ((c = getopt(argc, argv, "cs:H:T:f:ah"))>=0) {
@@ -165,7 +165,7 @@ int main_unpack(int argc, char *argv[]) {
       snames->array[snames->n++] = strdup(argv[i]);
     }
   } else {                      // from a file list
-    snames_t *snames = loadSampleNames(fname_snames);
+    snames = loadSampleNames(fname_snames, 1);
   }
 
   // check if we have index
@@ -178,9 +178,9 @@ int main_unpack(int argc, char *argv[]) {
   // read in the cgs
   cgdata_v *cgs = NULL;
   if (snames->n > 0) {
-    cgs = read_cgs_with_snames(&cgf, snames);
+    cgs = read_cgs_with_snames(&cgf, idx, snames);
   } else if (read_all) {
-    cgs = read_cgs_all(&cgf, beg, end);
+    cgs = read_cgs_all(&cgf);
   } else if (head > 0) {
     read_cgs_from_head(&cgf, head);
   } else if (tail > 0) {

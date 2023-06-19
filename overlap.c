@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "wzmisc.h"
 #include "wzbed.h"
-#include "kycg.h"
+#include "cgfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");

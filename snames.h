@@ -8,7 +8,19 @@ typedef struct {
   char **array;
 } snames_t;
 
-static inline snames_t* loadSampleNames(char* fname_snames) {
+/**
+ * Loads the sample names from a given file.
+ * If the filename is "-", it will read from stdin. 
+ * If the file cannot be opened and the fatal parameter is non-zero, the program will exit with an error message.
+ *
+ * @param fname_snames The name of the file containing the sample names.
+ * @param fatal A flag indicating whether to treat inability to open the file as a fatal error.
+ *              If non-zero and the file cannot be opened, the program will exit with an error message.
+ * @return A pointer to a snames_t structure containing the sample names read from the file.
+ *         If the file cannot be opened and the fatal parameter is zero, NULL is returned.
+ *         If there is an error allocating memory, NULL is returned.
+ */
+static inline snames_t* loadSampleNames(char* fname_snames, int fatal) {
   if (fname_snames == NULL) return NULL;
   gzFile fp;
   if (strcmp(fname_snames, "-") == 0) {
@@ -36,7 +48,7 @@ static inline snames_t* loadSampleNames(char* fname_snames) {
   char *line = NULL;
   while (gzFile_read_line(fp, &line) > 0) {
     char *sname;
-    if (line_get_field(line, 0, DELIMITER, &sname)) {
+    if (line_get_field(line, 0, "\t", &sname)) {
       snames->array = realloc(snames->array, sizeof(*(snames->array)) * (snames->n + 1));
       if (snames->array == NULL) {
         printf("Failed to allocate memory\n");

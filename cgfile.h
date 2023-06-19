@@ -2,6 +2,8 @@
 #define _CGFILE_H
 
 #include "cgdata.h"
+#include "snames.h"
+#include "index.h"
 
 /* cg file for reading, see cgdata_write for writing */
 typedef struct cgfile_t {
@@ -26,6 +28,17 @@ cgfile_t open_cgfile(char *fname);
  * @return A cgdata_t instance with the data read from the file.
  */
 cgdata_t read_cg(cgfile_t *cgf);
+
+/**
+ * Reads a cgdata_t instance from a cgfile_t instance. 
+ * This function is a lower-level utility for reading compressed data from a file.
+ * cg memory will be reallocated.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param cg The cgdata_t instance to store the read data into.
+ * @return 1 if the read operation was successful and there was data to read, 0 if there was no data to read.
+ */
+int read_cg2(cgfile_t *cgf, cgdata_t *cg);
 
 /**
  * Reads cgdata from a specified range in a cgfile_t instance.
@@ -80,10 +93,11 @@ cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n);
  * If any sample name is not found in the index, the program will exit with an error.
  *
  * @param cgf The cgfile_t instance to read from.
+ * @param idx The index of the data to read.
  * @param snames The sample names to read.
  * @return A cgdata_v instance with the data read from the file.
  */
-cgdata_v* read_cgs_with_snames(cgfile_t *cgf, snames_t *snames);
+cgdata_v* read_cgs_with_snames(cgfile_t *cgf, index_t *idx, snames_t *snames);
 
 void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
 

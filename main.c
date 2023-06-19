@@ -28,7 +28,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include "kycg.h"
+#include "cgfile.h"
 
 const int unit_base[40] = {
   0,  1,  1,  4,  4,  8,  8,  0,

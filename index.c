@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kstring.h"
-#include "kycg.h"
+#include "cgfile.h"
 #include "snames.h"
 
 char *get_fname_index(const char *fname_cg) {
@@ -87,9 +87,9 @@ static index_t *insert_index(index_t *idx, const char *sname, int64_t addr) {
 static index_t* append_index(index_t *idx, cgfile_t *cgf, const char* sname_to_append) {
   assert(bgzf_seek(cgf->fh, last_address(idx), SEEK_SET) == 0);
   cgdata_t cg = {0};
-  read_cg_(cgf, &cg);      /* read past the last cg data block */
+  read_cg2(cgf, &cg);      /* read past the last cg data block */
   int64_t addr = bgzf_tell(cgf->fh);
-  read_cg_(cgf, &cg);      /* make sure we do have one additional data block */
+  read_cg2(cgf, &cg);      /* make sure we do have one additional data block */
   if (cg.n > 0) {
     idx = insert_index(idx, sname_to_append, addr);
   } else {
@@ -97,11 +97,6 @@ static index_t* append_index(index_t *idx, cgfile_t *cgf, const char* sname_to_a
   }
   return idx;
 }
-
-typedef struct {
-    const char* key;
-    int64_t value;
-} index_pair_t;
 
 static int comparePairs(const void* a, const void* b) {
     const index_pair_t* pairA = (const index_pair_t*)a;
@@ -113,29 +108,30 @@ static int comparePairs(const void* a, const void* b) {
 }
 
 /* return sorted key-value pairs */
-index_pair_t *index_pairs(index_t *idx) {
+index_pair_t *index_pairs(index_t *idx, int *n) {
 
   index_pair_t* pairs = (index_pair_t*)malloc(kh_size(idx) * sizeof(index_pair_t));
-  int pairCount = 0;
+  *n = 0;
 
   // Iterate over key-value pairs and store them in the array
   const char *key;
   int64_t value;
   kh_foreach(idx, key, value, {
-      pairs[pairCount].key = key;
-      pairs[pairCount].value = value;
-      pairCount++;
+      pairs[*n].key = key;
+      pairs[*n].value = value;
+      (*n)++;
     });
 
   // Sort the array in ascending order of values
-  qsort(pairs, pairCount, sizeof(index_pair_t), comparePairs);
+  qsort(pairs, *n, sizeof(index_pair_t), comparePairs);
   return pairs;
 }
 
 static void writeIndex(FILE *fp, index_t *idx) {
 
-  index_pair_t *pairs = index_pairs(idx);
-  for (int i = 0; i < pairCount; i++) {
+  int n;
+  index_pair_t *pairs = index_pairs(idx, &n);
+  for (int i = 0; i < n; i++) {
     const char* key = pairs[i].key;
     int64_t value = pairs[i].value;
     fprintf(fp, "%s\t%"PRId64"\n", key, value);
@@ -197,14 +193,14 @@ int main_index(int argc, char *argv[]) {
     
   } else {                      /* index all samples */
     
-    snames_t *snames = loadSampleNames(fname_snames);
+    snames_t *snames = loadSampleNames(fname_snames, 1);
     int n=0; kstring_t *sname_v = NULL; int64_t *addr_v = NULL;
     index_t* idx = kh_init(index);
 
     if (snames) {               /* sample names is given */
       int64_t addr = bgzf_tell(cgf.fh);
       for (int i=0; i< snames->n; ++i) {
-        if (!read_cg_(&cgf, &cg)) {
+        if (!read_cg2(&cgf, &cg)) {
           fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
           fflush(stderr);
           exit(1);
@@ -216,7 +212,7 @@ int main_index(int argc, char *argv[]) {
     } else {                    /* sample names are unknown */
 
       for (n=0; ; ++n) {
-        if (!read_cg_(&cgf, &cg)) break;
+        if (!read_cg2(&cgf, &cg)) break;
         sname_v = realloc(sname_v, sizeof(kstring_t)*(n+1));
         addr_v = realloc(addr_v, sizeof(int64_t)*(n+1));
         memset(&sname_v[n], 0, sizeof(kstring_t));

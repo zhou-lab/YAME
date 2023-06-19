@@ -1,6 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include "kycg.h"
+#include "cgfile.h"
 #include "snames.h"
 
 static int usage() {
