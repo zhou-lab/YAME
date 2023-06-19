@@ -149,43 +149,6 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
 
 void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
 
-typedef struct cgfile_t {
-  BGZF *fh;
-  int n;                        /* number of samples read */
-} cgfile_t;
-
-static inline cgfile_t open_cgfile(char *fname) { /* for read */
-  cgfile_t cgf = {0};
-  if (strcmp(fname, "-")==0) {
-    cgf.fh = bgzf_dopen(fileno(stdin), "r");
-  } else {
-    cgf.fh = bgzf_open(fname, "r");
-  }
-  if (cgf.fh == NULL) {
-    fprintf(stderr, "Error opening file %s\n", fname);
-    exit(1);
-  }
-  cgf.n = 0;
-  return cgf;
-}
-
-static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
-  cg->n = 0;
-  uint64_t sig;
-  int64_t size;
-  if (cgf->fh->block_length == 0) bgzf_read_block(cgf->fh); /* somehow this is needed for concat'ed bgzipped files */
-  size = bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
-  if(size != sizeof(uint64_t)) return 0;
-  if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  bgzf_read(cgf->fh, &(cg->fmt), sizeof(char));
-  bgzf_read(cgf->fh, &(cg->n), sizeof(uint64_t));
-  cg->s = realloc(cg->s, cgdata_nbytes(cg));
-  bgzf_read(cgf->fh, cg->s, cgdata_nbytes(cg));
-  cg->compressed = 1;
-  cgf->n++;
-  return 1;
-}
-
 /* static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) { */
 /*   cg->n = 0; */
 /*   uint64_t sig; */
@@ -200,11 +163,6 @@ static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
 /*   return 1; */
 /* } */
 
-static inline cgdata_t read_cg(cgfile_t *cgf) {
-  cgdata_t cg = {0};
-  if (!read_cg_(cgf, &cg)) return cg;
-  return cg;
-}
 
 /* static inline int read_cg_dry(cgfile_t *cgf) { */
 /*   uint64_t sig; */
@@ -220,60 +178,7 @@ static inline cgdata_t read_cg(cgfile_t *cgf) {
 /*   return n; */
 /* } */
 
-/* this function is memory intensive if there are many samples */
-static inline cgdata_v* read_cg_all(cgfile_t *cgf) {
-
-  cgdata_v *cgs = init_cgdata_v(10);
-  while (1) {
-    cgdata_t cg = read_cg(cgf);
-    if (cg.n >0) push_cgdata_v(cgs, cg);
-    else break;
-  }
-  return cgs;
-}
-
-static inline cgdata_v* read_cgs(cgfile_t *cgf, int64_t beg, int64_t end) {
-
-  if (beg < 0) beg = 0;
-  if (end >= 0 && end < beg) wzfatal("End is smaller than beg");
-
-  cgdata_v *cgs = init_cgdata_v(10);
-  cgdata_t cg = {0};
-  int64_t i=0;
-  for (i=0; end<0 || i<=end; ++i) {
-    read_cg_(cgf, &cg);
-    if (i<beg) continue;
-    if (cg.n>0) {
-      (*next_ref_cgdata_v(cgs)) = cg;
-      cg.s = NULL;
-    } else {
-      break;
-    }
-  }
-  return cgs;
-}
-
-static inline cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n) {
-    cgdata_v *cgs = init_cgdata_v(10);
-    cgdata_t cg = {0};
-
-    for (int i = 0; i < n; i++) {
-        int64_t index = indices[i];
-        assert(index >= 0);
-
-        // Reposition the file pointer using bgzf_seek
-        assert(bgzf_seek(cgf->fh, index, SEEK_SET) == 0);
-        read_cg_(cgf, &cg);
-        if (cg.n > 0) {
-            (*next_ref_cgdata_v(cgs)) = cg;
-            cg.s = NULL;
-        } else {
-            break;
-        }
-    }
-
-    return cgs;
-}
+index_pair_t *index_pairs(index_t *idx);
 
 static inline uint32_t compressMU32(uint64_t M, uint64_t U) {
   /* compress the M and U to 32-bit  */

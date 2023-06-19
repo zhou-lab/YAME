@@ -1,6 +1,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "kycg.h"
+#include "snames.h"
 
 static int usage() {
   fprintf(stderr, "\n");

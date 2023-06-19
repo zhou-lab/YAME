@@ -3,6 +3,7 @@
 #include <string.h>
 #include "kstring.h"
 #include "kycg.h"
+#include "snames.h"
 
 char *get_fname_index(const char *fname_cg) {
   char *fname_index = NULL;
@@ -100,20 +101,21 @@ static index_t* append_index(index_t *idx, cgfile_t *cgf, const char* sname_to_a
 typedef struct {
     const char* key;
     int64_t value;
-} KeyValuePair;
+} index_pair_t;
 
 static int comparePairs(const void* a, const void* b) {
-    const KeyValuePair* pairA = (const KeyValuePair*)a;
-    const KeyValuePair* pairB = (const KeyValuePair*)b;
+    const index_pair_t* pairA = (const index_pair_t*)a;
+    const index_pair_t* pairB = (const index_pair_t*)b;
     
     if (pairA->value < pairB->value) return -1;
     else if (pairA->value > pairB->value) return 1;
     else return 0;
 }
 
-static void writeIndex(FILE *fp, index_t *idx) {
+/* return sorted key-value pairs */
+index_pair_t *index_pairs(index_t *idx) {
 
-  KeyValuePair* pairs = (KeyValuePair*)malloc(kh_size(idx) * sizeof(KeyValuePair));
+  index_pair_t* pairs = (index_pair_t*)malloc(kh_size(idx) * sizeof(index_pair_t));
   int pairCount = 0;
 
   // Iterate over key-value pairs and store them in the array
@@ -126,23 +128,18 @@ static void writeIndex(FILE *fp, index_t *idx) {
     });
 
   // Sort the array in ascending order of values
-  qsort(pairs, pairCount, sizeof(KeyValuePair), comparePairs);
+  qsort(pairs, pairCount, sizeof(index_pair_t), comparePairs);
+  return pairs;
+}
 
-  // Output the key-value pairs in increasing order of values
+static void writeIndex(FILE *fp, index_t *idx) {
+
+  index_pair_t *pairs = index_pairs(idx);
   for (int i = 0; i < pairCount; i++) {
     const char* key = pairs[i].key;
     int64_t value = pairs[i].value;
     fprintf(fp, "%s\t%"PRId64"\n", key, value);
   }
-  
-  /* khint_t kh_iter; */
-  /* for (kh_iter = kh_begin(idx); kh_iter != kh_end(idx); ++kh_iter) { */
-  /*   if (kh_exist(idx, kh_iter)) { */
-  /*     const char* key = kh_key(idx, kh_iter); */
-  /*     int64_t value = kh_value(idx, kh_iter); */
-  /*     fprintf(fp, "%s\t%"PRId64"\n", key, value); */
-  /*   } */
-  /* } */
   
   // Clean up the hash map and array
   free(pairs);
@@ -161,44 +158,6 @@ static int usage() {
   fprintf(stderr, "\n");
 
   return 1;
-}
-
-typedef struct {
-  int n;
-  char **array;
-} snames_t;
-
-static snames_t* loadSampleNames(char* fname_snames) {
-  if (fname_snames == NULL) return NULL;
-  gzFile file = wzopen(fname_snames, 0);
-  if (file == NULL) return NULL;
-
-  snames_t *snames = malloc(sizeof(snames_t));
-  if (snames == NULL) {
-    printf("Failed to allocate memory for sample name vector\n");
-    return NULL;
-  }
-  snames->array = NULL;
-  snames->n = 0;
-
-  char *line = NULL;
-  while (gzFile_read_line(file, &line) > 0) {
-    char *sname;
-    if (line_get_field(line, 0, DELIMITER, &sname)) {
-      snames->array = realloc(snames->array, sizeof(*(snames->array)) * (snames->n + 1));
-      if (snames->array == NULL) {
-        printf("Failed to allocate memory\n");
-        return NULL;
-      }
-      snames->array[snames->n] = sname;
-      snames->n++;
-    }
-  }
-  free(line);
-  line = NULL;
-  wzclose(file);
-
-  return snames;
 }
 
 int main_index(int argc, char *argv[]) {

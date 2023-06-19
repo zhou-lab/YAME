@@ -4,23 +4,28 @@
 #include <stdio.h>
 #include "kycg.h"
 #include "vector.h"
+#include "snames.h"
 
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg unpack [options] <in.cg>\n");
-  fprintf(stderr, "\n");
+  fprintf(stderr, "\nUsage: kycg unpack [options] <in.cg> [[sample 1], [sample 2], ...]\n\n");
+
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -a        all samples\n");
-  fprintf(stderr, "    -c        chunk process\n");
-  fprintf(stderr, "    -b        begin (first sample index, default to first sample)\n");
-  fprintf(stderr, "    -e        end (last sample index, default to last sample)\n");
-  fprintf(stderr, "    -f        display format for MU format (0: compound uint32; <0: M<tab>U; >0: fraction with number for the min cov)\n");
-  fprintf(stderr, "    -s        chunk size (default 1M)\n");
-  fprintf(stderr, "    -h        This help\n");
-  fprintf(stderr, "\n");
+
+  fprintf(stderr, "    -a        Process all samples\n");
+  fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
+  fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
+  fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
+  fprintf(stderr, "    -f [N]    Display format. Options are:\n");
+  fprintf(stderr, "                   N == 0: Compound MU\n");
+  fprintf(stderr, "                   N <  0: M<tab>U\n");
+  fprintf(stderr, "                   N >  0: Fraction (with number for the min coverage)\n");
+  fprintf(stderr, "    -c        Enable chunk process\n");
+  fprintf(stderr, "    -s        Specify chunk size (default is 1M)\n");
+  fprintf(stderr, "    -h        Display this help message\n\n");
 
   return 1;
 }
+
 
 static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
   switch (cg->fmt) {
@@ -124,62 +129,19 @@ static void print_cgs(cgdata_v *cgs, int printfmt3) {
   free(expanded);
 }
 
-/* int main_unpack(int argc, char *argv[]) { */
-
-/*   int c, verbose = 0, read_all = 0, chunk = 0; */
-/*   int64_t beg = -1, end = -1; int printfmt3 = 0; */
-/*   uint64_t chunk_size = 1000000; */
-/*   while ((c = getopt(argc, argv, "cs:b:e:f:avh"))>=0) { */
-/*     switch (c) { */
-/*     case 'c': chunk = 1; break; */
-/*     case 's': chunk_size = atoi(optarg); break; */
-/*     case 'v': verbose = 1; break; */
-/*     case 'b': beg = atoi(optarg)-1; break; */
-/*     case 'e': end = atoi(optarg)-1; break; */
-/*     case 'a': read_all = 1; break; */
-/*     case 'f': printfmt3 = atoi(optarg); break; */
-/*     case 'h': return usage(); break; */
-/*     default: usage(); wzfatal("Unrecognized option: %c.\n", c); */
-/*     } */
-/*   } */
-
-/*   if (optind + 1 > argc) {  */
-/*     usage();  */
-/*     wzfatal("Please supply input file.\n");  */
-/*   } */
-
-/*   cgfile_t cgf = open_cgfile(argv[optind]); */
-/*   index_t *idx = loadIndex(argv[optind]); */
-/*   if (beg >= 0 || end >= 0 || read_all) { */
-/*     cgdata_v *cgs = read_cgs(&cgf, beg, end); */
-/*     if (chunk) print_cgs_chunk(cgs, chunk_size, printfmt3); */
-/*     else print_cgs(cgs, printfmt3); */
-/*     uint64_t i; */
-/*     for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s); */
-/*     free_cgdata_v(cgs); */
-/*   } else { */
-/*     cgdata_t cg = read_cg(&cgf); */
-/*     print_cg(&cg, printfmt3); */
-/*     free(cg.s); */
-/*   } */
-/*   bgzf_close(cgf.fh); */
-
-/*   if (idx) destroyIndex(idx); */
-  
-/*   return 0; */
-/* } */
-
 int main_unpack(int argc, char *argv[]) {
 
   int c, read_all = 0, chunk = 0;
   int64_t beg = -1, end = -1; int printfmt3 = 0;
-  uint64_t chunk_size = 1000000;
-  while ((c = getopt(argc, argv, "cs:b:e:f:ah"))>=0) {
+  uint64_t chunk_size = 1000000; char *fname_snames = NULL;
+  int head = -1, tail = -1;
+  while ((c = getopt(argc, argv, "cs:H:T:f:ah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
-    case 'b': beg = atoi(optarg)-1; break;
-    case 'e': end = atoi(optarg)-1; break;
+    case 'l': fname_snames = strdup(optarg); break;
+    case 'H': head = atoi(optarg); break;
+    case 'T': tail = atoi(optarg); break;
     case 'a': read_all = 1; break;
     case 'f': printfmt3 = atoi(optarg); break;
     case 'h': return usage(); break;
@@ -196,58 +158,48 @@ int main_unpack(int argc, char *argv[]) {
   char *fname_index = get_fname_index(argv[optind]);
   index_t *idx = loadIndex(fname_index);
 
-  // Extract the requested sample names
-  vector_t* sample_names = vector_init();
-  if (idx) {
-    // Add the specific samples provided as additional arguments
-    for (int i = optind + 1; i < argc; i++) {
-      char* sample_name = argv[i];
-      int64_t sample_idx = getIndex(idx, sample_name);
-      if (sample_idx == -1) {
-        fprintf(stderr, "Cannot find sample %s in index.\n", sample_name);
-        fflush(stderr);
-        exit(1);
-      } else {
-        vector_push(sample_names, sample_name);
-      }
+  snames_t *snames = calloc(1, sizeof(snames_t));
+  if (optind + 1 < argc) {      // The requested sample names from command line
+    for(int i = optind + 1; i < argc; ++i) {
+      snames->array = realloc(snames->array, (snames->n+1));
+      snames->array[snames->n++] = strdup(argv[i]);
     }
+  } else {                      // from a file list
+    snames_t *snames = loadSampleNames(fname_snames);
   }
 
-  // Process the requested samples
-  if (sample_names->size > 0) { /* specific samples */
-    
-    int64_t* indices = malloc(sample_names->size * sizeof(int64_t));
-    for (unsigned i = 0; i < sample_names->size; i++) {
-      indices[i] = getIndex(idx, vector_get(sample_names, i));
-    }
-    cgdata_v *cgs = read_cgs_with_indices(&cgf, indices, sample_names->size);
-    if (chunk) print_cgs_chunk(cgs, chunk_size, printfmt3);
-    else print_cgs(cgs, printfmt3);
-    uint64_t i;
-    for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
-    free_cgdata_v(cgs);
-    
-  } else if (beg >= 0 || end >= 0 || read_all) { /* all samples */
-
-    /* TODO: use idx instead of running through the data blocks */
-    cgdata_v *cgs = read_cgs(&cgf, beg, end);
-    if (chunk) print_cgs_chunk(cgs, chunk_size, printfmt3);
-    else print_cgs(cgs, printfmt3);
-    uint64_t i;
-    for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
-    free_cgdata_v(cgs);
-    
-  } else {                      /* head -1 */
-    
-    cgdata_t cg = read_cg(&cgf);
-    print_cg(&cg, printfmt3);
-    free(cg.s);
-    
+  // check if we have index
+  if (!idx && (snames->n > 0 || tail > 0)) {
+    fprintf(stderr, "Error, the cg file needs indexing for random sample access.\n");
+    fflush(stderr);
+    exit(1);
   }
+
+  // read in the cgs
+  cgdata_v *cgs = NULL;
+  if (snames->n > 0) {
+    cgs = read_cgs_with_snames(&cgf, snames);
+  } else if (read_all) {
+    cgs = read_cgs_all(&cgf, beg, end);
+  } else if (head > 0) {
+    read_cgs_from_head(&cgf, head);
+  } else if (tail > 0) {
+    read_cgs_from_tail(&cgf, idx, tail);
+  } else {
+    read_cgs_from_head(&cgf, 1);
+  }
+
+  // output the cgs
+  if (chunk) print_cgs_chunk(cgs, chunk_size, printfmt3);
+  else print_cgs(cgs, printfmt3);
+
+  // clean up
+  uint64_t i;
+  for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
+  free_cgdata_v(cgs);
   bgzf_close(cgf.fh);
-
   if (idx) destroyIndex(idx);
-  vector_destroy(sample_names);
+  cleanSampleNames(snames);
   
   return 0;
 }
