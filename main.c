@@ -48,23 +48,25 @@ int main_chunkchar(int argc, char *argv[]);
 int main_rowops(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 
+#define PACKAGE_VERSION "0.1.20230619"
+
 static int usage()
 {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Program: kycg (KnowYourCG)\n");
+  fprintf(stderr, "Program: kycg (KnowYourCG) - A comprehensive tool for methylation data management.\n");
   fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
   fprintf(stderr, "Contact: Wanding Zhou<wanding.zhou@pennmedicine.upenn.edu>\n\n");
   fprintf(stderr, "Usage:   kycg <command> [options]\n\n");
-  fprintf(stderr, "Command:\n");
-  fprintf(stderr, "     pack         pack data to cg file\n");
-  fprintf(stderr, "     overlap      compute overlap of cg files\n");
-  fprintf(stderr, "     unpack       unpack data\n");
-  fprintf(stderr, "     dim          data dimension\n");
-  fprintf(stderr, "     index        index samples\n");
-  fprintf(stderr, "     split        split mult-sample data to single-sample data\n");
-  fprintf(stderr, "     chunk        chunk data to smaller fragments\n");
-  fprintf(stderr, "     chunkchar    chunk txt to smaller fragments\n");
-  fprintf(stderr, "     rowops       perform row operations\n");
+  fprintf(stderr, "Available commands:\n");
+  fprintf(stderr, "     pack         - Pack data into a cg file.\n");
+  fprintf(stderr, "     overlap      - Compute the overlap of cg files.\n");
+  fprintf(stderr, "     unpack       - Unpack data from a cg file.\n");
+  fprintf(stderr, "     dim          - Display data dimensions.\n");
+  fprintf(stderr, "     index        - Index samples in a cg file.\n");
+  fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
+  fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
+  fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
+  fprintf(stderr, "     rowops       - Perform operations on rows.\n");
   fprintf(stderr, "\n");
 
   return 1;

@@ -16,7 +16,6 @@
 #include "wzbed.h"
 #include "bgzf.h"
 
-#define PACKAGE_VERSION "0.1.20230616"
 #define CGSIG 266563789635
 
 typedef struct cgdata_t {

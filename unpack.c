@@ -77,17 +77,6 @@ static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
   }
 }
 
-/* static void print_cg(cgdata_t *cg, int printfmt3) { */
-
-/*   cgdata_t expanded = {0}; */
-/*   decompress(cg, &expanded); */
-/*   uint64_t i; */
-/*   for (i=0; i<expanded.n; ++i) { */
-/*     print_cg1(&expanded, i,printfmt3); fputc('\n', stdout); */
-/*   } */
-/*   free(expanded.s); */
-/* } */
-
 static void print_cgs_chunk(cgdata_v *cgs, uint64_t s, int printfmt3) {
   uint64_t i,m, k, kn = cgs->size;
   cgdata_t expanded = {0};
