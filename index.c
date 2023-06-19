@@ -193,19 +193,19 @@ int main_index(int argc, char *argv[]) {
     
   } else {                      /* index all samples */
     
-    snames_t *snames = loadSampleNames(fname_snames, 1);
+    snames_t snames = loadSampleNames(fname_snames, 1);
     int n=0; kstring_t *sname_v = NULL; int64_t *addr_v = NULL;
     index_t* idx = kh_init(index);
 
-    if (snames) {               /* sample names is given */
+    if (snames.n >0) {               /* sample names is given */
       int64_t addr = bgzf_tell(cgf.fh);
-      for (int i=0; i< snames->n; ++i) {
+      for (int i=0; i< snames.n; ++i) {
         if (!read_cg2(&cgf, &cg)) {
           fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
           fflush(stderr);
           exit(1);
         }
-        insert_index(idx, snames->array[i], addr);
+        insert_index(idx, snames.array[i], addr);
         addr = bgzf_tell(cgf.fh);
       }
       
@@ -231,12 +231,8 @@ int main_index(int argc, char *argv[]) {
     writeIndex(out, idx);
     if (!console) fclose(out);
 
-    if (snames) {
-      for (int i=0; i< snames->n; ++i) {
-        free(snames->array[i]);
-      }
-      free(snames->array);
-      free(snames);
+    if (snames.n >0) {
+      cleanSampleNames(&snames);
     } else if (n) {
       for (int i=0; i<n; ++i) {
         free(sname_v[i].s);

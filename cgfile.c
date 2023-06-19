@@ -74,7 +74,7 @@ cgdata_v* read_cgs_all(cgfile_t *cgf) {
 cgdata_v* read_cgs_from_head(cgfile_t *cgf, int64_t n) {
   cgdata_v *cgs = init_cgdata_v(10);
   cgdata_t cg = {0};
-  for (int64_t i=0; i<=n; ++i) {
+  for (int64_t i=0; i<n; ++i) {
     read_cg2(cgf, &cg);
     if (cg.n <= 0) break;
     (*next_ref_cgdata_v(cgs)) = cg;
@@ -84,13 +84,12 @@ cgdata_v* read_cgs_from_head(cgfile_t *cgf, int64_t n) {
 }
 
 cgdata_v* read_cgs_from_tail(cgfile_t *cgf, index_t *idx, int64_t n) {
-  int64_t last = kh_size(idx);
-  if (n > last) n = last;
-  int64_t *indices = malloc(n*sizeof(int64_t));
   int npairs = 0;
   index_pair_t *pairs = index_pairs(idx, &npairs);
-  for (int64_t i=last-n+1; i<=last; ++i) {
-    indices[i] = pairs[i].value;
+  if (n > npairs) n = npairs;
+  int64_t *indices = malloc(n*sizeof(int64_t));
+  for (int64_t i=npairs-n; i<npairs; ++i) {
+    indices[i-npairs+n] = pairs[i].value;
   }
   cgdata_v *cgs = read_cgs_with_indices(cgf, indices, n);
   free(indices);

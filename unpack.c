@@ -147,18 +147,18 @@ int main_unpack(int argc, char *argv[]) {
   char *fname_index = get_fname_index(argv[optind]);
   index_t *idx = loadIndex(fname_index);
 
-  snames_t *snames = calloc(1, sizeof(snames_t));
+  snames_t snames = {0};
   if (optind + 1 < argc) {      // The requested sample names from command line
     for(int i = optind + 1; i < argc; ++i) {
-      snames->array = realloc(snames->array, (snames->n+1));
-      snames->array[snames->n++] = strdup(argv[i]);
+      snames.array = realloc(snames.array, (snames.n+1));
+      snames.array[snames.n++] = strdup(argv[i]);
     }
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);
   }
 
   // check if we have index
-  if (!idx && (snames->n > 0 || tail > 0)) {
+  if (!idx && (snames.n > 0 || tail > 0)) {
     fprintf(stderr, "Error, the cg file needs indexing for random sample access.\n");
     fflush(stderr);
     exit(1);
@@ -166,16 +166,16 @@ int main_unpack(int argc, char *argv[]) {
 
   // read in the cgs
   cgdata_v *cgs = NULL;
-  if (snames->n > 0) {
-    cgs = read_cgs_with_snames(&cgf, idx, snames);
+  if (snames.n > 0) {
+    cgs = read_cgs_with_snames(&cgf, idx, &snames);
   } else if (read_all) {
     cgs = read_cgs_all(&cgf);
   } else if (head > 0) {
-    read_cgs_from_head(&cgf, head);
+    cgs = read_cgs_from_head(&cgf, head);
   } else if (tail > 0) {
-    read_cgs_from_tail(&cgf, idx, tail);
+    cgs = read_cgs_from_tail(&cgf, idx, tail);
   } else {
-    read_cgs_from_head(&cgf, 1);
+    cgs = read_cgs_from_head(&cgf, 1);
   }
 
   // output the cgs
@@ -188,7 +188,7 @@ int main_unpack(int argc, char *argv[]) {
   free_cgdata_v(cgs);
   bgzf_close(cgf.fh);
   if (idx) destroyIndex(idx);
-  cleanSampleNames(snames);
+  cleanSampleNames(&snames);
   
   return 0;
 }

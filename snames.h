@@ -16,12 +16,13 @@ typedef struct {
  * @param fname_snames The name of the file containing the sample names.
  * @param fatal A flag indicating whether to treat inability to open the file as a fatal error.
  *              If non-zero and the file cannot be opened, the program will exit with an error message.
- * @return A pointer to a snames_t structure containing the sample names read from the file.
+ * @return A snames_t structure containing the sample names read from the file.
  *         If the file cannot be opened and the fatal parameter is zero, NULL is returned.
  *         If there is an error allocating memory, NULL is returned.
  */
-static inline snames_t* loadSampleNames(char* fname_snames, int fatal) {
-  if (fname_snames == NULL) return NULL;
+static inline snames_t loadSampleNames(char* fname_snames, int fatal) {
+  snames_t snames = {0};
+  if (fname_snames == NULL) return snames;
   gzFile fp;
   if (strcmp(fname_snames, "-") == 0) {
     fp = gzdopen(fileno(stdin), "r");
@@ -35,27 +36,20 @@ static inline snames_t* loadSampleNames(char* fname_snames, int fatal) {
     }
   }
   
-  if (fp == NULL) return NULL;
-
-  snames_t *snames = malloc(sizeof(snames_t));
-  if (snames == NULL) {
-    printf("Failed to allocate memory for sample name vector\n");
-    return NULL;
-  }
-  snames->array = NULL;
-  snames->n = 0;
+  if (fp == NULL) return snames;
 
   char *line = NULL;
   while (gzFile_read_line(fp, &line) > 0) {
     char *sname;
     if (line_get_field(line, 0, "\t", &sname)) {
-      snames->array = realloc(snames->array, sizeof(*(snames->array)) * (snames->n + 1));
-      if (snames->array == NULL) {
-        printf("Failed to allocate memory\n");
-        return NULL;
+      snames.array = realloc(snames.array, sizeof(*(snames.array)) * (snames.n + 1));
+      if (snames.array == NULL) {
+        fprintf(stderr, "Failed to allocate memory\n");
+        fflush(stderr);
+        exit(1);
       }
-      snames->array[snames->n] = sname;
-      snames->n++;
+      snames.array[snames.n] = sname;
+      snames.n++;
     }
   }
   free(line);
@@ -67,8 +61,11 @@ static inline snames_t* loadSampleNames(char* fname_snames, int fatal) {
 
 static inline void cleanSampleNames(snames_t *snames) {
   if (snames) {
-    if (snames->n) free(snames->array);
-    free(snames);
+    if (snames->n)
+      for (int i=0; i< snames->n; ++i) {
+        free(snames->array[i]);
+      }
+    free(snames->array);
   }
 }
 
