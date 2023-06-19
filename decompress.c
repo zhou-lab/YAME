@@ -1,4 +1,4 @@
-#include "kycg.h"
+#include "cgfile.h"
 
 void decompress(cgdata_t *cg, cgdata_t *expanded) {
   switch (cg->fmt) {

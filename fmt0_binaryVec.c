@@ -1,4 +1,4 @@
-#include "kycg.h"
+#include "cgdata.h"
 
 /* 8 bit for 8 cpgs, each is binary */
 cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {

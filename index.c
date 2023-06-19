@@ -256,8 +256,8 @@ int main_index(int argc, char *argv[]) {
   return 0;
 }
 
-int64_t getIndex(index_t* idx, const char* sample_name) {
-  khiter_t k = kh_get(index, idx, sample_name);
+int64_t getIndex(index_t* idx, const char* sname) {
+  khiter_t k = kh_get(index, idx, sname);
   if (k == kh_end(idx)) {
     // Sample name not found in the hash table
     return -1;

@@ -1,5 +1,5 @@
-#ifndef _KYCG_H
-#define _KYCG_H
+#ifndef _CGDATA_H
+#define _CGDATA_H
 
 #include <stdint.h>
 #include <math.h>
@@ -71,10 +71,18 @@ index_t* loadIndex(char* fname_cg);
  *************************************
  *
  * @param index The index hash table (index_t).
- * @param sample_name The sample name to retrieve the index for.
+ * @param sname The sample name to retrieve the index for.
  * @return The index value for the given sample name if found, or -1 if not found.
  */
-int64_t getIndex(index_t* index, const char* sample_name);
+int64_t getIndex(index_t* index, const char* sname);
+
+/**
+ * Retrieves the key-value pairs from the given index.
+ *
+ * @param idx The index_t instance from which to retrieve index pairs.
+ * @return A pointer to an array of index_pair_t structures representing the key-value pairs in the given index.
+ */
+index_pair_t *index_pairs(index_t *idx);
 
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   uint64_t n = 0;
@@ -147,37 +155,6 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
   cg_sliced->fmt = cg->fmt;
 }
 
-/* static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) { */
-/*   cg->n = 0; */
-/*   uint64_t sig; */
-/*   if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) return 0; */
-/*   if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n"); */
-/*   gzfread(&(cg->fmt), sizeof(char), 1, cgf->fh); */
-/*   gzfread(&(cg->n), sizeof(uint64_t), 1, cgf->fh); */
-/*   cg->s = realloc(cg->s, cgdata_nbytes(cg)); */
-/*   gzfread(cg->s, 1, cgdata_nbytes(cg), cgf->fh); */
-/*   cg->compressed = 1; */
-/*   cgf->n++; */
-/*   return 1; */
-/* } */
-
-
-/* static inline int read_cg_dry(cgfile_t *cgf) { */
-/*   uint64_t sig; */
-/*   if(!gzfread(&sig, sizeof(uint64_t), 1, cgf->fh)) { return 0; } */
-/*   if(sig != CGSIG) { wzfatal("Unmatched signature. File corrupted.\n"); } */
-/*   char fmt; */
-/*   gzfread(&fmt, sizeof(char), 1, cgf->fh); */
-/*   uint64_t n; */
-/*   gzfread(&n, sizeof(uint64_t), 1, cgf->fh); */
-/*   //fprintf(stdout, "%d\n", n); */
-/*   //fflush(stdout); */
-/*   gzseek(cgf->fh, n, SEEK_CUR); */
-/*   return n; */
-/* } */
-
-index_pair_t *index_pairs(index_t *idx);
-
 static inline uint32_t compressMU32(uint64_t M, uint64_t U) {
   /* compress the M and U to 32-bit  */
   if (M > 0xffff || U > 0xffff) {
@@ -215,4 +192,4 @@ static inline uint64_t MUbinarize(uint64_t MU) {
   }
 }
 
-#endif /* _KYCG_H */
+#endif /* _CGDATA_H */

@@ -1,4 +1,4 @@
-#include "kycg.h"
+#include "cgfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
