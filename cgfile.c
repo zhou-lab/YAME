@@ -134,19 +134,7 @@ cgdata_v* read_cgs_with_snames(cgfile_t *cgf, index_t *idx, snames_t *snames) {
   return cgs;
 }
 
-void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
-
-  if (!cg->compressed) recompress(cg);
-  
-  BGZF* fp;
-  if (fname_out) fp = bgzf_open2(fname_out, mode);
-  else fp = bgzf_dopen(fileno(stdout), mode);
-    
-  if (fp == NULL) {
-    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
-    return;
-  }
-
+void cgdata_write1(BGZF *fp, cgdata_t *cg) {
   // Write the signature
   uint64_t sig = CGSIG;
   if (bgzf_write(fp, &sig, sizeof(uint64_t)) < 0) {
@@ -175,8 +163,21 @@ void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) 
     bgzf_close(fp);
     return;
   }
+}
 
-  // Close the file
+void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
+
+  if (!cg->compressed) recompress(cg);
+  
+  BGZF* fp;
+  if (fname_out) fp = bgzf_open2(fname_out, mode);
+  else fp = bgzf_dopen(fileno(stdout), mode);
+    
+  if (fp == NULL) {
+    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
+    return;
+  }
+  cgdata_write1(fp, cg);
   bgzf_close(fp);
 
   if (verbose) {

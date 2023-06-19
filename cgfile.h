@@ -99,7 +99,19 @@ cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n);
  */
 cgdata_v* read_cgs_with_snames(cgfile_t *cgf, index_t *idx, snames_t *snames);
 
-void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
+/* void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose); */
+
+/**
+ * Writes a cgdata_t instance to a BGZF file stream.
+ * 
+ * This function takes a pointer to a BGZF file stream and a cgdata_t instance, 
+ * and writes the data from the cgdata_t instance to the BGZF file stream. 
+ * The data is expected to be in a specific format, matching the structure of the cgdata_t type.
+ *
+ * @param fp A pointer to the BGZF file stream to write to.
+ * @param cg A pointer to the cgdata_t instance to be written.
+ */
+void cgdata_write1(BGZF *fp, cgdata_t *cg);
 
 /**
  * Writes the cgdata to the specified file.

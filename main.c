@@ -40,6 +40,7 @@ const int unit_base[40] = {
 
 int main_pack(int argc, char *argv[]);
 int main_overlap(int argc, char *argv[]);
+int main_subset(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
 int main_dim(int argc, char *argv[]);
@@ -61,6 +62,7 @@ static int usage()
   fprintf(stderr, "     pack         - Pack data into a cg file.\n");
   fprintf(stderr, "     overlap      - Compute the overlap of cg files.\n");
   fprintf(stderr, "     unpack       - Unpack data from a cg file.\n");
+  fprintf(stderr, "     subset       - Subset samples from a cg file.\n");
   fprintf(stderr, "     dim          - Display data dimensions.\n");
   fprintf(stderr, "     index        - Index samples in a cg file.\n");
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");

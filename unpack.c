@@ -183,8 +183,7 @@ int main_unpack(int argc, char *argv[]) {
   else print_cgs(cgs, printfmt3);
 
   // clean up
-  uint64_t i;
-  for (i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
+  for (uint64_t i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
   free_cgdata_v(cgs);
   bgzf_close(cgf.fh);
   if (idx) destroyIndex(idx);
