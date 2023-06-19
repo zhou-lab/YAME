@@ -4,66 +4,6 @@
 #include <stdio.h>
 #include "kycg.h"
 
-void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
-
-  if (!cg->compressed) recompress(cg);
-
-  /* FILE *out; */
-  /* if (fname_out) out = fopen(fname_out, mode); */
-  /* else out = stdout; */
-  /* uint64_t sig = CGSIG; fwrite(&sig, sizeof(uint64_t), 1, out); */
-  /* fwrite(&cg->fmt, sizeof(uint8_t), 1, out); */
-  /* fwrite(&cg->n, sizeof(uint64_t), 1, out); */
-  /* fwrite(cg->s, 1, cgdata_nbytes(cg), out); */
-  /* fclose(out); */
-
-  BGZF* fp;
-  if (fname_out) fp = bgzf_open2(fname_out, mode);
-  else fp = bgzf_dopen(fileno(stdout), mode);
-    
-  if (fp == NULL) {
-    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
-    return;
-  }
-
-  // Write the signature
-  uint64_t sig = CGSIG;
-  if (bgzf_write(fp, &sig, sizeof(uint64_t)) < 0) {
-    fprintf(stderr, "Error writing signature to file\n");
-    bgzf_close(fp);
-    return;
-  }
-
-  // Write the format
-  if (bgzf_write(fp, &(cg->fmt), sizeof(uint8_t)) < 0) {
-    fprintf(stderr, "Error writing format to file\n");
-    bgzf_close(fp);
-    return;
-  }
-
-  // Write the count
-  if (bgzf_write(fp, &(cg->n), sizeof(uint64_t)) < 0) {
-    fprintf(stderr, "Error writing count to file\n");
-    bgzf_close(fp);
-    return;
-  }
-
-  // Write the data
-  if (bgzf_write(fp, cg->s, cgdata_nbytes(cg)) < 0) {
-    fprintf(stderr, "Error writing data to file\n");
-    bgzf_close(fp);
-    return;
-  }
-
-  // Close the file
-  bgzf_close(fp);
-
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] Stored as Format %c\n", __func__, __LINE__, cg->fmt);
-    fflush(stderr);
-  }
-}
-
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: kycg pack [options] <in.bed> <out.cg>\n");

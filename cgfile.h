@@ -1,21 +1,100 @@
+#ifndef _CGFILE_H
+#define _CGFILE_H
+
+#include "cgdata.h"
+
+/* cg file for reading, see cgdata_write for writing */
 typedef struct cgfile_t {
   BGZF *fh;
   int n;                        /* number of samples read */
 } cgfile_t;
 
-static inline int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
-  cg->n = 0;
-  uint64_t sig;
-  int64_t size;
-  if (cgf->fh->block_length == 0) bgzf_read_block(cgf->fh); /* somehow this is needed for concat'ed bgzipped files */
-  size = bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
-  if(size != sizeof(uint64_t)) return 0;
-  if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  bgzf_read(cgf->fh, &(cg->fmt), sizeof(char));
-  bgzf_read(cgf->fh, &(cg->n), sizeof(uint64_t));
-  cg->s = realloc(cg->s, cgdata_nbytes(cg));
-  bgzf_read(cgf->fh, cg->s, cgdata_nbytes(cg));
-  cg->compressed = 1;
-  cgf->n++;
-  return 1;
-}
+/**
+ * Opens a file and returns a cgfile_t instance.
+ * If the filename is "-", it will open stdin for reading. Otherwise, it opens the named file.
+ * On any error opening the file, the program will exit.
+ *
+ * @param fname The name of the file to open.
+ * @return A cgfile_t instance that represents the opened file.
+ */
+cgfile_t open_cgfile(char *fname);
+
+/**
+ * Reads cgdata from a cgfile_t instance.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @return A cgdata_t instance with the data read from the file.
+ */
+cgdata_t read_cg(cgfile_t *cgf);
+
+/**
+ * Reads cgdata from a specified range in a cgfile_t instance.
+ * If "end" is smaller than "beg", the program will exit with an error.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param beg The beginning of the range to read from.
+ * @param end The end of the range to read from.
+ * @return A cgdata_v instance with the data read from the file.
+ */
+cgdata_v* read_cgs(cgfile_t *cgf, int64_t beg, int64_t end);
+
+/**
+ * Reads all cgdata from a cgfile_t instance. This function can be memory intensive if there are many samples.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @return A cgdata_v instance with all the data read from the file.
+ */
+cgdata_v* read_cgs_all(cgfile_t *cgf);
+
+/**
+ * Reads the first n cgdata from a cgfile_t instance.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param n The number of cgdata to read from the head of the file.
+ * @return A cgdata_v instance with the data read from the file.
+ */
+cgdata_v* read_cgs_from_head(cgfile_t *cgf, int64_t n);
+
+/**
+ * Reads the last n cgdata from a cgfile_t instance.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param idx The index of the data to read.
+ * @param n The number of cgdata to read from the tail of the file.
+ * @return A cgdata_v instance with the data read from the file.
+ */
+cgdata_v* read_cgs_from_tail(cgfile_t *cgf, index_t *idx, int64_t n);
+
+/**
+ * Reads cgdata from a cgfile_t instance at specified indices.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param indices The indices of the data to read.
+ * @param n The number of cgdata to read.
+ * @return A cgdata_v instance with the data read from the file.
+ */
+cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n);
+
+/**
+ * Reads cgdata from a cgfile_t instance with specified sample names.
+ * If any sample name is not found in the index, the program will exit with an error.
+ *
+ * @param cgf The cgfile_t instance to read from.
+ * @param snames The sample names to read.
+ * @return A cgdata_v instance with the data read from the file.
+ */
+cgdata_v* read_cgs_with_snames(cgfile_t *cgf, snames_t *snames);
+
+void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
+
+/**
+ * Writes the cgdata to the specified file.
+ *
+ * @param fname_out The name of the output file.
+ * @param cg The cgdata_t instance to write to the file.
+ * @param mode The mode to open the file. This should be either "w" for write mode or "a" for append mode.
+ * @param verbose A flag to control verbosity. If non-zero, additional information will be printed during the write process.
+ */
+void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose);
+
+#endif

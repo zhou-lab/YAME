@@ -1,5 +1,22 @@
 #include "cgfile.h"
 
+static int read_cg_(cgfile_t *cgf, cgdata_t *cg) {
+  cg->n = 0;
+  uint64_t sig;
+  int64_t size;
+  if (cgf->fh->block_length == 0) bgzf_read_block(cgf->fh); /* somehow this is needed for concat'ed bgzipped files */
+  size = bgzf_read(cgf->fh, &sig, sizeof(uint64_t));
+  if(size != sizeof(uint64_t)) return 0;
+  if (sig != CGSIG) wzfatal("Unmatched signature. File corrupted.\n");
+  bgzf_read(cgf->fh, &(cg->fmt), sizeof(char));
+  bgzf_read(cgf->fh, &(cg->n), sizeof(uint64_t));
+  cg->s = realloc(cg->s, cgdata_nbytes(cg));
+  bgzf_read(cgf->fh, cg->s, cgdata_nbytes(cg));
+  cg->compressed = 1;
+  cgf->n++;
+  return 1;
+}
+
 cgfile_t open_cgfile(char *fname) { /* for read */
   cgfile_t cgf = {0};
   if (strcmp(fname, "-")==0) {
@@ -115,4 +132,55 @@ cgdata_v* read_cgs_with_snames(cgfile_t *cgf, snames_t *snames) {
   cgdata_v *cgs = read_cgs_with_indices(&cgf, indices, sample_names->size);
   free(indices);
   return cgs;
+}
+
+void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
+
+  if (!cg->compressed) recompress(cg);
+  
+  BGZF* fp;
+  if (fname_out) fp = bgzf_open2(fname_out, mode);
+  else fp = bgzf_dopen(fileno(stdout), mode);
+    
+  if (fp == NULL) {
+    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
+    return;
+  }
+
+  // Write the signature
+  uint64_t sig = CGSIG;
+  if (bgzf_write(fp, &sig, sizeof(uint64_t)) < 0) {
+    fprintf(stderr, "Error writing signature to file\n");
+    bgzf_close(fp);
+    return;
+  }
+
+  // Write the format
+  if (bgzf_write(fp, &(cg->fmt), sizeof(uint8_t)) < 0) {
+    fprintf(stderr, "Error writing format to file\n");
+    bgzf_close(fp);
+    return;
+  }
+
+  // Write the count
+  if (bgzf_write(fp, &(cg->n), sizeof(uint64_t)) < 0) {
+    fprintf(stderr, "Error writing count to file\n");
+    bgzf_close(fp);
+    return;
+  }
+
+  // Write the data
+  if (bgzf_write(fp, cg->s, cgdata_nbytes(cg)) < 0) {
+    fprintf(stderr, "Error writing data to file\n");
+    bgzf_close(fp);
+    return;
+  }
+
+  // Close the file
+  bgzf_close(fp);
+
+  if (verbose) {
+    fprintf(stderr, "[%s:%d] Stored as Format %c\n", __func__, __LINE__, cg->fmt);
+    fflush(stderr);
+  }
 }
