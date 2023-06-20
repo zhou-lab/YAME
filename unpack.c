@@ -186,7 +186,7 @@ int main_unpack(int argc, char *argv[]) {
   for (uint64_t i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
   free_cgdata_v(cgs);
   bgzf_close(cgf.fh);
-  if (idx) destroyIndex(idx);
+  if (idx) cleanIndex(idx);
   cleanSampleNames(&snames);
   
   return 0;

@@ -80,6 +80,7 @@ int main(int argc, char *argv[]) {
   if (strcmp(argv[1], "pack") == 0) ret = main_pack(argc-1, argv+1);
   else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
+  else if (strcmp(argv[1], "subset") == 0) ret = main_subset(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   else if (strcmp(argv[1], "dim") == 0) ret = main_dim(argc-1, argv+1);
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);

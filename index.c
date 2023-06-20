@@ -35,12 +35,12 @@ index_t* loadIndex(char* fname_index) {
 
   char* line = NULL;
   while (gzFile_read_line(file, &line) > 0) {
-    char* sample_name;
-    if (line_get_field(line, 0, "\t", &sample_name)) {
+    char* sname;
+    if (line_get_field(line, 0, "\t", &sname)) {
       char* index_str;
       if (line_get_field(line, 1, "\t", &index_str)) {
         int ret;
-        khiter_t k = kh_put(index, idx, sample_name, &ret);
+        khiter_t k = kh_put(index, idx, sname, &ret);
         if (ret == -1) {
           printf("Failed to insert value into hash table\n");
           wzclose(file);
@@ -53,7 +53,6 @@ index_t* loadIndex(char* fname_index) {
         kh_value(idx, k) = strtoll(index_str, NULL, 10);
         free(index_str);
       }
-      /* free(sample_name); */
     }
   }
   free(line);
@@ -69,7 +68,7 @@ static int64_t last_address(index_t *idx) {
   return max_addr;
 }
 
-static index_t *insert_index(index_t *idx, const char *sname, int64_t addr) {
+index_t *insert_index(index_t *idx, char *sname, int64_t addr) {
   if (getIndex(idx, sname) >= 0) {
     fprintf(stderr, "[Error] Sample name %s already exists in index.\n", sname);
     exit(1);
@@ -84,7 +83,7 @@ static index_t *insert_index(index_t *idx, const char *sname, int64_t addr) {
   return idx;
 }
 
-static index_t* append_index(index_t *idx, cgfile_t *cgf, const char* sname_to_append) {
+static index_t* append_index(index_t *idx, cgfile_t *cgf, char* sname_to_append) {
   assert(bgzf_seek(cgf->fh, last_address(idx), SEEK_SET) == 0);
   cgdata_t cg = {0};
   read_cg2(cgf, &cg);      /* read past the last cg data block */
@@ -114,7 +113,7 @@ index_pair_t *index_pairs(index_t *idx, int *n) {
   *n = 0;
 
   // Iterate over key-value pairs and store them in the array
-  const char *key;
+  char *key;
   int64_t value;
   kh_foreach(idx, key, value, {
       pairs[*n].key = key;
@@ -127,7 +126,7 @@ index_pair_t *index_pairs(index_t *idx, int *n) {
   return pairs;
 }
 
-static void writeIndex(FILE *fp, index_t *idx) {
+void writeIndex(FILE *fp, index_t *idx) {
 
   int n;
   index_pair_t *pairs = index_pairs(idx, &n);
@@ -248,7 +247,7 @@ int main_index(int argc, char *argv[]) {
   return 0;
 }
 
-int64_t getIndex(index_t* idx, const char* sname) {
+int64_t getIndex(index_t* idx, char* sname) {
   khiter_t k = kh_get(index, idx, sname);
   if (k == kh_end(idx)) {
     // Sample name not found in the hash table
