@@ -172,7 +172,7 @@ void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) 
   BGZF* fp;
   if (fname_out) fp = bgzf_open2(fname_out, mode);
   else fp = bgzf_dopen(fileno(stdout), mode);
-    
+  
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     return;

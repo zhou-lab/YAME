@@ -116,7 +116,7 @@ void cgdata_write1(BGZF *fp, cgdata_t *cg);
 /**
  * Writes the cgdata to the specified file.
  *
- * @param fname_out The name of the output file.
+ * @param fname_out The name of the output file. If NULL, output to stdout.
  * @param cg The cgdata_t instance to write to the file.
  * @param mode The mode to open the file. This should be either "w" for write mode or "a" for append mode.
  * @param verbose A flag to control verbosity. If non-zero, additional information will be printed during the write process.

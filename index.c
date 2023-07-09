@@ -21,7 +21,6 @@ index_t* loadIndex(char* fname_index) {
   gzFile file = wzopen(fname_index, 0);
   if (file == NULL) {
     /* fprintf(stderr, "Failed to open index file: %s\n", fname_index); */
-    free(fname_index);
     return NULL;
   }
 
@@ -29,7 +28,6 @@ index_t* loadIndex(char* fname_index) {
   if (idx == NULL) {
     printf("Failed to create hash table\n");
     wzclose(file);
-    free(fname_index);
     return NULL;
   }
 
@@ -44,7 +42,6 @@ index_t* loadIndex(char* fname_index) {
         if (ret == -1) {
           printf("Failed to insert value into hash table\n");
           wzclose(file);
-          free(fname_index);
           free(line);
           kh_destroy(index, idx);
           free(idx);
@@ -84,10 +81,16 @@ index_t *insert_index(index_t *idx, char *sname, int64_t addr) {
 }
 
 static index_t* append_index(index_t *idx, cgfile_t *cgf, char* sname_to_append) {
-  assert(bgzf_seek(cgf->fh, last_address(idx), SEEK_SET) == 0);
+
+  int64_t addr;
   cgdata_t cg = {0};
-  read_cg2(cgf, &cg);      /* read past the last cg data block */
-  int64_t addr = bgzf_tell(cgf->fh);
+  if (kh_size(idx) == 0) {      /* first item in index */
+    addr = bgzf_tell(cgf->fh);
+  } else {
+    assert(bgzf_seek(cgf->fh, last_address(idx), SEEK_SET) == 0);
+    read_cg2(cgf, &cg);         /* read past the last cg data block */
+    addr = bgzf_tell(cgf->fh);
+  }
   read_cg2(cgf, &cg);      /* make sure we do have one additional data block */
   if (cg.n > 0) {
     idx = insert_index(idx, sname_to_append, addr);
@@ -182,7 +185,12 @@ int main_index(int argc, char *argv[]) {
   if (sname_to_append) {        /* append new sample to existing index */
     
     index_t *idx = loadIndex(fname_index);
-    idx = append_index(idx, &cgf, sname_to_append);
+    if (idx) {
+      idx = append_index(idx, &cgf, sname_to_append);
+    } else {
+      idx = kh_init(index);
+      idx = append_index(idx, &cgf, sname_to_append);
+    }
 
     FILE *out;
     if (console) out = stdout;
@@ -211,12 +219,13 @@ int main_index(int argc, char *argv[]) {
     } else {                    /* sample names are unknown */
 
       for (n=0; ; ++n) {
+        int64_t addr = bgzf_tell(cgf.fh);
         if (!read_cg2(&cgf, &cg)) break;
         sname_v = realloc(sname_v, sizeof(kstring_t)*(n+1));
         addr_v = realloc(addr_v, sizeof(int64_t)*(n+1));
         memset(&sname_v[n], 0, sizeof(kstring_t));
         ksprintf(&sname_v[n], "Unknown_%d", n+1);
-        addr_v[n] = bgzf_tell(cgf.fh);
+        addr_v[n] = addr;
       }
       
       for (int i=0; i<n; ++i) {

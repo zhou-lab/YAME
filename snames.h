@@ -2,6 +2,7 @@
 #define _SNAMES_H
 
 #include <zlib.h>
+#include "wzio.h"
 
 typedef struct {
   int n;
