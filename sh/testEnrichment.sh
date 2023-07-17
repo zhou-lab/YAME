@@ -37,23 +37,23 @@ function testEnrichment0() (     # this spawn a subshell
 
     rm -rf $TMPFDR/*
 
-    if [[ $qry != *.cg && $qry != *.cg.gz ]]; then
+    if [[ $qry != *.cg ]]; then
       mkdir -p $TMPFDR
-      >&2 echo "Packing query to $TMPFDR/$(basename $qry).cg.gz"
-      >&2 echo "To save time, please provide .cg.gz file (by using bed2cg)"
-      bed2cg $ref $qry | gzip -c >$TMPFDR/$(basename $qry).cg.gz
-      qry=$TMPFDR/$(basename $qry).cg.gz
+      >&2 echo "Packing query to $TMPFDR/$(basename $qry).cg"
+      >&2 echo "To save time, please provide .cg file (by using bed2cg)"
+      bed2cg $ref $qry >$TMPFDR/$(basename $qry).cg
+      qry=$TMPFDR/$(basename $qry).cg
     fi
 
     if [[ $uni == "na" || $ref == $uni ]]; then
       uni_opt=""
     else
-      if [[ $uni != *.cg && $uni != *.cg.gz ]]; then
+      if [[ $uni != *.cg ]]; then
         mkdir -p $TMPFDR
         >&2 echo "Packing universe to $TMPFDR/$(basename $uni).cg"
         >&2 echo "To save time, please provide .cg file (converted using bed2cg)"
-        bed2cg $ref $uni | gzip -c >$TMPFDR/$(basename $uni).cg.gz
-        uni=$TMPFDR/$(basename $uni).cg.gz
+        bed2cg $ref $uni >$TMPFDR/$(basename $uni).cg
+        uni=$TMPFDR/$(basename $uni).cg
       fi
       uni_opt="-u $uni"
     fi
