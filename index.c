@@ -65,6 +65,14 @@ static int64_t last_address(index_t *idx) {
   return max_addr;
 }
 
+/* static int64_t first_address(index_t *idx) { */
+/*   int64_t min_addr = 0; int64_t addr; */
+/*   kh_foreach_value(idx, addr, { */
+/*       if (addr < min_addr) min_addr = addr; */
+/*     }); */
+/*   return min_addr; */
+/* } */
+
 index_t *insert_index(index_t *idx, char *sname, int64_t addr) {
   if (getIndex(idx, sname) >= 0) {
     fprintf(stderr, "[Error] Sample name %s already exists in index.\n", sname);
@@ -119,7 +127,7 @@ index_pair_t *index_pairs(index_t *idx, int *n) {
   char *key;
   int64_t value;
   kh_foreach(idx, key, value, {
-      pairs[*n].key = key;
+      pairs[*n].key = strdup(key);
       pairs[*n].value = value;
       (*n)++;
     });
@@ -127,6 +135,25 @@ index_pair_t *index_pairs(index_t *idx, int *n) {
   // Sort the array in ascending order of values
   qsort(pairs, *n, sizeof(index_pair_t), comparePairs);
   return pairs;
+}
+
+void clean_index_pairs(index_pair_t *idx_pairs, int n) {
+  for (int i=0; i<n; ++i) {
+    free(idx_pairs[i].key);
+  }
+  free(idx_pairs);
+}
+
+index_pair_t* load_index_pairs(char *fname_cg, int *n) {
+  char *fname_index = get_fname_index(fname_cg);
+  index_t *idx = loadIndex(fname_index);
+  if (!idx) {
+    *n = 0;
+    return NULL;
+  }
+  index_pair_t *idx_pairs = index_pairs(idx, n);
+  freeIndex(idx); free(fname_index);
+  return idx_pairs;
 }
 
 void writeIndex(FILE *fp, index_t *idx) {

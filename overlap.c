@@ -106,10 +106,11 @@ static void convertToFmt0(cgdata_t *cg) {
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
 int main_overlap(int argc, char *argv[]) {
-  int c; char *upath = NULL;
-  while ((c = getopt(argc, argv, "u:h"))>=0) {
+  int c; char *upath = NULL; int print_header=0;
+  while ((c = getopt(argc, argv, "u:Hh"))>=0) {
     switch (c) {
     case 'u': upath = strdup(optarg); break;
+    case 'H': print_header = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -119,7 +120,6 @@ int main_overlap(int argc, char *argv[]) {
     usage(); 
     wzfatal("Please supply input and output file.\n"); 
   }
-
 
   /* import universe if provided */
   cgdata_t cg_uni = {0};
@@ -131,48 +131,75 @@ int main_overlap(int argc, char *argv[]) {
     free(upath);
     bgzf_close(cgf_uni.fh);
   }
-  
-  cgfile_t cgf_fea = open_cgfile(argv[optind++]);
-  for (uint64_t kf=0;;++kf) {
-    cgdata_t cg_fea = read_cg(&cgf_fea);
-    if (cg_fea.n == 0) break;
+
+  char *fname_fea = argv[optind++];
+  cgfile_t cgf_fea = open_cgfile(fname_fea); int n_fea=0;
+  index_pair_t *idx_pairs_fea = load_index_pairs(fname_fea, &n_fea);
+  int unseekable = bgzf_seek(cgf_fea.fh, 0, SEEK_SET);
+  char *fname_qry = argv[optind];
+  cgfile_t cgf_qry = open_cgfile(fname_qry); int n_qry=0;
+  index_pair_t *idx_pairs_qry = load_index_pairs(fname_qry, &n_qry);
+
+  cgdata_t cg_fea = {0};
+  if (unseekable) {             /* only the first cg */
+    cg_fea = read_cg(&cgf_fea);
     convertToFmt0(&cg_fea);
+  }
+  if (print_header) fputs("Query\tFeature\tN_uni\tNf\tNq\tNfq\n", stdout);
+  
+  for (uint64_t kq=0;;++kq) {
+    cgdata_t cg_qry = read_cg(&cgf_qry);
+    if (cg_qry.n == 0) break;
+    convertToFmt0(&cg_qry);
 
     if (cg_uni.n > 0) {
-      assert(cg_uni.n == cg_fea.n);
-      bit_mask(cg_fea.s, cg_uni.s, cg_uni.n);
-    } else { m_uni = cg_fea.n; }
-    size_t nf = bit_count(cg_fea);
-    
-    cgfile_t cgf_qry = open_cgfile(argv[optind]);
-    for (uint64_t kq=0;;++kq) {
-      cgdata_t cg_qry = read_cg(&cgf_qry);
-      if (cg_qry.n == 0) break;
-      convertToFmt0(&cg_qry);
+      assert(cg_uni.n == cg_qry.n);
+      bit_mask(cg_qry.s, cg_uni.s, cg_uni.n);
+    } else { m_uni = cg_qry.n; }
+    size_t nf = bit_count(cg_qry);
 
-      if (cg_fea.n != cg_qry.n) {
-        wzfatal("Query (%"PRId64") and feature (%"PRId64") has different lengths.",
-                cg_qry.n, cg_fea.n);
-      }
-
-      if (cg_uni.n > 0) {
-        assert(cg_uni.n == cg_qry.n);
-        bit_mask(cg_qry.s, cg_uni.s, cg_uni.n);
-      }
-
-      size_t nq = bit_count(cg_qry);
-      bit_mask(cg_qry.s, cg_fea.s, cg_fea.n);
+    if (unseekable) {
+      assert(cg_qry.n == cg_fea.n);
+      if (cg_uni.n > 0) bit_mask(cg_fea.s, cg_uni.s, cg_uni.n);
+      size_t nq = bit_count(cg_fea);
+      bit_mask(cg_qry.s, cg_fea.s, cg_qry.n);
       size_t nfq = bit_count(cg_qry);
-      fprintf(stdout, "%"PRIu64"\t%"PRIu64"\t%zu\t%zu\t%zu\t%zu\n",
-              kf+1, kq+1, m_uni, nf, nq, nfq);
-      
-      free(cg_qry.s);
+
+      if (idx_pairs_qry) { fputs(idx_pairs_qry[kq].key, stdout); fputc('\t', stdout); }
+      else fprintf(stdout, "%"PRIu64"\t", kq+1);
+      if (idx_pairs_fea) { fputs(idx_pairs_fea[0].key, stdout); fputc('\t', stdout); }
+      else fputs("1\t", stdout);
+      fprintf(stdout, "%zu\t%zu\t%zu\t%zu\n", m_uni, nf, nq, nfq);
+    } else {
+      assert(bgzf_seek(cgf_fea.fh, 0, SEEK_SET)==0);
+      for (uint64_t kf=0;;++kf) {
+        cgdata_t cg_fea = read_cg(&cgf_fea);
+        if (cg_fea.n == 0) break;
+        convertToFmt0(&cg_fea);
+        
+        assert(cg_qry.n == cg_fea.n);
+        if (cg_uni.n > 0) bit_mask(cg_fea.s, cg_uni.s, cg_uni.n);
+        size_t nq = bit_count(cg_fea);
+        bit_mask(cg_fea.s, cg_qry.s, cg_qry.n);
+        size_t nfq = bit_count(cg_fea);
+
+        if (idx_pairs_qry) { fputs(idx_pairs_qry[kq].key, stdout); fputc('\t', stdout); }
+        else fprintf(stdout, "%"PRIu64"\t", kq+1);
+        if (idx_pairs_fea) { fputs(idx_pairs_fea[kf].key, stdout); fputc('\t', stdout); }
+        else fprintf(stdout, "%"PRIu64"\t", kf+1);
+        fprintf(stdout, "%zu\t%zu\t%zu\t%zu\n", m_uni, nf, nq, nfq);
+        
+      }
+      free(cg_fea.s);
     }
-    free(cg_fea.s);
-    bgzf_close(cgf_qry.fh);
+    free(cg_qry.s);
   }
+  if (unseekable) free(cg_fea.s);
   if (cg_uni.n > 0) free(cg_uni.s);
+  bgzf_close(cgf_qry.fh);
   bgzf_close(cgf_fea.fh);
+  if (idx_pairs_fea) clean_index_pairs(idx_pairs_fea, n_fea);
+  if (idx_pairs_qry) clean_index_pairs(idx_pairs_qry, n_qry);
   
   return 0;
 }

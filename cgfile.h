@@ -6,6 +6,7 @@
 #include "index.h"
 
 /* cg file for reading, see cgdata_write for writing */
+/* TODO, is n really necessary? */
 typedef struct cgfile_t {
   BGZF *fh;
   int n;                        /* number of samples read */

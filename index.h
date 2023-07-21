@@ -5,6 +5,8 @@
 
 KHASH_INIT(index, char*,int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 #define index_t khash_t(index)
+
+// use cleanIndex if wishes to clean the key char*s
 #define freeIndex(idx) kh_destroy(index, idx)
 
 typedef struct {
@@ -42,7 +44,7 @@ char *get_fname_index(const char *fname_cg);
  *         The caller is responsible for freeing the memory, particularly the char* keys
  * Use cleanIndex instead of freeIndex. The function owns the key memories.
  */
-index_t* loadIndex(char* fname_cg);
+index_t* loadIndex(char* fname_index);
 
 /**
  * @brief This function clears the memory occupied by an index table and its keys.
@@ -87,6 +89,9 @@ int64_t getIndex(index_t* index, char* sname);
  * @return A pointer to an array of index_pair_t structures representing the key-value pairs in the given index.
  */
 index_pair_t *index_pairs(index_t *idx, int *n);
+/* load index pairs, instead of the index */
+index_pair_t* load_index_pairs(char *fname_cg, int *n);
+void clean_index_pairs(index_pair_t *idx_pairs, int n);
 
 /**
  * Writes an index_t instance to a FILE stream.
