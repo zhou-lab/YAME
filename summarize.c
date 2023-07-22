@@ -32,7 +32,6 @@ typedef struct stats_t {
 } stats_t;
 
 static stats_t summarize1(cgdata_t cg, cgdata_t cg_mask) {
-  assert(cg_mask.n == cg.n);
   assert(cg.compressed == 0);
   assert(cg.fmt == '3');
   uint64_t *s = (uint64_t*) cg.s;
@@ -40,6 +39,7 @@ static stats_t summarize1(cgdata_t cg, cgdata_t cg_mask) {
 
   stats_t stats = {0};
   if (cg_mask.n) {
+    assert(cg_mask.n == cg.n);
     for (uint64_t i=0; i<cg.n; ++i) {
       if (s[i]) stats.n_q++;
       if (cg_mask.s[i>>3]&(1<<(i&0x7))) {
@@ -136,7 +136,7 @@ int main_summarize(int argc, char *argv[]) {
           free(cg_mask.s); cg_mask.s = 0;
         }
       }
-    } else {
+    } else {                    /* whole dataset summary if missing mask */
       stats_t st = summarize1(cg_qry_inflated, cg_mask);
       if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
       else fprintf(stdout, "%"PRIu64"\t", kq+1);

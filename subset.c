@@ -3,11 +3,11 @@
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: kycg subset [options] <in.cg> [<sample1>, ...]\n");
-  fprintf(stderr, "If -o <out.cg>, an index will also be generated. Otherwise, output to stdout.\n");
+  fprintf(stderr, "If -o <out.cg>, an index will also be generated. Otherwise, output .cg to stdout without index.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -o        output cg file name.\n");
+  fprintf(stderr, "    -o        output cg file name. if missing, output to stdout without index.\n");
   fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
   fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
