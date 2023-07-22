@@ -2,6 +2,7 @@
 #define INDEX_H
 
 #include "khash.h"
+#include "snames.h"
 
 KHASH_INIT(index, char*,int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 #define index_t khash_t(index)
@@ -126,5 +127,7 @@ void writeIndex(FILE *fp, index_t *idx);
  * the function prints an error message to stdout and terminates the program.
  */
 index_t *insert_index(index_t *idx, char *sname, int64_t addr);
+
+snames_t loadSampleNamesFromIndex(char *fname);
 
 #endif

@@ -6,7 +6,7 @@
 
 typedef struct {
   int n;
-  char **array;
+  char **s;
 } snames_t;
 
 /**
@@ -43,13 +43,13 @@ static inline snames_t loadSampleNames(char* fname_snames, int fatal) {
   while (gzFile_read_line(fp, &line) > 0) {
     char *sname;
     if (line_get_field(line, 0, "\t", &sname)) {
-      snames.array = realloc(snames.array, sizeof(*(snames.array)) * (snames.n + 1));
-      if (snames.array == NULL) {
+      snames.s = realloc(snames.s, sizeof(*(snames.s)) * (snames.n + 1));
+      if (snames.s == NULL) {
         fprintf(stderr, "Failed to allocate memory\n");
         fflush(stderr);
         exit(1);
       }
-      snames.array[snames.n] = sname;
+      snames.s[snames.n] = sname;
       snames.n++;
     }
   }
@@ -60,13 +60,21 @@ static inline snames_t loadSampleNames(char* fname_snames, int fatal) {
   return snames;
 }
 
+static inline void cleanSampleNames2(snames_t snames) {
+  if (snames.n)
+    for (int i=0; i< snames.n; ++i) {
+      free(snames.s[i]);
+    }
+  free(snames.s);
+}
+
 static inline void cleanSampleNames(snames_t *snames) {
   if (snames) {
     if (snames->n)
       for (int i=0; i< snames->n; ++i) {
-        free(snames->array[i]);
+        free(snames->s[i]);
       }
-    free(snames->array);
+    free(snames->s);
   }
 }
 

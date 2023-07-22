@@ -49,8 +49,8 @@ int main_subset(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind < argc) {      // sample names from command line
     for(int i = optind; i < argc; ++i) {
-      snames.array = realloc(snames.array, (snames.n+1));
-      snames.array[snames.n++] = strdup(argv[i]);
+      snames.s = realloc(snames.s, (snames.n+1));
+      snames.s[snames.n++] = strdup(argv[i]);
     }
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);
@@ -70,15 +70,15 @@ int main_subset(int argc, char *argv[]) {
     if (tail > 0) {
       if (tail > npairs) tail = npairs;
       for (int i=0; i<tail; ++i) {
-        snames.array = realloc(snames.array, (snames.n+1)*sizeof(const char*));
-        snames.array[snames.n++] = strdup(pairs[npairs-tail+i].key);
+        snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
+        snames.s[snames.n++] = strdup(pairs[npairs-tail+i].key);
       }
     } else {
       if (head < 1) head = 1;     // default to head 1
       if (head > npairs) head = npairs;
       for (int i=0; i<head; ++i) {
-        snames.array = realloc(snames.array, (snames.n+1)*sizeof(const char*));
-        snames.array[snames.n++] = strdup(pairs[i].key);
+        snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
+        snames.s[snames.n++] = strdup(pairs[i].key);
       }
     }
     free(pairs);
@@ -95,7 +95,7 @@ int main_subset(int argc, char *argv[]) {
   }
   cgdata_t cg = {0};
   for (int i=0; i<snames.n; ++i) {
-    int64_t index = getIndex(idx, snames.array[i]);
+    int64_t index = getIndex(idx, snames.s[i]);
     assert(index >= 0);
     assert(bgzf_seek(cgf.fh, index, SEEK_SET) == 0);
     read_cg2(&cgf, &cg);
@@ -115,7 +115,7 @@ int main_subset(int argc, char *argv[]) {
         fflush(stderr);
         exit(1);
       }
-      insert_index(idx2, snames.array[i], addr);
+      insert_index(idx2, snames.s[i], addr);
       addr = bgzf_tell(cgf2.fh);
     }
     free(cg.s);

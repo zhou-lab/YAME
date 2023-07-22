@@ -122,9 +122,9 @@ cgdata_v* read_cgs_with_snames(cgfile_t *cgf, index_t *idx, snames_t *snames) {
   // check if we have all sample names in index
   int64_t* indices = malloc(snames->n * sizeof(int64_t));
   for (int i = 0; i < snames->n; i++) {
-    indices[i] = getIndex(idx, snames->array[i]);
+    indices[i] = getIndex(idx, snames->s[i]);
     if (indices[i] == -1) {
-      fprintf(stderr, "Cannot find sample %s in index.\n", snames->array[i]);
+      fprintf(stderr, "Cannot find sample %s in index.\n", snames->s[i]);
       fflush(stderr);
       exit(1);
     }

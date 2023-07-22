@@ -3,7 +3,6 @@
 #include <string.h>
 #include "kstring.h"
 #include "cgfile.h"
-#include "snames.h"
 
 char *get_fname_index(const char *fname_cg) {
   char *fname_index = NULL;
@@ -144,16 +143,29 @@ void clean_index_pairs(index_pair_t *idx_pairs, int n) {
   free(idx_pairs);
 }
 
-index_pair_t* load_index_pairs(char *fname_cg, int *n) {
-  char *fname_index = get_fname_index(fname_cg);
+/* index_pair_t* load_index_pairs(char *fname_cg, int *n) { */
+/*   char *fname_index = get_fname_index(fname_cg); */
+/*   index_t *idx = loadIndex(fname_index); */
+/*   if (!idx) { */
+/*     *n = 0; */
+/*     return NULL; */
+/*   } */
+/*   index_pair_t *idx_pairs = index_pairs(idx, n); */
+/*   cleanIndex(idx); free(fname_index); */
+/*   return idx_pairs; */
+/* } */
+
+snames_t loadSampleNamesFromIndex(char *fname) {
+  char *fname_index = get_fname_index(fname);
   index_t *idx = loadIndex(fname_index);
-  if (!idx) {
-    *n = 0;
-    return NULL;
-  }
-  index_pair_t *idx_pairs = index_pairs(idx, n);
-  cleanIndex(idx); free(fname_index);
-  return idx_pairs;
+  snames_t snames = {0};
+  if (!idx) return snames;
+
+  index_pair_t *idx_pairs = index_pairs(idx, &(snames.n));
+  snames.s = calloc(snames.n, sizeof(char*));
+  for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
+  free(idx_pairs);          // ownership of keys are transfered to snames.s
+  return snames;
 }
 
 void writeIndex(FILE *fp, index_t *idx) {
@@ -239,7 +251,7 @@ int main_index(int argc, char *argv[]) {
           fflush(stderr);
           exit(1);
         }
-        insert_index(idx, snames.array[i], addr);
+        insert_index(idx, snames.s[i], addr);
         addr = bgzf_tell(cgf.fh);
       }
       

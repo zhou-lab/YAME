@@ -150,8 +150,8 @@ int main_unpack(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind + 1 < argc) {      // The requested sample names from command line
     for(int i = optind + 1; i < argc; ++i) {
-      snames.array = realloc(snames.array, (snames.n+1));
-      snames.array[snames.n++] = strdup(argv[i]);
+      snames.s = realloc(snames.s, (snames.n+1));
+      snames.s[snames.n++] = strdup(argv[i]);
     }
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);
