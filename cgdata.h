@@ -81,6 +81,8 @@ void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded);
 void decompress(cgdata_t *cg, cgdata_t *expanded);
 void recompress(cgdata_t *cg);
 
+void convertToFmt0(cgdata_t *cg);
+
 static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
 
   if (cg->compressed) {

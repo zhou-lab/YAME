@@ -9,7 +9,8 @@
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: kycg overlap [options] <feature.cg> <query.cg>\n");
-  fprintf(stderr, "Query can be a multi-sample set. only the first feature will be used.\n");
+  fprintf(stderr, "Query or feature can be a multi-sample set.\n");
+  fprintf(stderr, "If feature.cg is unseekable, only first sample will be used.\n");
   fprintf(stderr, "If the input is format 3: test overlap of M+U.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
@@ -40,68 +41,6 @@ static size_t bit_count(cgdata_t cg) {
   for (i=0; i<(cg.n>>3); ++i) m += byte2cnt[cg.s[i]];
   for (k=0; k<(cg.n&0x7); ++k) m += (cg.s[i]>>k) & 0x1;
   return m;
-}
-
-/**
- * Reads data from a given cgfile, converts it into format 0 if needed, and returns it.
- * Format 0 refers to a bit-packed format where 1 byte represents an 8-bit binary vector.
- *
- * @param cgf: A pointer to a cgfile_t structure from which data is to be read.
- * @return: A cgdata_t structure which contains the read and converted data.
- * 
- * The function performs the following operations:
- * 
- * 1. It begins by reading data from the given cgfile into a cgdata_t structure.
- * 2. Input format is '0': no further operation is performed.
- * 3. Input format is '1': if the value is 0, return 0 else 1.
- * 4. Input format is '3': if the M+U is 0, return 0 else 1
- * 5. Other input formats are not allowed.
- */
-static void convertToFmt0(cgdata_t *cg) {
-  cgdata_t cg_out = {0};
-  switch (cg->fmt) {
-  case '0': return;
-  case '1': {
-    cg_out.fmt = '0';
-    cg_out.compressed = 1;
-    cg_out.n=0;
-    uint64_t i;
-    for (i=0; i<cg->n/3; ++i) {
-      cg_out.n += *((uint16_t*) (cg->s+i*3+1));
-    }
-    cg_out.s = calloc((cg_out.n>>3)+1, 1);
-    size_t sum; uint16_t l=0;
-    for (i=0, sum=0; i<cg->n/3; ++i, sum+=l) {
-      l = *((uint16_t*) (cg->s+i*3+1));
-      if (cg->s[i*3] > '0') {
-        for(size_t j=sum; j<sum+l; ++j) {
-          cg_out.s[j>>3] |= (1<<(j&0x7));
-        }
-      }
-    }
-    break;
-  }
-  case '3': {
-    cgdata_t expanded = {0};
-    fmt3_decompress(cg, &expanded);
-
-    cg_out.fmt = '0';
-    cg_out.compressed = 1;
-    cg_out.n = expanded.n;
-    cg_out.s = calloc((cg_out.n>>3)+1,1);
-    uint64_t *s = (uint64_t*) expanded.s;
-    for (uint64_t i=0; i<expanded.n; ++i) {
-      if (s[i] > 0) { /* equivalent to: 1 if M+U > 0 else 0 */
-        cg_out.s[i>>3] |= (1<<(i&0x7));
-      }
-    }
-    free(expanded.s);
-    break;
-  }
-  default: wzfatal("Format %c unsupported.\n", cg->fmt);
-  }
-  free(cg->s);
-  *cg = cg_out;
 }
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
@@ -188,9 +127,9 @@ int main_overlap(int argc, char *argv[]) {
         if (idx_pairs_fea) { fputs(idx_pairs_fea[kf].key, stdout); fputc('\t', stdout); }
         else fprintf(stdout, "%"PRIu64"\t", kf+1);
         fprintf(stdout, "%zu\t%zu\t%zu\t%zu\n", m_uni, nf, nq, nfq);
-        
+
+        free(cg_fea.s);
       }
-      free(cg_fea.s);
     }
     free(cg_qry.s);
   }

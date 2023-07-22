@@ -152,7 +152,7 @@ index_pair_t* load_index_pairs(char *fname_cg, int *n) {
     return NULL;
   }
   index_pair_t *idx_pairs = index_pairs(idx, n);
-  freeIndex(idx); free(fname_index);
+  cleanIndex(idx); free(fname_index);
   return idx_pairs;
 }
 

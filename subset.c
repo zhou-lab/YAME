@@ -33,7 +33,7 @@ int main_subset(int argc, char *argv[]) {
     }
   }
 
-  if (argc < optind + 2) { 
+  if (argc < optind + 1) { 
     usage(); 
     wzfatal("Please supply input file and output file.\n"); 
   }
