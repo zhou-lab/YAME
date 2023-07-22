@@ -6,7 +6,7 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -n        sample name list\n");
+  fprintf(stderr, "    -s        sample name list\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -16,10 +16,10 @@ static int usage() {
 int main_split(int argc, char *argv[]) {
 
   int c, verbose = 0; char *fname_snames = NULL;
-  while ((c = getopt(argc, argv, "n:vh"))>=0) {
+  while ((c = getopt(argc, argv, "s:vh"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
-    case 'n': fname_snames = strdup(optarg); break;
+    case 's': fname_snames = strdup(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }

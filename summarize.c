@@ -26,6 +26,7 @@ static int usage() {
 
 typedef struct stats_t {
   double mean_beta;
+  uint64_t n_u;                 // universe
   uint64_t n_q;                 // query
   uint64_t n_m;                 // mask
   uint64_t n_o;                 // overlap
@@ -38,6 +39,7 @@ static stats_t summarize1(cgdata_t cg, cgdata_t cg_mask) {
   uint64_t sum = 0;
 
   stats_t stats = {0};
+  stats.n_u = cg.n;
   if (cg_mask.n) {
     assert(cg_mask.n == cg.n);
     for (uint64_t i=0; i<cg.n; ++i) {
@@ -62,8 +64,8 @@ static stats_t summarize1(cgdata_t cg, cgdata_t cg_mask) {
 
 static void format_stats(stats_t st) {
   fprintf(stdout,
-          "%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%f\n",
-          st.n_q, st.n_m, st.n_o, st.mean_beta);
+          "%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%f\n",
+          st.n_u, st.n_q, st.n_m, st.n_o, st.mean_beta);
 }
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
@@ -105,7 +107,7 @@ int main_summarize(int argc, char *argv[]) {
   else snames_qry = loadSampleNamesFromIndex(fname_qry);
   
   if (print_header)
-    fputs("Query\tMask\tN_query\tN_mask\tN_overlap\tbeta\n", stdout);
+    fputs("Query\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tbeta\n", stdout);
   
   cgdata_t cg_qry_inflated = {0};
   for (uint64_t kq=0;;++kq) {
