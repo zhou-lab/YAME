@@ -71,7 +71,7 @@ int main_summarize(int argc, char *argv[]) {
   char *fname_qry = argv[optind];
   cgfile_t cgf_qry = open_cgfile(fname_qry); int n_qry = 0;
   index_pair_t *idx_pairs_qry = load_index_pairs(fname_qry, &n_qry);
-  if (print_header) fputs("Query\tFeature\tN_uni\tNf\tNq\tNfq\n", stdout);
+  if (print_header) fputs("Query\tFeature\tN_nonzero\tbeta\n", stdout);
 
   uint64_t n_nonzero = 0; double mean_betas = 0.0;
   cgdata_t cg_qry_inflated = {0};
