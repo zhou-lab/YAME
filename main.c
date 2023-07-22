@@ -39,13 +39,13 @@ const int unit_base[40] = {
 };
 
 int main_pack(int argc, char *argv[]);
-int main_overlap(int argc, char *argv[]);
 int main_subset(int argc, char *argv[]);
 int main_rowsub(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
 int main_dim(int argc, char *argv[]);
 int main_summarize(int argc, char *argv[]);
+int main_overlap(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
 int main_chunkchar(int argc, char *argv[]);
 int main_rowops(int argc, char *argv[]);
@@ -62,12 +62,12 @@ static int usage()
   fprintf(stderr, "Usage:   kycg <command> [options]\n\n");
   fprintf(stderr, "Available commands:\n");
   fprintf(stderr, "     pack         - Pack data into a cg file.\n");
-  fprintf(stderr, "     overlap      - Compute the overlap of cg files.\n");
   fprintf(stderr, "     unpack       - Unpack data from a cg file.\n");
   fprintf(stderr, "     subset       - Subset samples from a cg file.\n");
   fprintf(stderr, "     rowsub       - Subset rows a cg file using an index list file.\n");
   fprintf(stderr, "     dim          - Display data dimensions.\n");
-  fprintf(stderr, "     summarize    - calculate means, with or without masks.\n");
+  fprintf(stderr, "     summarize    - calculate summary, with or without masks.\n");
+  fprintf(stderr, "     overlap      - Compute the overlap of cg files (faster than summarize).\n");
   fprintf(stderr, "     index        - Index samples in a cg file.\n");
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
   fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
@@ -82,13 +82,13 @@ int main(int argc, char *argv[]) {
   int ret;
   if (argc < 2) return usage();
   if (strcmp(argv[1], "pack") == 0) ret = main_pack(argc-1, argv+1);
-  else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
   else if (strcmp(argv[1], "subset") == 0) ret = main_subset(argc-1, argv+1);
   else if (strcmp(argv[1], "rowsub") == 0) ret = main_rowsub(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   else if (strcmp(argv[1], "dim") == 0) ret = main_dim(argc-1, argv+1);
   else if (strcmp(argv[1], "summarize") == 0) ret = main_summarize(argc-1, argv+1);
+  else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
   else if (strcmp(argv[1], "chunk") == 0) ret = main_chunk(argc-1, argv+1);
   else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);

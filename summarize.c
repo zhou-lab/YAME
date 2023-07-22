@@ -105,7 +105,7 @@ int main_summarize(int argc, char *argv[]) {
   else snames_qry = loadSampleNamesFromIndex(fname_qry);
   
   if (print_header)
-    fputs("Query\tFeature\tN_query\tN_mask\tN_overlap\tbeta\n", stdout);
+    fputs("Query\tMask\tN_query\tN_mask\tN_overlap\tbeta\n", stdout);
   
   cgdata_t cg_qry_inflated = {0};
   for (uint64_t kq=0;;++kq) {

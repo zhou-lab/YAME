@@ -72,19 +72,20 @@ int main_overlap(int argc, char *argv[]) {
   }
 
   char *fname_fea = argv[optind++];
-  cgfile_t cgf_fea = open_cgfile(fname_fea); int n_fea=0;
-  index_pair_t *idx_pairs_fea = load_index_pairs(fname_fea, &n_fea);
+  cgfile_t cgf_fea = open_cgfile(fname_fea);
+  snames_t snames_fea = loadSampleNamesFromIndex(fname_fea);
   int unseekable = bgzf_seek(cgf_fea.fh, 0, SEEK_SET);
   char *fname_qry = argv[optind];
-  cgfile_t cgf_qry = open_cgfile(fname_qry); int n_qry=0;
-  index_pair_t *idx_pairs_qry = load_index_pairs(fname_qry, &n_qry);
+  cgfile_t cgf_qry = open_cgfile(fname_qry);
+  snames_t snames_qry = loadSampleNamesFromIndex(fname_qry);
 
   cgdata_t cg_fea = {0};
   if (unseekable) {             /* only the first cg */
     cg_fea = read_cg(&cgf_fea);
     convertToFmt0(&cg_fea);
   }
-  if (print_header) fputs("Query\tFeature\tN_uni\tNf\tNq\tNfq\n", stdout);
+  if (print_header)
+    fputs("Query\tFeature\tN_universe\tN_feature\tN_query\tN_overlap\n", stdout);
   
   for (uint64_t kq=0;;++kq) {
     cgdata_t cg_qry = read_cg(&cgf_qry);
@@ -104,9 +105,9 @@ int main_overlap(int argc, char *argv[]) {
       bit_mask(cg_qry.s, cg_fea.s, cg_qry.n);
       size_t nfq = bit_count(cg_qry);
 
-      if (idx_pairs_qry) { fputs(idx_pairs_qry[kq].key, stdout); fputc('\t', stdout); }
+      if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
       else fprintf(stdout, "%"PRIu64"\t", kq+1);
-      if (idx_pairs_fea) { fputs(idx_pairs_fea[0].key, stdout); fputc('\t', stdout); }
+      if (snames_fea.n) { fputs(snames_fea.s[0], stdout); fputc('\t', stdout); }
       else fputs("1\t", stdout);
       fprintf(stdout, "%zu\t%zu\t%zu\t%zu\n", m_uni, nf, nq, nfq);
     } else {
@@ -122,9 +123,9 @@ int main_overlap(int argc, char *argv[]) {
         bit_mask(cg_fea.s, cg_qry.s, cg_qry.n);
         size_t nfq = bit_count(cg_fea);
 
-        if (idx_pairs_qry) { fputs(idx_pairs_qry[kq].key, stdout); fputc('\t', stdout); }
+        if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
         else fprintf(stdout, "%"PRIu64"\t", kq+1);
-        if (idx_pairs_fea) { fputs(idx_pairs_fea[kf].key, stdout); fputc('\t', stdout); }
+        if (snames_fea.n) { fputs(snames_fea.s[kf], stdout); fputc('\t', stdout); }
         else fprintf(stdout, "%"PRIu64"\t", kf+1);
         fprintf(stdout, "%zu\t%zu\t%zu\t%zu\n", m_uni, nf, nq, nfq);
 
@@ -137,8 +138,8 @@ int main_overlap(int argc, char *argv[]) {
   if (cg_uni.n > 0) free(cg_uni.s);
   bgzf_close(cgf_qry.fh);
   bgzf_close(cgf_fea.fh);
-  if (idx_pairs_fea) clean_index_pairs(idx_pairs_fea, n_fea);
-  if (idx_pairs_qry) clean_index_pairs(idx_pairs_qry, n_qry);
+  cleanSampleNames2(snames_qry);
+  cleanSampleNames2(snames_fea);
   
   return 0;
 }
