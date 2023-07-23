@@ -56,7 +56,7 @@ int main_chunk(int argc, char *argv[]) {
     for (i=0; i<=(cg2.n/chunk_size); ++i) {
       cg3.s = NULL;
       slice(&cg2, i*chunk_size, (i+1)*chunk_size-1, &cg3);
-      recompress(&cg3);
+      cdata_compress(&cg3);
       char *tmp = malloc(strlen(outdir) + 1000);
       sprintf(tmp, "%s/%lu.cg", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);

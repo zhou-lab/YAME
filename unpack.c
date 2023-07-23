@@ -37,6 +37,14 @@ static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
     fputc(cg->s[i], stdout);
     break;
   }
+  case '2': {
+    if (!cg->aux) fmt2_set_keys(cg);
+    keys_t keys = *((keys_t*) cg->aux);
+    uint64_t *data = (uint64_t*) fmt2_get_data(cg);
+    assert(data[i] < keys.n);
+    fprintf(stdout, "%s", keys.s[data[i]]);
+    break;
+  }
   case '3': {
     uint64_t *s = (uint64_t*) cg->s;
     if (printfmt3 == 0)
@@ -114,7 +122,7 @@ static void print_cgs(cgdata_v *cgs, int printfmt3) {
     }
     fputc('\n', stdout);
   }
-  for (k=0; k<kn; ++k) free(expanded[k].s);
+  for (k=0; k<kn; ++k) free_cgdata(&expanded[k]);
   free(expanded);
 }
 
@@ -146,6 +154,7 @@ int main_unpack(int argc, char *argv[]) {
   cgfile_t cgf = open_cgfile(argv[optind]);
   char *fname_index = get_fname_index(argv[optind]);
   index_t *idx = loadIndex(fname_index);
+  if (fname_index) free(fname_index);
 
   snames_t snames = {0};
   if (optind + 1 < argc) {      // The requested sample names from command line
@@ -183,7 +192,7 @@ int main_unpack(int argc, char *argv[]) {
   else print_cgs(cgs, printfmt3);
 
   // clean up
-  for (uint64_t i=0; i<cgs->size; ++i) free(ref_cgdata_v(cgs,i)->s);
+  for (uint64_t i=0; i<cgs->size; ++i) free_cgdata(ref_cgdata_v(cgs,i));
   free_cgdata_v(cgs);
   bgzf_close(cgf.fh);
   if (idx) cleanIndex(idx);

@@ -100,7 +100,7 @@ int main_rowsub(int argc, char *argv[]) {
     cgdata_t cg3 = {0};
     cg3.s = NULL;
     sliceToIndices(&cg2, row_indices, n, &cg3);
-    recompress(&cg3);
+    cdata_compress(&cg3);
     cgdata_write1(fp_out, &cg3);
     free(cg3.s); free(cg2.s); free(cg.s);
   }

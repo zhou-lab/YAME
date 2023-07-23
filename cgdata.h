@@ -18,11 +18,22 @@
 
 #define CGSIG 266563789635
 
+typedef struct keys_t {
+  uint64_t n;
+  char **s;
+} keys_t;
+
+/** The header design, 17 bytes
+    uint64_t: signature, used for validation
+    uint8_t: format (0=vec; 1=rle)
+    uint64_t: length (n_cgs or n_bytes for rle)
+**/
 typedef struct cgdata_t {
   uint8_t *s;
-  uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length*/
+  uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length */
   int compressed;
   char fmt;
+  void *aux;
 } cgdata_t;
 
 DEFINE_VECTOR(cgdata_v, cgdata_t)
@@ -39,6 +50,7 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
 /* unit size of uncompressed data */
 static inline uint64_t cgdata_unit_size(cgdata_t *cg) {
   switch(cg->fmt) {
+  case '2': return 8; break; // TODO: should fix
   case '3': return 8; break;
   case '4': return 4; break;
   case '5': return 1; break;
@@ -50,38 +62,42 @@ static inline uint64_t cgdata_unit_size(cgdata_t *cg) {
 
 static inline void free_cgdata(cgdata_t *cg) {
   if(cg->s) free(cg->s);
-  free(cg);
+  if (cg->fmt == '2' && cg->aux) {
+    free(((keys_t*) cg->aux)->s);
+    free(cg->aux);
+  }
 }
 
 void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
 
-cgdata_t *fmt0_read_uncompressed(char *fname, int verbose);
-void fmt0_decompress(cgdata_t *cg, cgdata_t *expanded);
-
-cgdata_t *fmt1_read_uncompressed(char *fname, int verbose);
-void fmt1_compress(cgdata_t *cg);
-void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded);
-
-cgdata_t *fmt3_read_uncompressed(char *fname, int verbose);
-void fmt3_compress(cgdata_t *cg);
-void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded);
-
-cgdata_t *fmt4_read_uncompressed(char *fname, int verbose);
-void fmt4_compress(cgdata_t *cg);
-void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded);
-
-cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
-void fmt5_compress(cgdata_t *cg);
-void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded);
-
-cgdata_t *fmt6_read_uncompressed(char *fname, int verbose);
-void fmt6_compress(cgdata_t *cg);
-void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded);
-
 void decompress(cgdata_t *cg, cgdata_t *expanded);
-void recompress(cgdata_t *cg);
+void cdata_compress(cgdata_t *cg);
+
+void fmt0_decompress(cgdata_t *cg, cgdata_t *inflated);
+
+void fmt1_compress(cgdata_t *cg);
+void fmt1_decompress(cgdata_t *cg, cgdata_t *inflated);
+
+void fmt2_compress(cgdata_t *cg);
+void fmt2_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt2_set_keys(cgdata_t *cg);
+uint8_t* fmt2_get_data(cgdata_t *cg);
+
+void fmt3_compress(cgdata_t *cg);
+void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated);
+
+void fmt4_compress(cgdata_t *cg);
+void fmt4_decompress(cgdata_t *cg, cgdata_t *inflated);
+
+void fmt5_compress(cgdata_t *cg);
+void fmt5_decompress(cgdata_t *cg, cgdata_t *inflated);
+
+void fmt6_compress(cgdata_t *cg);
+void fmt6_decompress(cgdata_t *cg, cgdata_t *inflated);
 
 void convertToFmt0(cgdata_t *cg);
+
+
 
 static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
 

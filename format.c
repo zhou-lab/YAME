@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include "cgdata.h"
 
 /* https://developer.ibm.com/articles/au-endianc/ */

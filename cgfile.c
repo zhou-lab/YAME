@@ -167,7 +167,7 @@ void cgdata_write1(BGZF *fp, cgdata_t *cg) {
 
 void cgdata_write(char *fname_out, cgdata_t *cg, const char *mode, int verbose) {
 
-  if (!cg->compressed) recompress(cg);
+  if (!cg->compressed) cdata_compress(cg);
   
   BGZF* fp;
   if (fname_out) fp = bgzf_open2(fname_out, mode);
