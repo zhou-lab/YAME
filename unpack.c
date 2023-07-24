@@ -38,11 +38,7 @@ static void print_cg1(cgdata_t *cg, uint64_t i, int printfmt3) {
     break;
   }
   case '2': {
-    if (!cg->aux) fmt2_set_keys(cg);
-    keys_t keys = *((keys_t*) cg->aux);
-    uint64_t *data = (uint64_t*) fmt2_get_data(cg);
-    assert(data[i] < keys.n);
-    fprintf(stdout, "%s", keys.s[data[i]]);
+    fprintf(stdout, "%s", cgdata_get_data_char(cg, i));
     break;
   }
   case '3': {

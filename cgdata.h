@@ -18,10 +18,11 @@
 
 #define CGSIG 266563789635
 
-typedef struct keys_t {
-  uint64_t n;
-  char **s;
-} keys_t;
+typedef struct f2_aux_t {
+  uint64_t nk;                  // num keys
+  char **keys;                  // pointer to keys
+  uint8_t *data;                // pointer to data
+} f2_aux_t;
 
 /** The header design, 17 bytes
     uint64_t: signature, used for validation
@@ -33,6 +34,7 @@ typedef struct cgdata_t {
   uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length */
   int compressed;
   char fmt;
+  uint8_t unit; // how many bytes is needed for each decompressed data unit
   void *aux;
 } cgdata_t;
 
@@ -47,30 +49,32 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   return n;
 }
 
-/* unit size of uncompressed data */
-static inline uint64_t cgdata_unit_size(cgdata_t *cg) {
-  switch(cg->fmt) {
-  case '2': return 8; break; // TODO: should fix
-  case '3': return 8; break;
-  case '4': return 4; break;
-  case '5': return 1; break;
-  case '6': return 8; break;
-  default: return 1;
-  }
-  return 1;
-}
+/* /\* unit size of uncompressed data *\/ */
+/* static inline uint64_t cgdata_unit_size(cgdata_t *cg) { */
+/*   switch(cg->fmt) { */
+/*   case '2': return 8; break; // TODO: should fix */
+/*   case '3': return 8; break; */
+/*   case '4': return 4; break; */
+/*   case '5': return 1; break; */
+/*   case '6': return 8; break; */
+/*   default: return 1; */
+/*   } */
+/*   return 1; */
+/* } */
 
 static inline void free_cgdata(cgdata_t *cg) {
   if(cg->s) free(cg->s);
   if (cg->fmt == '2' && cg->aux) {
-    free(((keys_t*) cg->aux)->s);
+    free(((f2_aux_t*) cg->aux)->keys);
     free(cg->aux);
   }
+  cg->s = NULL;
 }
 
 void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
 
 void decompress(cgdata_t *cg, cgdata_t *expanded);
+void decompress2(cgdata_t *cg);
 void cdata_compress(cgdata_t *cg);
 
 void fmt0_decompress(cgdata_t *cg, cgdata_t *inflated);
@@ -80,8 +84,9 @@ void fmt1_decompress(cgdata_t *cg, cgdata_t *inflated);
 
 void fmt2_compress(cgdata_t *cg);
 void fmt2_decompress(cgdata_t *cg, cgdata_t *inflated);
-void fmt2_set_keys(cgdata_t *cg);
+void fmt2_set_aux(cgdata_t *cg);
 uint8_t* fmt2_get_data(cgdata_t *cg);
+uint64_t fmt2_get_keys_n(cgdata_t *cg);
 
 void fmt3_compress(cgdata_t *cg);
 void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated);
@@ -97,8 +102,6 @@ void fmt6_decompress(cgdata_t *cg, cgdata_t *inflated);
 
 void convertToFmt0(cgdata_t *cg);
 
-
-
 static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
 
   if (cg->compressed) {
@@ -109,8 +112,8 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
   if (end > cg->n-1) end = cg->n-1;
   if (end < beg) wzfatal("Slicing negative span.");
 
-  cg_sliced->s = realloc(cg_sliced->s, (end-beg+1)*cgdata_unit_size(cg));
-  memcpy(cg_sliced->s, cg->s+beg*cgdata_unit_size(cg), (end-beg+1)*cgdata_unit_size(cg));
+  cg_sliced->s = realloc(cg_sliced->s, (end-beg+1)*cg->unit);
+  memcpy(cg_sliced->s, cg->s+beg*cg->unit, (end-beg+1)*cg->unit);
   cg_sliced->n = end - beg + 1;
   cg_sliced->compressed = 0;
   cg_sliced->fmt = cg->fmt;
@@ -151,6 +154,30 @@ static inline uint64_t MUbinarize(uint64_t MU) {
   } else {
     return 1ul;
   }
+}
+
+/* static inline void set_data_uint64(uint8_t *data, uint64_t value, uint8_t value_nbytes) { */
+/*   for (uint8_t i=0; i<value_nbytes; ++i) { */
+/*     data[i] = (value & 0xff); */
+/*     value >>= 8; */
+/*   } */
+/* } */
+
+static inline uint64_t cgdata_get_data_uint64(cgdata_t *cg, uint64_t i) {
+  if (!cg->aux) fmt2_set_aux(cg);
+  f2_aux_t *aux = (f2_aux_t*) cg->aux;
+  uint8_t *d = aux->data + cg->unit*i;
+  uint64_t value = 0;
+  for (uint8_t j=0; j<cg->unit; ++j) value |= (d[j] << (8*j));
+  return value;
+}
+
+static inline char* cgdata_get_data_char(cgdata_t *cg, uint64_t i) {
+  if (!cg->aux) fmt2_set_aux(cg);
+  f2_aux_t *aux = (f2_aux_t*) cg->aux;
+  uint64_t val = cgdata_get_data_uint64(cg, i);
+  assert(val < aux->nk);
+  return aux->keys[val];
 }
 
 #endif /* _CGDATA_H */

@@ -6,6 +6,7 @@
 #include "wzbed.h"
 #include "cgfile.h"
 #include "snames.h"
+#include "kstring.h"
 
 static int usage() {
   fprintf(stderr, "\n");
@@ -13,7 +14,7 @@ static int usage() {
   fprintf(stderr, "Query should be of format 3, can be a multi-sample set.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -m        Binary .cg file, can be multi-sample.\n");
+  fprintf(stderr, "    -m        Binary (.cb) file, can be multi-sample.\n");
   fprintf(stderr, "    -M        All masks will be loaded to memory. This save disk IO.\n");
   fprintf(stderr, "    -H        Print header?.\n");
   fprintf(stderr, "    -s        Sample list provided to override the query index file.\n");
@@ -27,46 +28,89 @@ static int usage() {
 
 typedef struct stats_t {
   double mean_beta;
+  double sum_beta;
   uint64_t n_u;                 // universe
   uint64_t n_q;                 // query
   uint64_t n_m;                 // mask
   uint64_t n_o;                 // overlap
 } stats_t;
 
-static stats_t summarize1(cgdata_t cg, cgdata_t cg_mask) {
+static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **st) {
   assert(cg.compressed == 0);
-  assert(cg.fmt == '3');
   uint64_t *s = (uint64_t*) cg.s;
-  uint64_t sum = 0;
-
-  stats_t stats = {0};
-  stats.n_u = cg.n;
-  if (cg_mask.n) {
+  
+  if (cg_mask.fmt == '2') {     // state mask
     assert(cg_mask.n == cg.n);
+    *n_st = fmt2_get_keys_n(&cg_mask);
+    (*st) = realloc((*st), sizeof(stats_t)*(*n_st));
+    memset(*st, 0, sizeof(stats_t)*(*n_st));
+    
+    uint64_t nq=0;
     for (uint64_t i=0; i<cg.n; ++i) {
-      if (s[i]) stats.n_q++;
-      if (cg_mask.s[i>>3]&(1<<(i&0x7))) {
-        stats.n_m++;
-        if (s[i]) {
-          sum += MU2beta(s[i]);
-          stats.n_o++;
-        }}}
-  } else {
-    for (uint64_t i=0; i<cg.n; ++i) {
+      uint64_t index = cgdata_get_data_uint64(&cg_mask, i);
+      assert(index < (*n_st));
       if (s[i]) {
-        sum += MU2beta(s[i]);
-        stats.n_o++;
-        stats.n_q++;
-      }}
+        (*st)[index].sum_beta += MU2beta(s[i]);
+        (*st)[index].n_o++;
+        nq++;
+      }
+      (*st)[index].n_m++;
+    }
+
+    for (uint64_t k=0; k < (*n_st); ++k) {
+      (*st)[k].n_q = nq;
+      (*st)[k].n_u = cg.n;
+      (*st)[k].mean_beta = (*st)[k].sum_beta / (*st)[k].n_o;
+    }
+  } else {                      // binary mask
+    assert(cg.fmt == '3');
+    *n_st = 1;
+    (*st) = realloc((*st), sizeof(stats_t)*(*n_st));
+    stats_t *st1 = *st;
+    memset(st1, 0, sizeof(stats_t));
+
+    st1->n_u = cg.n;
+    if (cg_mask.n) {
+      assert(cg_mask.n == cg.n);
+      for (uint64_t i=0; i<cg.n; ++i) {
+        if (s[i]) st1->n_q++;
+        if (cg_mask.s[i>>3]&(1<<(i&0x7))) {
+          st1->n_m++;
+          if (s[i]) {
+            st1->sum_beta += MU2beta(s[i]);
+            st1->n_o++;
+          }}}
+    } else {
+      for (uint64_t i=0; i<cg.n; ++i) {
+        if (s[i]) {
+          st1->sum_beta += MU2beta(s[i]);
+          st1->n_o++;
+          st1->n_q++;
+        }}
+    }
+    st1->mean_beta = (double) st1->sum_beta / st1->n_o;
   }
-  stats.mean_beta = (double) sum / stats.n_o;
-  return stats;
 }
 
-static void format_stats(stats_t st) {
-  fprintf(stdout,
-          "%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%f\n",
-          st.n_u, st.n_q, st.n_m, st.n_o, st.mean_beta);
+static void format_stats(stats_t *st, uint64_t n_st, char *sq, char *sm, cgdata_t *cg_mask) {
+  if (cg_mask->fmt == '2') {
+    if (!cg_mask->aux) fmt2_set_aux(cg_mask);
+    f2_aux_t *aux = (f2_aux_t*) cg_mask->aux;
+    for (uint64_t i=0; i<n_st; ++i) {
+      fprintf(
+        stdout,
+        "%s\t%s-%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%f\n",
+        sq, sm, aux->keys[i],
+        st[i].n_u, st[i].n_q, st[i].n_m, st[i].n_o, st[i].mean_beta);
+    }
+  } else {
+    for (uint64_t i=0; i<n_st; ++i) {
+      fprintf(
+        stdout,
+        "%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%f\n",
+        sq, sm, st[i].n_u, st[i].n_q, st[i].n_m, st[i].n_o, st[i].mean_beta);
+    }
+  }
 }
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
@@ -97,7 +141,9 @@ int main_summarize(int argc, char *argv[]) {
     unseekable = bgzf_seek(cgf_mask.fh, 0, SEEK_SET);
     if (unseekable) {             /* only the first cg */
       cg_mask = read_cg(&cgf_mask);
-      convertToFmt0(&cg_mask);
+      if (cg_mask.fmt == '2') decompress2(&cg_mask);
+      else convertToFmt0(&cg_mask);
+
     }
     snames_mask = loadSampleNamesFromIndex(fname_mask);
   }
@@ -118,65 +164,72 @@ int main_summarize(int argc, char *argv[]) {
     for (;;++cg_masks_n) {
       cg_mask = read_cg(&cgf_mask);
       if (cg_mask.n == 0) break;
-      convertToFmt0(&cg_mask);
+      if (cg_mask.fmt == '2') decompress2(&cg_mask);
+      else convertToFmt0(&cg_mask);
       cg_masks = realloc(cg_masks, (cg_masks_n+1)*sizeof(cgdata_t));
       cg_masks[cg_masks_n] = cg_mask;
     }
   }
-  
+
+  uint64_t n_st = 0; stats_t *st = NULL;
   cgdata_t cg_qry_inflated = {0};
   for (uint64_t kq=0;;++kq) {
     cgdata_t cg_qry = read_cg(&cgf_qry);
     if (cg_qry.n == 0) break;
+    kstring_t sq = {0};
+    if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
+    else ksprintf(&sq, "%"PRIu64"\t", kq+1);
     decompress(&cg_qry, &cg_qry_inflated);
 
     if (fname_mask) {           /* apply any mask? */
       if (in_memory) {          /* in memory mask */
         for (uint64_t km=0;km<cg_masks_n;++km) {
           cg_mask = cg_masks[km];
-          stats_t st = summarize1(cg_qry_inflated, cg_mask);
-          if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
-          else fprintf(stdout, "%"PRIu64"\t", kq+1);
-          if (snames_mask.n) { fputs(snames_mask.s[km], stdout); fputc('\t', stdout); }
-          else fprintf(stdout, "%"PRIu64"\t", km+1);
-          format_stats(st);
+          summarize1(cg_qry_inflated, cg_mask, &n_st, &st);
+          kstring_t sm = {0};
+          if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+          else ksprintf(&sm, "%"PRIu64"", km+1);
+          format_stats(st, n_st, sq.s, sm.s, &cg_mask);
+          free(sm.s);
         }
       } else if (unseekable) {  /* mask is unseekable */
-        stats_t st = summarize1(cg_qry_inflated, cg_mask);
-        if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
-        else fprintf(stdout, "%"PRIu64"\t", kq+1);
-        fputs("mask\t", stdout);
-        format_stats(st);
+        summarize1(cg_qry_inflated, cg_mask, &n_st, &st);
+        kstring_t sm = {0};
+        kputs("mask", &sm);
+        format_stats(st, n_st, sq.s, sm.s, &cg_mask);
+        free(sm.s);
       } else {                  /* mask is seekable */
         assert(bgzf_seek(cgf_mask.fh, 0, SEEK_SET)==0);
         for (uint64_t km=0;;++km) {
           cg_mask = read_cg(&cgf_mask);
           if (cg_mask.n == 0) break;
-          convertToFmt0(&cg_mask);
-          stats_t st = summarize1(cg_qry_inflated, cg_mask);
+          if (cg_mask.fmt == '2') decompress2(&cg_mask);
+          else convertToFmt0(&cg_mask);
+          summarize1(cg_qry_inflated, cg_mask, &n_st, &st);
 
-          if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
-          else fprintf(stdout, "%"PRIu64"\t", kq+1);
-          if (snames_mask.n) { fputs(snames_mask.s[km], stdout); fputc('\t', stdout); }
-          else fprintf(stdout, "%"PRIu64"\t", km+1);
-          format_stats(st);
-          free(cg_mask.s); cg_mask.s = 0;
+          kstring_t sm = {0};
+          if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+          else ksprintf(&sm, "%"PRIu64"", km+1);
+          format_stats(st, n_st, sq.s, sm.s, &cg_mask);
+          free(sm.s);
+          free_cgdata(&cg_mask);
         }
       }
     } else {                    /* whole dataset summary if missing mask */
-      stats_t st = summarize1(cg_qry_inflated, cg_mask);
-      if (snames_qry.n) { fputs(snames_qry.s[kq], stdout); fputc('\t', stdout); }
-      else fprintf(stdout, "%"PRIu64"\t", kq+1);
-      fputs("global\t", stdout);
-      format_stats(st);
+      summarize1(cg_qry_inflated, cg_mask, &n_st, &st);
+      kstring_t sm = {0};
+      kputs("global", &sm);
+      format_stats(st, n_st, sq.s, sm.s, &cg_mask);
+      free(sm.s);
     }
+    free(sq.s);
     free(cg_qry.s); cg_qry.s = NULL;
   }
   if (cg_qry_inflated.s) free(cg_qry_inflated.s);
   if (in_memory) {
-    for (uint64_t i=0; i<cg_masks_n; ++i) free(cg_masks[i].s);
+    for (uint64_t i=0; i<cg_masks_n; ++i) free_cgdata(&cg_masks[i]);
     free(cg_masks);
-  } else if (cg_mask.s) free(cg_mask.s);
+  } else if (cg_mask.s) free_cgdata(&cg_mask);
   bgzf_close(cgf_qry.fh);
   if (fname_mask) bgzf_close(cgf_mask.fh);
   cleanSampleNames2(snames_qry);

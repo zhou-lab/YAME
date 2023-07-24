@@ -55,6 +55,7 @@ cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
 void fmt0_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->s = realloc(expanded->s, cgdata_nbytes(cg));
   memcpy(expanded->s, cg->s, cgdata_nbytes(cg));
+  expanded->unit = 1;
   expanded->n = cg->n;
   expanded->compressed = 0;
   expanded->fmt = '0';
@@ -191,6 +192,7 @@ void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->n = n;
   expanded->compressed = 0;
   expanded->fmt = '1';
+  expanded->unit = 1;
 }
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
@@ -318,6 +320,7 @@ void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->n = n;
   expanded->compressed = 0;
   expanded->fmt = '3';
+  expanded->unit = 8;
 }
 
 cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
@@ -411,6 +414,7 @@ void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->n = n;
   expanded->compressed = 0;
   expanded->fmt = '4';
+  expanded->unit = 4;
 }
 
 /* the input has only 0,1,2 */
@@ -520,6 +524,7 @@ void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->n = n;
   expanded->compressed = 0;
   expanded->fmt = '5';
+  expanded->unit = 1;
 }
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
@@ -607,6 +612,7 @@ void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->n = n;
   expanded->compressed = 0;
   expanded->fmt = '6';
+  expanded->unit = 8;
 }
 
 void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {

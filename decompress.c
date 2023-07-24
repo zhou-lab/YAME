@@ -14,6 +14,13 @@ void decompress(cgdata_t *cg, cgdata_t *expanded) {
   /* shouldn't reach here */
 }
 
+void decompress2(cgdata_t *cg) {
+  cgdata_t expanded = *cg;
+  expanded.s = NULL;
+  decompress(cg, &expanded);
+  *cg = expanded;
+}
+
 void cdata_compress(cgdata_t *cg) {
   if (cg->compressed) wzfatal("Already compressed");
   switch(cg->fmt) {

@@ -57,7 +57,7 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
 static void sliceToIndices(cgdata_t *cg, int64_t *row_indices, int64_t n, cgdata_t *cg2) {
 
   assert(!cg->compressed);
-  cg2->s = realloc(cg2->s, n*cgdata_unit_size(cg));
+  cg2->s = realloc(cg2->s, n*cg->unit);
   cg2->fmt = cg->fmt;
   int64_t i;
   for (i=0; i<n; ++i) {
