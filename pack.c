@@ -57,11 +57,10 @@ int main_pack(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-
   char *fname_out = NULL;
   if (argc >= optind + 2)
     fname_out = strdup(argv[optind+1]);
-  
+
   cgdata_t *cg;
   switch (fmt) {
   case 'b': {

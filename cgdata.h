@@ -38,8 +38,6 @@ typedef struct cgdata_t {
   void *aux;
 } cgdata_t;
 
-DEFINE_VECTOR(cgdata_v, cgdata_t)
-
 static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
   uint64_t n = 0;
   switch(cg->fmt) {
@@ -82,6 +80,14 @@ void fmt0_decompress(cgdata_t *cg, cgdata_t *inflated);
 void fmt1_compress(cgdata_t *cg);
 void fmt1_decompress(cgdata_t *cg, cgdata_t *inflated);
 
+// ----- format 2 (state data) ----
+// key section + data section
+// The key section and data section are separated by an extra '\0'.
+// The key section is made of multiple c-strings concatenated by '\0'.
+// The data section is either an RLE (compressed) or a integer vector (inflated).
+// When compressed, the RLE is made of a value part and a length part.
+// The value part size is defined by a uint8_t that leads the data section.
+// The length part is always 2 bytes in size.
 void fmt2_compress(cgdata_t *cg);
 void fmt2_decompress(cgdata_t *cg, cgdata_t *inflated);
 void fmt2_set_aux(cgdata_t *cg);
@@ -90,6 +96,7 @@ uint64_t fmt2_get_keys_n(cgdata_t *cg);
 
 void fmt3_compress(cgdata_t *cg);
 void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated);
+uint64_t f3_unpack_mu(cgdata_t *cg, uint64_t i);
 
 void fmt4_compress(cgdata_t *cg);
 void fmt4_decompress(cgdata_t *cg, cgdata_t *inflated);
@@ -117,18 +124,6 @@ static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_
   cg_sliced->n = end - beg + 1;
   cg_sliced->compressed = 0;
   cg_sliced->fmt = cg->fmt;
-}
-
-static inline uint32_t compressMU32(uint64_t M, uint64_t U) {
-  /* compress the M and U to 32-bit  */
-  if (M > 0xffff || U > 0xffff) {
-    uint64_t tmp;
-    int im = 0; tmp=M; while(tmp>>16) { tmp>>=1; ++im; }
-    int iu = 0; tmp=U; while(tmp>>16) { tmp>>=1; ++iu; }
-    im = (im>iu ? im : iu);
-    M>>=im; U>>=im;
-  }
-  return (uint32_t) (M<<16|U);
 }
 
 static inline uint64_t sumMUpair(uint64_t MU1, uint64_t MU2) {
@@ -163,7 +158,7 @@ static inline uint64_t MUbinarize(uint64_t MU) {
 /*   } */
 /* } */
 
-static inline uint64_t cgdata_get_data_uint64(cgdata_t *cg, uint64_t i) {
+static inline uint64_t f2_unpack_uint64(cgdata_t *cg, uint64_t i) {
   if (!cg->aux) fmt2_set_aux(cg);
   f2_aux_t *aux = (f2_aux_t*) cg->aux;
   uint8_t *d = aux->data + cg->unit*i;
@@ -172,10 +167,10 @@ static inline uint64_t cgdata_get_data_uint64(cgdata_t *cg, uint64_t i) {
   return value;
 }
 
-static inline char* cgdata_get_data_char(cgdata_t *cg, uint64_t i) {
+static inline char* f2_unpack_string(cgdata_t *cg, uint64_t i) {
   if (!cg->aux) fmt2_set_aux(cg);
   f2_aux_t *aux = (f2_aux_t*) cg->aux;
-  uint64_t val = cgdata_get_data_uint64(cg, i);
+  uint64_t val = f2_unpack_uint64(cg, i);
   assert(val < aux->nk);
   return aux->keys[val];
 }

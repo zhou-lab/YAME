@@ -36,6 +36,7 @@ int main_dim(int argc, char *argv[]) {
     fprintf(stdout, "%d\t%"PRIu64"\n", i+1, expanded.n);
     free(expanded.s); free(cg.s);
   }
+  bgzf_close(cgf.fh);
   
   return 0;
 }

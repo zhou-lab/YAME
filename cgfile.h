@@ -41,6 +41,8 @@ cgdata_t read_cg(cgfile_t *cgf);
  */
 int read_cg2(cgfile_t *cgf, cgdata_t *cg);
 
+DEFINE_VECTOR(cgdata_v, cgdata_t)
+
 /**
  * Reads cgdata from a specified range in a cgfile_t instance.
  * If "end" is smaller than "beg", the program will exit with an error.

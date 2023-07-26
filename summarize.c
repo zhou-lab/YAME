@@ -37,8 +37,6 @@ typedef struct stats_t {
 
 static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **st) {
   assert(cg.compressed == 0);
-  uint64_t *s = (uint64_t*) cg.s;
-  
   if (cg_mask.fmt == '2') {     // state mask
     assert(cg_mask.n == cg.n);
     *n_st = fmt2_get_keys_n(&cg_mask);
@@ -47,10 +45,11 @@ static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **
     
     uint64_t nq=0;
     for (uint64_t i=0; i<cg.n; ++i) {
-      uint64_t index = cgdata_get_data_uint64(&cg_mask, i);
+      uint64_t index = f2_unpack_uint64(&cg_mask, i);
+      uint64_t mu = f3_unpack_mu(&cg, i);
       assert(index < (*n_st));
-      if (s[i]) {
-        (*st)[index].sum_beta += MU2beta(s[i]);
+      if (mu) {
+        (*st)[index].sum_beta += MU2beta(mu);
         (*st)[index].n_o++;
         nq++;
       }
@@ -73,17 +72,19 @@ static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **
     if (cg_mask.n) {
       assert(cg_mask.n == cg.n);
       for (uint64_t i=0; i<cg.n; ++i) {
-        if (s[i]) st1->n_q++;
+        uint64_t mu = f3_unpack_mu(&cg, i);
+        if (mu) st1->n_q++;
         if (cg_mask.s[i>>3]&(1<<(i&0x7))) {
           st1->n_m++;
-          if (s[i]) {
-            st1->sum_beta += MU2beta(s[i]);
+          if (mu) {
+            st1->sum_beta += MU2beta(mu);
             st1->n_o++;
           }}}
     } else {
       for (uint64_t i=0; i<cg.n; ++i) {
-        if (s[i]) {
-          st1->sum_beta += MU2beta(s[i]);
+        uint64_t mu = f3_unpack_mu(&cg, i);
+        if (mu) {
+          st1->sum_beta += MU2beta(mu);
           st1->n_o++;
           st1->n_q++;
         }}
