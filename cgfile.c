@@ -102,10 +102,19 @@ cgdata_v* read_cgs_with_indices(cgfile_t *cgf, const int64_t* indices, int n) {
 
   for (int i = 0; i < n; i++) {
     int64_t index = indices[i];
-    assert(index >= 0);
+    if (index < 0) {
+      fprintf(stderr, "\n");
+      fprintf(stderr, "[%s:%d] Index is negative.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
 
     // Reposition the file pointer using bgzf_seek
-    assert(bgzf_seek(cgf->fh, index, SEEK_SET) == 0);
+    if (bgzf_seek(cgf->fh, index, SEEK_SET) != 0) {
+      fprintf(stderr, "[%s:%d] Cannot seek input.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
     read_cg2(cgf, &cg);
     if (cg.n > 0) {
       (*next_ref_cgdata_v(cgs)) = cg;

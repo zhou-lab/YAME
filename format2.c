@@ -163,7 +163,11 @@ static uint64_t fmt2_get_keys_nbytes(cgdata_t *cg) {
 
 // cg->n is the total nbytes only when compressed
 static uint64_t fmt2_get_data_nbytes(cgdata_t *cg) {
-  assert(cg->compressed==1);
+  if (!cg->compressed) {
+    fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
   uint64_t separator_idx = 0;
   for (uint64_t i = 0; i < cg->n; ++i) {
     if (cg->s[i] == '\0' && cg->s[i+1] == '\0') {
@@ -176,8 +180,13 @@ static uint64_t fmt2_get_data_nbytes(cgdata_t *cg) {
   return cg->n - separator_idx - 1 - 1;
 }
 
+// assume cg is compressed
 static uint8_t fmt2_get_value_byte(cgdata_t *cg) {
-  assert(cg->compressed==1);
+  if (!cg->compressed) {
+    fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
   uint64_t separator_idx = 0;
   for (uint64_t i = 0; i < cg->n; ++i) {
     if (cg->s[i] == '\0' && cg->s[i+1] == '\0') {
@@ -266,7 +275,11 @@ void fmt2_decompress(cgdata_t *cg, cgdata_t *inflated) {
 }
 
 void fmt2_set_aux(cgdata_t *cg) {
-  assert(cg->aux==NULL);
+  if (cg->aux != NULL) {
+    fprintf(stderr, "[%s:%d] Aux data exists.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
   // Create a keys_t object and allocate memory for s
   f2_aux_t *aux = calloc(1, sizeof(f2_aux_t));
   aux->nk = fmt2_get_keys_n(cg);

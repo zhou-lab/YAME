@@ -36,9 +36,12 @@ typedef struct stats_t {
 } stats_t;
 
 static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **st) {
-  assert(cg.compressed == 0);
   if (cg_mask.fmt == '2') {     // state mask
-    assert(cg_mask.n == cg.n);
+    if (cg_mask.n != cg.n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are not of the same length.\n", __func__, __LINE__, cg_mask.n, cg.n);
+      fflush(stderr);
+      exit(1);
+    }
     *n_st = fmt2_get_keys_n(&cg_mask);
     (*st) = realloc((*st), sizeof(stats_t)*(*n_st));
     memset(*st, 0, sizeof(stats_t)*(*n_st));
@@ -47,7 +50,11 @@ static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **
     for (uint64_t i=0; i<cg.n; ++i) {
       uint64_t index = f2_unpack_uint64(&cg_mask, i);
       uint64_t mu = f3_unpack_mu(&cg, i);
-      assert(index < (*n_st));
+      if (index >= (*n_st)) {
+        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+        fflush(stderr);
+        exit(1);
+      }
       if (mu) {
         (*st)[index].sum_beta += MU2beta(mu);
         (*st)[index].n_o++;
@@ -62,7 +69,11 @@ static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **
       (*st)[k].mean_beta = (*st)[k].sum_beta / (*st)[k].n_o;
     }
   } else {                      // binary mask
-    assert(cg.fmt == '3');
+    if (cg.fmt != '3') {
+      fprintf(stderr, "[%s:%d] Query is not sequencing data.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
     *n_st = 1;
     (*st) = realloc((*st), sizeof(stats_t)*(*n_st));
     stats_t *st1 = *st;
@@ -70,7 +81,11 @@ static void summarize1(cgdata_t cg, cgdata_t cg_mask, uint64_t *n_st, stats_t **
 
     st1->n_u = cg.n;
     if (cg_mask.n) {
-      assert(cg_mask.n == cg.n);
+      if (cg_mask.n != cg.n) {
+        fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are not of the same length.\n", __func__, __LINE__, cg_mask.n, cg.n);
+        fflush(stderr);
+        exit(1);
+      }
       for (uint64_t i=0; i<cg.n; ++i) {
         uint64_t mu = f3_unpack_mu(&cg, i);
         if (mu) st1->n_q++;
@@ -200,7 +215,11 @@ int main_summarize(int argc, char *argv[]) {
         format_stats(st, n_st, sq.s, sm.s, &cg_mask);
         free(sm.s);
       } else {                  /* mask is seekable */
-        assert(bgzf_seek(cgf_mask.fh, 0, SEEK_SET)==0);
+        if (bgzf_seek(cgf_mask.fh, 0, SEEK_SET)!=0) {
+          fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
+          fflush(stderr);
+          exit(1);
+        }
         for (uint64_t km=0;;++km) {
           cg_mask = read_cg(&cgf_mask);
           if (cg_mask.n == 0) break;

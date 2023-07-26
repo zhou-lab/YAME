@@ -171,7 +171,11 @@ static inline char* f2_unpack_string(cgdata_t *cg, uint64_t i) {
   if (!cg->aux) fmt2_set_aux(cg);
   f2_aux_t *aux = (f2_aux_t*) cg->aux;
   uint64_t val = f2_unpack_uint64(cg, i);
-  assert(val < aux->nk);
+  if (val >= aux->nk) {
+    fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
   return aux->keys[val];
 }
 

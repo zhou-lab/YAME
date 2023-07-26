@@ -221,7 +221,6 @@ void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated) {
       i += 8;
     }
   }
-  assert(n0 == n);
   inflated->s = s;
   inflated->n = n;
   inflated->compressed = 0;
