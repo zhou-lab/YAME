@@ -2,7 +2,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg dim [options] <in.cg>\n");
+  fprintf(stderr, "Usage: yame dim [options] <in.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -h        This help\n");

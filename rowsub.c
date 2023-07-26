@@ -4,7 +4,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg rowsub [options] <in.cg> <row.index.list>\n");
+  fprintf(stderr, "Usage: yame rowsub [options] <in.cg> <row.index.list>\n");
   fprintf(stderr, "This function outputs to stdout.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");

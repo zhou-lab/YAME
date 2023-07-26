@@ -6,7 +6,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg pack [options] <in.bed> <out.cg>\n");
+  fprintf(stderr, "Usage: yame pack [options] <in.bed> <out.cg>\n");
   fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -f.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");

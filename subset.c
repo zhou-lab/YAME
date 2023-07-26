@@ -2,7 +2,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg subset [options] <in.cg> [<sample1>, ...]\n");
+  fprintf(stderr, "Usage: yame subset [options] <in.cg> [<sample1>, ...]\n");
   fprintf(stderr, "If -o <out.cg>, an index will also be generated. Otherwise, output .cg to stdout without index.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");

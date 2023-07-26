@@ -4,7 +4,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg chunkchar [options] <in.txt>\n");
+  fprintf(stderr, "Usage: yame chunkchar [options] <in.txt>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");

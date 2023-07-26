@@ -56,10 +56,10 @@ int main_index(int argc, char *argv[]);
 static int usage()
 {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Program: kycg (KnowYourCG) - A comprehensive tool for methylation data management.\n");
+  fprintf(stderr, "Program: yame (Yet Another Methylation tool) - whole genome DNA methylation data management.\n");
   fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
   fprintf(stderr, "Contact: Wanding Zhou<wanding.zhou@pennmedicine.upenn.edu>\n\n");
-  fprintf(stderr, "Usage:   kycg <command> [options]\n\n");
+  fprintf(stderr, "Usage:   yame <command> [options]\n\n");
   fprintf(stderr, "Available commands:\n");
   fprintf(stderr, "     pack         - Pack data into a cg file.\n");
   fprintf(stderr, "     unpack       - Unpack data from a cg file.\n");

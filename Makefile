@@ -12,7 +12,7 @@ endif
 
 INCLUDE = include
 
-PROG = kycg
+PROG = yame
 
 .PHONY: build
 build: exportcf $(PROG)
@@ -48,12 +48,12 @@ OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
 
 LIBS=$(OBJECTS) $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
 
-kycg: $(LIBS)
+yame: $(LIBS)
 	gcc $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
 
 
 ## clean just src
 .PHONY: clean
 clean :
-	rm -f *.o kycg
+	rm -f *.o yame
 	make -C $(LHTSLIB_DIR) clean

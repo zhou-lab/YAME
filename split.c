@@ -2,7 +2,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg split [options] <in.cg> out_prefix\n");
+  fprintf(stderr, "Usage: yame split [options] <in.cg> out_prefix\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");

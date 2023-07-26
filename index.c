@@ -184,7 +184,7 @@ void writeIndex(FILE *fp, index_t *idx) {
   
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg index [options] <in.cg>\n");
+  fprintf(stderr, "Usage: yame index [options] <in.cg>\n");
   fprintf(stderr, "The index file name default to <in.cg>.idx\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");

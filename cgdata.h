@@ -29,16 +29,16 @@ typedef struct f2_aux_t {
     uint8_t: format (0=vec; 1=rle)
     uint64_t: length (n_cgs or n_bytes for rle)
 **/
-typedef struct cgdata_t {
+typedef struct cdata_t {
   uint8_t *s;
   uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length */
   int compressed;
   char fmt;
   uint8_t unit; // how many bytes is needed for each decompressed data unit
   void *aux;
-} cgdata_t;
+} cdata_t;
 
-static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
+static inline uint64_t cgdata_nbytes(cdata_t *cg) {
   uint64_t n = 0;
   switch(cg->fmt) {
   case '0': n = (cg->n>>3)+1; break;
@@ -48,7 +48,7 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
 }
 
 /* /\* unit size of uncompressed data *\/ */
-/* static inline uint64_t cgdata_unit_size(cgdata_t *cg) { */
+/* static inline uint64_t cgdata_unit_size(cdata_t *cg) { */
 /*   switch(cg->fmt) { */
 /*   case '2': return 8; break; // TODO: should fix */
 /*   case '3': return 8; break; */
@@ -60,7 +60,7 @@ static inline uint64_t cgdata_nbytes(cgdata_t *cg) {
 /*   return 1; */
 /* } */
 
-static inline void free_cgdata(cgdata_t *cg) {
+static inline void free_cgdata(cdata_t *cg) {
   if(cg->s) free(cg->s);
   if (cg->fmt == '2' && cg->aux) {
     free(((f2_aux_t*) cg->aux)->keys);
@@ -69,16 +69,16 @@ static inline void free_cgdata(cgdata_t *cg) {
   cg->s = NULL;
 }
 
-void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg);
+void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *cg);
 
-void decompress(cgdata_t *cg, cgdata_t *expanded);
-void decompress2(cgdata_t *cg);
-void cdata_compress(cgdata_t *cg);
+void decompress(cdata_t *cg, cdata_t *expanded);
+void decompress2(cdata_t *cg);
+void cdata_compress(cdata_t *cg);
 
-void fmt0_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt0_decompress(cdata_t *cg, cdata_t *inflated);
 
-void fmt1_compress(cgdata_t *cg);
-void fmt1_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt1_compress(cdata_t *cg);
+void fmt1_decompress(cdata_t *cg, cdata_t *inflated);
 
 // ----- format 2 (state data) ----
 // key section + data section
@@ -88,28 +88,28 @@ void fmt1_decompress(cgdata_t *cg, cgdata_t *inflated);
 // When compressed, the RLE is made of a value part and a length part.
 // The value part size is defined by a uint8_t that leads the data section.
 // The length part is always 2 bytes in size.
-void fmt2_compress(cgdata_t *cg);
-void fmt2_decompress(cgdata_t *cg, cgdata_t *inflated);
-void fmt2_set_aux(cgdata_t *cg);
-uint8_t* fmt2_get_data(cgdata_t *cg);
-uint64_t fmt2_get_keys_n(cgdata_t *cg);
+void fmt2_compress(cdata_t *cg);
+void fmt2_decompress(cdata_t *cg, cdata_t *inflated);
+void fmt2_set_aux(cdata_t *cg);
+uint8_t* fmt2_get_data(cdata_t *cg);
+uint64_t fmt2_get_keys_n(cdata_t *cg);
 
-void fmt3_compress(cgdata_t *cg);
-void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated);
-uint64_t f3_unpack_mu(cgdata_t *cg, uint64_t i);
+void fmt3_compress(cdata_t *cg);
+void fmt3_decompress(cdata_t *cg, cdata_t *inflated);
+uint64_t f3_unpack_mu(cdata_t *cg, uint64_t i);
 
-void fmt4_compress(cgdata_t *cg);
-void fmt4_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt4_compress(cdata_t *cg);
+void fmt4_decompress(cdata_t *cg, cdata_t *inflated);
 
-void fmt5_compress(cgdata_t *cg);
-void fmt5_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt5_compress(cdata_t *cg);
+void fmt5_decompress(cdata_t *cg, cdata_t *inflated);
 
-void fmt6_compress(cgdata_t *cg);
-void fmt6_decompress(cgdata_t *cg, cgdata_t *inflated);
+void fmt6_compress(cdata_t *cg);
+void fmt6_decompress(cdata_t *cg, cdata_t *inflated);
 
-void convertToFmt0(cgdata_t *cg);
+void convertToFmt0(cdata_t *cg);
 
-static inline void slice(cgdata_t *cg, uint64_t beg, uint64_t end, cgdata_t *cg_sliced) {
+static inline void slice(cdata_t *cg, uint64_t beg, uint64_t end, cdata_t *cg_sliced) {
 
   if (cg->compressed) {
     fprintf(stderr, "[%s:%d] Cannot slice compressed data.\n", __func__, __LINE__);
@@ -158,7 +158,7 @@ static inline uint64_t MUbinarize(uint64_t MU) {
 /*   } */
 /* } */
 
-static inline uint64_t f2_unpack_uint64(cgdata_t *cg, uint64_t i) {
+static inline uint64_t f2_unpack_uint64(cdata_t *cg, uint64_t i) {
   if (!cg->aux) fmt2_set_aux(cg);
   f2_aux_t *aux = (f2_aux_t*) cg->aux;
   uint8_t *d = aux->data + cg->unit*i;
@@ -167,7 +167,7 @@ static inline uint64_t f2_unpack_uint64(cgdata_t *cg, uint64_t i) {
   return value;
 }
 
-static inline char* f2_unpack_string(cgdata_t *cg, uint64_t i) {
+static inline char* f2_unpack_string(cdata_t *cg, uint64_t i) {
   if (!cg->aux) fmt2_set_aux(cg);
   f2_aux_t *aux = (f2_aux_t*) cg->aux;
   uint64_t val = f2_unpack_uint64(cg, i);

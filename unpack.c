@@ -7,7 +7,7 @@
 #include "snames.h"
 
 static int usage() {
-  fprintf(stderr, "\nUsage: kycg unpack [options] <in.cg> [[sample 1], [sample 2], ...]\n\n");
+  fprintf(stderr, "\nUsage: yame unpack [options] <in.cg> [[sample 1], [sample 2], ...]\n\n");
 
   fprintf(stderr, "Options:\n");
 

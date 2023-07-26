@@ -10,7 +10,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg summarize [options] <query.cg>\n");
+  fprintf(stderr, "Usage: yame summarize [options] <query.cg>\n");
   fprintf(stderr, "Query should be of format 3, can be a multi-sample set.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");

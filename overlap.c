@@ -8,7 +8,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg overlap [options] <feature.cg> <query.cg>\n");
+  fprintf(stderr, "Usage: yame overlap [options] <feature.cg> <query.cg>\n");
   fprintf(stderr, "Query or feature can be a multi-sample set.\n");
   fprintf(stderr, "If feature.cg is unseekable, only first sample will be used.\n");
   fprintf(stderr, "If the input is format 3: test overlap of M+U.\n");

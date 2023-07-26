@@ -5,7 +5,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: kycg rowops [options] <in.cg> <out.cg>\n");
+  fprintf(stderr, "Usage: yame rowops [options] <in.cg> <out.cg>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
