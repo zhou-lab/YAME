@@ -16,7 +16,7 @@ static int usage() {
   fprintf(stderr, "              (5) 2-bit + NA-RLE. Input has only 0, 1, 2.\n");
   fprintf(stderr, "    -s        state data (.cs):\n");
   fprintf(stderr, "              (2) state text + index RLE.\n");
-  fprintf(stderr, "    -m        sequencing MU data (.cm):\n");
+  fprintf(stderr, "    -m        sequencing MU data (.cm, .cg, .ca, .cc, .ct):\n");
   fprintf(stderr, "              (3) MU RLE + ladder byte.\n");
   fprintf(stderr, "    -n        fraction data (.cn):\n");
   fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n");

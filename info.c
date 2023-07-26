@@ -2,7 +2,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame dim [options] <in.cx>\n");
+  fprintf(stderr, "Usage: yame info [options] <in.cx>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -h        This help\n");
@@ -11,7 +11,7 @@ static int usage() {
   return 1;
 }
 
-int main_dim(int argc, char *argv[]) {
+int main_info(int argc, char *argv[]) {
 
   int c;
   while ((c = getopt(argc, argv, "vh"))>=0) {
@@ -33,7 +33,7 @@ int main_dim(int argc, char *argv[]) {
     if (c.n == 0) break;
     cdata_t expanded = {0};
     decompress(&c, &expanded);
-    fprintf(stdout, "%d\t%"PRIu64"\n", i+1, expanded.n);
+    fprintf(stdout, "%d\t%"PRIu64"\t%c\t%u\n", i+1, expanded.n, expanded.fmt, expanded.unit);
     free(expanded.s); free(c.s);
   }
   bgzf_close(cf.fh);

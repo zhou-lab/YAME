@@ -67,16 +67,16 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   char **keys = calloc(1<<10, sizeof(char*));
   uint64_t keys_n = 0, keys_m = 1<<10;
   while (gzFile_read_line(fh, &line) > 0) {
-    int ret;
-    k = kh_put(str2int, h, strdup(line), &ret);
+    int ret; char *kc = strdup(line);
+    k = kh_put(str2int, h, kc, &ret);
     if (ret) {  // The key didn't exist before
       kh_val(h, k) = keys_count++;
-      if (keys_n+1>keys_m) {
+      if (keys_n + 1 > keys_m) {
         keys_m <<= 1;
         keys = realloc(keys, keys_m * sizeof(char*));
       }
-      keys[keys_n++] = strdup(line);
-    }
+      keys[keys_n++] = kc;
+    } else free(kc);
     if (data_n+1>data_m) {
       data_m <<= 1;
       data = realloc(data, data_m * sizeof(uint64_t));
@@ -220,6 +220,8 @@ void fmt2_compress(cdata_t *c) {
   uint8_t *s_out = calloc(keys_nb + rle_n + 1, sizeof(uint8_t));
   memcpy(s_out, c->s, keys_nb + 1);
   memcpy(s_out + keys_nb + 1, rle_data, rle_n);
+  free(rle_data);
+  free(c->s);
   c->s = s_out;
   c->n = keys_nb + rle_n + 1;
   c->compressed = 1;

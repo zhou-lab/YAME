@@ -20,8 +20,8 @@
 
 typedef struct f2_aux_t {
   uint64_t nk;                  // num keys
-  char **keys;                  // pointer to keys
-  uint8_t *data;                // pointer to data
+  char **keys;                  // pointer to keys, doesn't own memory
+  uint8_t *data;                // pointer to data, doesn't own memory
 } f2_aux_t;
 
 /** The header design, 17 bytes
@@ -48,7 +48,7 @@ static inline uint64_t cdata_nbytes(cdata_t *c) {
 }
 
 static inline void free_cdata(cdata_t *c) {
-  if(c->s) free(c->s);
+  if (c->s) free(c->s);
   if (c->fmt == '2' && c->aux) {
     free(((f2_aux_t*) c->aux)->keys);
     free(c->aux);

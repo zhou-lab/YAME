@@ -43,7 +43,7 @@ int main_subset(int argc, char *argv[]);
 int main_rowsub(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
-int main_dim(int argc, char *argv[]);
+int main_info(int argc, char *argv[]);
 int main_summarize(int argc, char *argv[]);
 int main_overlap(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
@@ -65,7 +65,7 @@ static int usage()
   fprintf(stderr, "     unpack       - Unpack data from a cx file.\n");
   fprintf(stderr, "     subset       - Subset samples from a cx file.\n");
   fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
-  fprintf(stderr, "     dim          - Display data dimensions.\n");
+  fprintf(stderr, "     info         - Display basic parameter of the cx file.\n");
   fprintf(stderr, "     summarize    - calculate summary, with or without masks.\n");
   fprintf(stderr, "     overlap      - Compute the overlap of cx files (faster than summarize).\n");
   fprintf(stderr, "     index        - Index samples in a cx file.\n");
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "subset") == 0) ret = main_subset(argc-1, argv+1);
   else if (strcmp(argv[1], "rowsub") == 0) ret = main_rowsub(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
-  else if (strcmp(argv[1], "dim") == 0) ret = main_dim(argc-1, argv+1);
+  else if (strcmp(argv[1], "info") == 0) ret = main_info(argc-1, argv+1);
   else if (strcmp(argv[1], "summarize") == 0) ret = main_summarize(argc-1, argv+1);
   else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
