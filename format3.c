@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "cgdata.h"
+#include "cdata.h"
 
 static int is_nonnegative_int(char *s) {
   size_t i;
@@ -50,22 +50,22 @@ static void f3_pack_mu(uint8_t *data, uint32_t M, uint32_t U, uint8_t unit) {
 }
 
 // note this function generate uin32_t not uint64_t. Please fix.
-uint64_t f3_unpack_mu(cgdata_t *cg, uint64_t i) {
+uint64_t f3_unpack_mu(cdata_t *c, uint64_t i) {
   uint64_t M = 0, U = 0;
-  if (cg->unit == 1) {
-    M = cg->s[i]>>4;
-    U = cg->s[i]&0xf;
+  if (c->unit == 1) {
+    M = c->s[i]>>4;
+    U = c->s[i]&0xf;
   } else {
-    uint8_t *data = cg->s + cg->unit*i;
+    uint8_t *data = c->s + c->unit*i;
     uint8_t k = 0;
-    for (uint8_t j=0; j<cg->unit/2; ++j) U |= (data[k++] << (8*j));
-    for (uint8_t j=0; j<cg->unit/2; ++j) M |= (data[k++] << (8*j));
+    for (uint8_t j=0; j<c->unit/2; ++j) U |= (data[k++] << (8*j));
+    for (uint8_t j=0; j<c->unit/2; ++j) M |= (data[k++] << (8*j));
   }
   return (M<<32) | (U & ((1ul<<32)-1));
 }
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
-cgdata_t* fmt3_read_raw(char *fname, int verbose) {
+cdata_t* fmt3_read_raw(char *fname, int verbose) {
   uint8_t unit = 8; // max size, zero loss
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -90,13 +90,13 @@ cgdata_t* fmt3_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '3';
-  cg->unit = unit;
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '3';
+  c->unit = unit;
+  return c;
 }
 
 /* compressed format
@@ -105,13 +105,13 @@ cgdata_t* fmt3_read_raw(char *fname, int verbose) {
    2byte | U,M in [0,127]------ = M (7bit) | U (7bit) + 2 (2bit)
    8byte | M,U in [128,2**31]-- = M (31bit) | U (31bit) + 3 (2bit)
 */
-void fmt3_compress(cgdata_t *cg) {
+void fmt3_compress(cdata_t *c) {
   uint8_t *s = NULL;
   uint64_t n = 0;
   uint64_t i = 0;
   uint64_t l = 0;
-  for (i=0; i<cg->n; i++) {
-    uint64_t MU = f3_unpack_mu(cg, i);
+  for (i=0; i<c->n; i++) {
+    uint64_t MU = f3_unpack_mu(c, i);
     uint64_t M = MU>>32;
     uint64_t U = MU<<32>>32;
     if (M>0 || U>0 || l+2 >= 1<<14) {
@@ -147,32 +147,32 @@ void fmt3_compress(cgdata_t *cg) {
     *((uint16_t*) (s+n)) = (uint16_t) l<<2;
     n += 2;
   }
-  free(cg->s);
-  cg->s = s;
-  cg->n = n;
-  cg->compressed = 1;
+  free(c->s);
+  c->s = s;
+  c->n = n;
+  c->compressed = 1;
 }
 
-static uint64_t get_data_length(cgdata_t *cg, uint8_t *unit) {
+static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
   uint8_t nbits = 1; // half unit nbits, M or U.
   uint64_t n = 0;
-  for (uint64_t i=0; i < cg->n; ) {
-    if ((cg->s[i] & 0x3) == 0) {
-      n += (((uint16_t*) (cg->s+i))[0])>>2;
+  for (uint64_t i=0; i < c->n; ) {
+    if ((c->s[i] & 0x3) == 0) {
+      n += (((uint16_t*) (c->s+i))[0])>>2;
       i += 2;
-    } else if ((cg->s[i] & 0x3) == 1) {
-      uint64_t M = (cg->s[i])>>5;
-      uint64_t U = ((cg->s[i])>>2) & 0x7;
+    } else if ((c->s[i] & 0x3) == 1) {
+      uint64_t M = (c->s[i])>>5;
+      uint64_t U = ((c->s[i])>>2) & 0x7;
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
       n++; i++;
-    } else if ((cg->s[i] & 0x3) == 2) {
-      uint64_t M = (((uint16_t*) (cg->s+i))[0])>>2;
+    } else if ((c->s[i] & 0x3) == 2) {
+      uint64_t M = (((uint16_t*) (c->s+i))[0])>>2;
       uint64_t U = M & ((1<<7)-1);
       M >>= 7;
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
       n++; i += 2;
     } else {
-      uint64_t M = (((uint64_t*) (cg->s+i))[0])>>2;
+      uint64_t M = (((uint64_t*) (c->s+i))[0])>>2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
@@ -184,27 +184,27 @@ static uint64_t get_data_length(cgdata_t *cg, uint8_t *unit) {
   return n;
 }
 
-void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated) {
+void fmt3_decompress(cdata_t *c, cdata_t *inflated) {
   uint8_t unit = 1;
-  uint64_t n0 = get_data_length(cg, &unit);
-  if (cg->unit) inflated->unit = cg->unit;
+  uint64_t n0 = get_data_length(c, &unit);
+  if (c->unit) inflated->unit = c->unit;
   else inflated->unit = unit; // use inferred max unit if unset
   uint8_t *s = calloc(inflated->unit*n0, sizeof(uint8_t));
   uint64_t n = 0; uint64_t modified = 0;
-  for (uint64_t i=0; i < cg->n; ) {
-    if ((cg->s[i] & 0x3) == 0) {
-      uint64_t l = unpack_value(cg->s+i, 2)>>2; // the length is 14 bits, so unit = 2
+  for (uint64_t i=0; i < c->n; ) {
+    if ((c->s[i] & 0x3) == 0) {
+      uint64_t l = unpack_value(c->s+i, 2)>>2; // the length is 14 bits, so unit = 2
       memset(s+n*inflated->unit, 0, inflated->unit*l); n += l;
       i += 2;
-    } else if ((cg->s[i] & 0x3) == 1) {
-      uint64_t M = (cg->s[i])>>5;
-      uint64_t U = ((cg->s[i])>>2) & 0x7;
+    } else if ((c->s[i] & 0x3) == 1) {
+      uint64_t M = (c->s[i])>>5;
+      uint64_t U = ((c->s[i])>>2) & 0x7;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
       else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
       f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i++;
-    } else if ((cg->s[i] & 0x3) == 2) {
-      uint64_t M = unpack_value(cg->s+i, 2)>>2;
+    } else if ((c->s[i] & 0x3) == 2) {
+      uint64_t M = unpack_value(c->s+i, 2)>>2;
       uint64_t U = M & ((1ul<<7)-1);
       M >>= 7;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
@@ -212,7 +212,7 @@ void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated) {
       f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i += 2;
     } else {
-      uint64_t M = unpack_value(cg->s+i, 8)>>2;
+      uint64_t M = unpack_value(c->s+i, 8)>>2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);

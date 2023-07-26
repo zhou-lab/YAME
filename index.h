@@ -16,21 +16,21 @@ typedef struct {
 } index_pair_t;
 
 /**
- * Extracts the index filename from the given filename of the form "fname.cg".
+ * Extracts the index filename from the given filename of the form "fname.cx".
  *
- * @param fname_cg The base filename from which to extract the index filename.
+ * @param fname_cx The base filename from which to extract the index filename.
  * @return A dynamically allocated string containing the extracted index filename.
  *         The caller is responsible for freeing the memory using `free()`.
  *         Returns NULL if the input filename is NULL or does not match the expected format.
  *
  * Example Usage:
  * ```c
- * char *fname_index = get_fname_index("data.cg");
+ * char *fname_index = get_fname_index("data.cx");
  * printf("Index filename: %s\n", fname_index);
  * free(fname_index);  // Remember to free the dynamically allocated memory
  * ```
  */
-char *get_fname_index(const char *fname_cg);
+char *get_fname_index(const char *fname_cx);
 
 /*************************************
  ** Loads an index from a file.      **
@@ -91,7 +91,7 @@ int64_t getIndex(index_t* index, char* sname);
  */
 index_pair_t *index_pairs(index_t *idx, int *n);
 /* load index pairs, instead of the index */
-index_pair_t* load_index_pairs(char *fname_cg, int *n);
+index_pair_t* load_index_pairs(char *fname_cx, int *n);
 void clean_index_pairs(index_pair_t *idx_pairs, int n);
 
 /**

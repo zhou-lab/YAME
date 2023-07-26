@@ -1,36 +1,36 @@
-#include "cgfile.h"
+#include "cfile.h"
 
-void decompress(cgdata_t *cg, cgdata_t *expanded) {
-  switch (cg->fmt) {
-  case '0': { fmt0_decompress(cg, expanded); break; }
-  case '1': { fmt1_decompress(cg, expanded); break; }
-  case '2': { fmt2_decompress(cg, expanded); break; }
-  case '3': { fmt3_decompress(cg, expanded); break; }
-  case '4': { fmt4_decompress(cg, expanded); break; }
-  case '5': { fmt5_decompress(cg, expanded); break; }
-  case '6': { fmt6_decompress(cg, expanded); break; }
-  default: wzfatal("Unrecognized format: %c.\n", cg->fmt);
+void decompress(cdata_t *c, cdata_t *expanded) {
+  switch (c->fmt) {
+  case '0': { fmt0_decompress(c, expanded); break; }
+  case '1': { fmt1_decompress(c, expanded); break; }
+  case '2': { fmt2_decompress(c, expanded); break; }
+  case '3': { fmt3_decompress(c, expanded); break; }
+  case '4': { fmt4_decompress(c, expanded); break; }
+  case '5': { fmt5_decompress(c, expanded); break; }
+  case '6': { fmt6_decompress(c, expanded); break; }
+  default: wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
   /* shouldn't reach here */
 }
 
-void decompress2(cgdata_t *cg) {
-  cgdata_t expanded = *cg;
+void decompress2(cdata_t *c) {
+  cdata_t expanded = *c;
   expanded.s = NULL;
-  decompress(cg, &expanded);
-  *cg = expanded;
+  decompress(c, &expanded);
+  *c = expanded;
 }
 
-void cdata_compress(cgdata_t *cg) {
-  if (cg->compressed) wzfatal("Already compressed");
-  switch(cg->fmt) {
+void cdata_compress(cdata_t *c) {
+  if (c->compressed) wzfatal("Already compressed");
+  switch(c->fmt) {
   case '0': { break; }
-  case '1': { fmt1_compress(cg); break; }
-  case '2': { fmt2_compress(cg); break; }
-  case '3': { fmt3_compress(cg); break; }
-  case '4': { fmt4_compress(cg); break; }
-  case '5': { fmt5_compress(cg); break; }
-  case '6': { fmt6_compress(cg); break; }
-  default: wzfatal("Unrecognized format: %c.\n", cg->fmt);
+  case '1': { fmt1_compress(c); break; }
+  case '2': { fmt2_compress(c); break; }
+  case '3': { fmt3_compress(c); break; }
+  case '4': { fmt4_compress(c); break; }
+  case '5': { fmt5_compress(c); break; }
+  case '6': { fmt6_compress(c); break; }
+  default: wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
 }

@@ -1,8 +1,8 @@
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame dim [options] <in.cg>\n");
+  fprintf(stderr, "Usage: yame dim [options] <in.cx>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -h        This help\n");
@@ -26,17 +26,17 @@ int main_dim(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  cgfile_t cgf = open_cgfile(argv[optind]);
+  cfile_t cf = open_cfile(argv[optind]);
   int i = 0;
   for (i=0; ; ++i) {
-    cgdata_t cg = read_cg(&cgf);
-    if (cg.n == 0) break;
-    cgdata_t expanded = {0};
-    decompress(&cg, &expanded);
+    cdata_t c = read_cdata1(&cf);
+    if (c.n == 0) break;
+    cdata_t expanded = {0};
+    decompress(&c, &expanded);
     fprintf(stdout, "%d\t%"PRIu64"\n", i+1, expanded.n);
-    free(expanded.s); free(cg.s);
+    free(expanded.s); free(c.s);
   }
-  bgzf_close(cgf.fh);
+  bgzf_close(cf.fh);
   
   return 0;
 }

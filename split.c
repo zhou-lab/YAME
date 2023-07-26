@@ -1,8 +1,8 @@
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame split [options] <in.cg> out_prefix\n");
+  fprintf(stderr, "Usage: yame split [options] <in.cx> out_prefix\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
@@ -30,7 +30,7 @@ int main_split(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n");
   }
 
-  cgfile_t cgf = open_cgfile(argv[optind++]);
+  cfile_t cf = open_cfile(argv[optind++]);
   char *prefix = argv[optind];
 
   char **snames = NULL; int snames_n = 0;
@@ -52,19 +52,19 @@ int main_split(int argc, char *argv[]) {
   
   int i = 0;
   for (i=0; ; ++i) {
-    cgdata_t cg = read_cg(&cgf);
-    if (cg.n == 0) break;
+    cdata_t c = read_cdata1(&cf);
+    if (c.n == 0) break;
     char *tmp = NULL;
     if (snames_n) {
       tmp = malloc(strlen(prefix)+strlen(snames[i])+1000);
-      sprintf(tmp, "%s%s.cg", prefix, snames[i]);
+      sprintf(tmp, "%s%s.cx", prefix, snames[i]);
     } else {
       tmp = malloc(strlen(prefix) + 1000);
-      sprintf(tmp, "%s_split_%i.cg", prefix, i+1);
+      sprintf(tmp, "%s_split_%i.cx", prefix, i+1);
     }
-    cgdata_write(tmp, &cg, "wb", verbose);
+    cdata_write(tmp, &c, "wb", verbose);
     free(tmp);
-    free(cg.s);
+    free(c.s);
   }
   
   return 0;

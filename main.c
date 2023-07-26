@@ -28,7 +28,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include "cgfile.h"
+#include "cfile.h"
 
 const int unit_base[40] = {
   0,  1,  1,  4,  4,  8,  8,  0,
@@ -61,14 +61,14 @@ static int usage()
   fprintf(stderr, "Contact: Wanding Zhou<wanding.zhou@pennmedicine.upenn.edu>\n\n");
   fprintf(stderr, "Usage:   yame <command> [options]\n\n");
   fprintf(stderr, "Available commands:\n");
-  fprintf(stderr, "     pack         - Pack data into a cg file.\n");
-  fprintf(stderr, "     unpack       - Unpack data from a cg file.\n");
-  fprintf(stderr, "     subset       - Subset samples from a cg file.\n");
-  fprintf(stderr, "     rowsub       - Subset rows a cg file using an index list file.\n");
+  fprintf(stderr, "     pack         - Pack data into a cx file.\n");
+  fprintf(stderr, "     unpack       - Unpack data from a cx file.\n");
+  fprintf(stderr, "     subset       - Subset samples from a cx file.\n");
+  fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
   fprintf(stderr, "     dim          - Display data dimensions.\n");
   fprintf(stderr, "     summarize    - calculate summary, with or without masks.\n");
-  fprintf(stderr, "     overlap      - Compute the overlap of cg files (faster than summarize).\n");
-  fprintf(stderr, "     index        - Index samples in a cg file.\n");
+  fprintf(stderr, "     overlap      - Compute the overlap of cx files (faster than summarize).\n");
+  fprintf(stderr, "     index        - Index samples in a cx file.\n");
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
   fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
   fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");

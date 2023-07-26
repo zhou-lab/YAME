@@ -2,11 +2,11 @@
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pack [options] <in.bed> <out.cg>\n");
+  fprintf(stderr, "Usage: yame pack [options] <in.bed> <out.cx>\n");
   fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -f.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
@@ -28,19 +28,19 @@ static int usage() {
   return 1;
 }
 
-cgdata_t *fmt0_read_raw(char *fname, int verbose);
-cgdata_t *fmt1_read_raw(char *fname, int verbose);
-cgdata_t *fmt2_read_raw(char *fname, int verbose);
-cgdata_t *fmt3_read_raw(char *fname, int verbose);
-cgdata_t *fmt4_read_raw(char *fname, int verbose);
-cgdata_t *fmt5_read_raw(char *fname, int verbose);
-cgdata_t *fmt6_read_raw(char *fname, int verbose);
+cdata_t *fmt0_read_raw(char *fname, int verbose);
+cdata_t *fmt1_read_raw(char *fname, int verbose);
+cdata_t *fmt2_read_raw(char *fname, int verbose);
+cdata_t *fmt3_read_raw(char *fname, int verbose);
+cdata_t *fmt4_read_raw(char *fname, int verbose);
+cdata_t *fmt5_read_raw(char *fname, int verbose);
+cdata_t *fmt6_read_raw(char *fname, int verbose);
 
 int main_pack(int argc, char *argv[]) {
 
-  int c; int verbose=0; char fmt='a';
-  while ((c = getopt(argc, argv, "bsmnf:vh"))>=0) {
-    switch (c) {
+  int c0; int verbose=0; char fmt='a';
+  while ((c0 = getopt(argc, argv, "bsmnf:vh"))>=0) {
+    switch (c0) {
     case 'b': fmt = 'b'; break;
     case 's': fmt = 's'; break;
     case 'm': fmt = 'm'; break;
@@ -48,7 +48,7 @@ int main_pack(int argc, char *argv[]) {
     case 'f': fmt = optarg[0]; break;
     case 'v': verbose = 1; break;
     case 'h': return usage(); break;
-    default: usage(); wzfatal("Unrecognized option: %c.\n", c);
+    default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
     }
   }
 
@@ -61,63 +61,63 @@ int main_pack(int argc, char *argv[]) {
   if (argc >= optind + 2)
     fname_out = strdup(argv[optind+1]);
 
-  cgdata_t *cg;
+  cdata_t *c;
   switch (fmt) {
   case 'b': {
-    cg = fmt0_read_raw(argv[optind], verbose);
-    fmta_tryBinary2byteRLE_ifsmaller(cg);
+    c = fmt0_read_raw(argv[optind], verbose);
+    fmta_tryBinary2byteRLE_ifsmaller(c);
     break;
   }
   case 's': {
-    cg = fmt2_read_raw(argv[optind], verbose);
+    c = fmt2_read_raw(argv[optind], verbose);
     break;
   }
   case 'm': {
-    cg = fmt3_read_raw(argv[optind], verbose);
+    c = fmt3_read_raw(argv[optind], verbose);
     break;
   }
   case 'n': {
-    cg = fmt4_read_raw(argv[optind], verbose);
+    c = fmt4_read_raw(argv[optind], verbose);
     break;
   }
   case '0': {
-    cg = fmt0_read_raw(argv[optind], verbose);
+    c = fmt0_read_raw(argv[optind], verbose);
     break;
   }
   case '1': {
-    cg = fmt1_read_raw(argv[optind], verbose);
-    fmt1_compress(cg);
+    c = fmt1_read_raw(argv[optind], verbose);
+    fmt1_compress(c);
     break;
   }
   case '2': {
-    cg = fmt2_read_raw(argv[optind], verbose);
-    fmt2_compress(cg);
+    c = fmt2_read_raw(argv[optind], verbose);
+    fmt2_compress(c);
     break;
   }
   case '3': {
-    cg = fmt3_read_raw(argv[optind], verbose);
-    fmt3_compress(cg);
+    c = fmt3_read_raw(argv[optind], verbose);
+    fmt3_compress(c);
     break;
   }
   case '4': {
-    cg = fmt4_read_raw(argv[optind], verbose);
-    fmt4_compress(cg);
+    c = fmt4_read_raw(argv[optind], verbose);
+    fmt4_compress(c);
     break;
   }
   case '5': {
-    cg = fmt5_read_raw(argv[optind], verbose);
-    fmt5_compress(cg);
+    c = fmt5_read_raw(argv[optind], verbose);
+    fmt5_compress(c);
     break;
   }
   case '6': {
-    cg = fmt6_read_raw(argv[optind], verbose);
-    fmt6_compress(cg);
+    c = fmt6_read_raw(argv[optind], verbose);
+    fmt6_compress(c);
     break;
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
   }
-  cgdata_write(fname_out, cg, "w", verbose);
-  free_cgdata(cg); free(cg);
+  cdata_write(fname_out, c, "w", verbose);
+  free_cdata(c); free(c);
 
   if (fname_out) free(fname_out);
   return 0;

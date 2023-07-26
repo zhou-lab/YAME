@@ -1,10 +1,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame rowsub [options] <in.cg> <row.index.list>\n");
+  fprintf(stderr, "Usage: yame rowsub [options] <in.cx> <row.index.list>\n");
   fprintf(stderr, "This function outputs to stdout.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
@@ -54,19 +54,19 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
   return indices;
 }
 
-static void sliceToIndices(cgdata_t *cg, int64_t *row_indices, int64_t n, cgdata_t *cg2) {
+static void sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n, cdata_t *c2) {
 
-  assert(!cg->compressed);
-  cg2->s = realloc(cg2->s, n*cg->unit);
-  cg2->fmt = cg->fmt;
+  assert(!c->compressed);
+  c2->s = realloc(c2->s, n*c->unit);
+  c2->fmt = c->fmt;
   int64_t i;
   for (i=0; i<n; ++i) {
-    uint64_t *s = (uint64_t*) cg->s;
-    uint64_t *s2 = (uint64_t*) cg2->s;
+    uint64_t *s = (uint64_t*) c->s;
+    uint64_t *s2 = (uint64_t*) c2->s;
     s2[i] = s[row_indices[i]-1]; // input is 1-based
   }
-  cg2->n = n;
-  cg2->compressed = 0;
+  c2->n = n;
+  c2->compressed = 0;
 }
 
 int main_rowsub(int argc, char *argv[]) {
@@ -88,23 +88,23 @@ int main_rowsub(int argc, char *argv[]) {
   int64_t n=0;
   int64_t *row_indices = load_row_indices(argv[optind+1], &n);
 
-  cgfile_t cgf = open_cgfile(fname);
+  cfile_t cf = open_cfile(fname);
   BGZF *fp_out = bgzf_dopen(fileno(stdout), "w");
   assert(fp_out != NULL);
   for (uint64_t k=0; ; ++k) {
-    cgdata_t cg = read_cg(&cgf);
-    if (cg.n == 0) break;
+    cdata_t c = read_cdata1(&cf);
+    if (c.n == 0) break;
     
-    cgdata_t cg2 = {0};
-    decompress(&cg, &cg2);
-    cgdata_t cg3 = {0};
-    cg3.s = NULL;
-    sliceToIndices(&cg2, row_indices, n, &cg3);
-    cdata_compress(&cg3);
-    cgdata_write1(fp_out, &cg3);
-    free(cg3.s); free(cg2.s); free(cg.s);
+    cdata_t c2 = {0};
+    decompress(&c, &c2);
+    cdata_t c3 = {0};
+    c3.s = NULL;
+    sliceToIndices(&c2, row_indices, n, &c3);
+    cdata_compress(&c3);
+    cdata_write1(fp_out, &c3);
+    free(c3.s); free(c2.s); free(c.s);
   }
-  bgzf_close(cgf.fh);
+  bgzf_close(cf.fh);
   bgzf_close(fp_out);
   
   return 0;

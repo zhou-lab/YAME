@@ -1,6 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");

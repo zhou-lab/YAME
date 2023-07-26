@@ -1,10 +1,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame chunk [options] <in.cg> <outdir>\n");
+  fprintf(stderr, "Usage: yame chunk [options] <in.cx> <outdir>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
@@ -44,31 +44,31 @@ int main_chunk(int argc, char *argv[]) {
   }
   mkdir(outdir, 0777);
 
-  cgfile_t cgf = open_cgfile(fname);
+  cfile_t cf = open_cfile(fname);
   uint64_t i=0, k;
   for (k=0; ; ++k) {
-    cgdata_t cg = read_cg(&cgf);
-    if (cg.n == 0) break;
+    cdata_t c = read_cdata1(&cf);
+    if (c.n == 0) break;
     
-    cgdata_t cg2 = {0};
-    decompress(&cg, &cg2);
-    cgdata_t cg3 = {0};
-    for (i=0; i<=(cg2.n/chunk_size); ++i) {
-      cg3.s = NULL;
-      slice(&cg2, i*chunk_size, (i+1)*chunk_size-1, &cg3);
-      cdata_compress(&cg3);
+    cdata_t c2 = {0};
+    decompress(&c, &c2);
+    cdata_t c3 = {0};
+    for (i=0; i<=(c2.n/chunk_size); ++i) {
+      c3.s = NULL;
+      slice(&c2, i*chunk_size, (i+1)*chunk_size-1, &c3);
+      cdata_compress(&c3);
       char *tmp = malloc(strlen(outdir) + 1000);
-      sprintf(tmp, "%s/%lu.cg", outdir, i);
+      sprintf(tmp, "%s/%lu.cx", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);
-      if (k) cgdata_write(tmp, &cg3, "a", verbose);
-      else cgdata_write(tmp, &cg3, "w", verbose);
-      free(cg3.s);
+      if (k) cdata_write(tmp, &c3, "a", verbose);
+      else cdata_write(tmp, &c3, "w", verbose);
+      free(c3.s);
       free(tmp);
     }
-    free(cg2.s); free(cg.s);
+    free(c2.s); free(c.s);
   }
   free(outdir);
-  bgzf_close(cgf.fh);
+  bgzf_close(cf.fh);
   
   return 0;
 }

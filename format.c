@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "cgdata.h"
+#include "cdata.h"
 
 static int is_float(char *s) {
   size_t i;
@@ -13,7 +13,7 @@ static int is_float(char *s) {
 }
 
 /* 8 bit for 8 cpgs, each is binary */
-cgdata_t* fmt0_read_raw(char *fname, int verbose) {
+cdata_t* fmt0_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -32,87 +32,78 @@ cgdata_t* fmt0_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = (uint8_t*) s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '0';
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = (uint8_t*) s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '0';
+  return c;
 }
 
 /* just copy, nothing done */
-void fmt0_decompress(cgdata_t *cg, cgdata_t *expanded) {
-  expanded->s = realloc(expanded->s, cgdata_nbytes(cg));
-  memcpy(expanded->s, cg->s, cgdata_nbytes(cg));
+void fmt0_decompress(cdata_t *c, cdata_t *expanded) {
+  expanded->s = realloc(expanded->s, cdata_nbytes(c));
+  memcpy(expanded->s, c->s, cdata_nbytes(c));
   expanded->unit = 1;
-  expanded->n = cg->n;
+  expanded->n = c->n;
   expanded->compressed = 0;
   expanded->fmt = '0';
 }
 
 /**
- * Reads data from a given cgfile, converts it into format 0 if needed, and returns it.
- * Format 0 refers to a bit-packed format where 1 byte represents an 8-bit binary vector.
- *
- * @param cgf: A pointer to a cgfile_t structure from which data is to be read.
- * @return: A cgdata_t structure which contains the read and converted data.
- * 
- * The function performs the following operations:
- * 
- * 1. It begins by reading data from the given cgfile into a cgdata_t structure.
- * 2. Input format is '0': no further operation is performed.
- * 3. Input format is '1': if the value is 0, return 0 else 1.
- * 4. Input format is '3': if the M+U is 0, return 0 else 1
- * 5. Other input formats are not allowed.
+ * - Input format is '0': no further operation is performed.
+ * - Input format is '1': if the value is 0, return 0 else 1.
+ * - Input format is '3': if the M+U is 0, return 0 else 1
+ * - Other input formats are not allowed.
  */
-void convertToFmt0(cgdata_t *cg) {
-  cgdata_t cg_out = {0};
-  switch (cg->fmt) {
+void convertToFmt0(cdata_t *c) {
+  cdata_t c_out = {0};
+  switch (c->fmt) {
   case '0': return;
   case '1': {
-    cg_out.fmt = '0';
-    cg_out.compressed = 1;
-    cg_out.n=0;
+    c_out.fmt = '0';
+    c_out.compressed = 1;
+    c_out.n=0;
     uint64_t i;
-    for (i=0; i<cg->n/3; ++i) {
-      cg_out.n += *((uint16_t*) (cg->s+i*3+1));
+    for (i=0; i<c->n/3; ++i) {
+      c_out.n += *((uint16_t*) (c->s+i*3+1));
     }
-    cg_out.s = calloc((cg_out.n>>3)+1, 1);
+    c_out.s = calloc((c_out.n>>3)+1, 1);
     size_t sum; uint16_t l=0;
-    for (i=0, sum=0; i<cg->n/3; ++i, sum+=l) {
-      l = *((uint16_t*) (cg->s+i*3+1));
-      if (cg->s[i*3] > '0') {
+    for (i=0, sum=0; i<c->n/3; ++i, sum+=l) {
+      l = *((uint16_t*) (c->s+i*3+1));
+      if (c->s[i*3] > '0') {
         for(size_t j=sum; j<sum+l; ++j) {
-          cg_out.s[j>>3] |= (1<<(j&0x7));
+          c_out.s[j>>3] |= (1<<(j&0x7));
         }
       }
     }
     break;
   }
   case '3': {
-    cgdata_t expanded = {0};
-    fmt3_decompress(cg, &expanded);
+    cdata_t expanded = {0};
+    fmt3_decompress(c, &expanded);
 
-    cg_out.fmt = '0';
-    cg_out.compressed = 1;
-    cg_out.n = expanded.n;
-    cg_out.s = calloc((cg_out.n>>3)+1,1);
+    c_out.fmt = '0';
+    c_out.compressed = 1;
+    c_out.n = expanded.n;
+    c_out.s = calloc((c_out.n>>3)+1,1);
     for (uint64_t i=0; i<expanded.n; ++i) {
       uint64_t mu = f3_unpack_mu(&expanded, i);
       if (mu > 0) { /* equivalent to: 1 if M+U > 0 else 0 */
-        cg_out.s[i>>3] |= (1<<(i&0x7));
+        c_out.s[i>>3] |= (1<<(i&0x7));
       }
     }
     free(expanded.s);
     break;
   }
-  default: wzfatal("Format %c unsupported.\n", cg->fmt);
+  default: wzfatal("Format %c unsupported.\n", c->fmt);
   }
-  free(cg->s);
-  *cg = cg_out;
+  free(c->s);
+  *c = c_out;
 }
 
-cgdata_t* fmt1_read_raw(char *fname, int verbose) {
+cdata_t* fmt1_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -128,25 +119,25 @@ cgdata_t* fmt1_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = (uint8_t*) s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '1';
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = (uint8_t*) s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '1';
+  return c;
 }
 
 /* compressed:
    3byte --- value (1byte) + run len (2bytes)
    value is unrestricted ASCII
  */
-void fmt1_compress(cgdata_t *cg) {
+void fmt1_compress(cdata_t *c) {
   uint64_t n = 0;
   uint8_t *s = NULL;
   uint64_t i = 0; uint16_t l = 0; uint8_t u0 = 0;
-  for (i=0, l=0; i<cg->n; ++i) {
+  for (i=0, l=0; i<c->n; ++i) {
     /* either not the same as before or reach block size max */
-    if ((l != 0 && cg->s[i] != u0) || l+2 >= 1<<15) {
+    if ((l != 0 && c->s[i] != u0) || l+2 >= 1<<15) {
       s = realloc(s, n+3);
       s[n] = u0;
       *((uint16_t*) (s+n+1)) = l;
@@ -155,7 +146,7 @@ void fmt1_compress(cgdata_t *cg) {
     } else {
       ++l;
     }
-    u0 = cg->s[i];
+    u0 = c->s[i];
   }
   /* the last rle */
   s = realloc(s, n+3);
@@ -163,19 +154,19 @@ void fmt1_compress(cgdata_t *cg) {
   *((uint16_t*) (s+n+1)) = l;
   n += 3;
   
-  free(cg->s);
-  cg->s = s;
-  cg->n = n;
-  cg->compressed = 1;
+  free(c->s);
+  c->s = s;
+  c->n = n;
+  c->compressed = 1;
 }
 
-void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded) {
+void fmt1_decompress(cdata_t *c, cdata_t *expanded) {
   uint64_t i=0, j=0, n=0, m=1<<20;
   uint8_t *s = realloc(expanded->s, m);
-  for (i=0; i<cg->n; i+=3) {
-    uint16_t l = ((uint16_t*) (cg->s+i+1))[0];
+  for (i=0; i<c->n; i+=3) {
+    uint16_t l = ((uint16_t*) (c->s+i+1))[0];
     if (n+l+2>m) {m=n+l+2; m<<=1; s = realloc(s, m);}
-    for (j=0; j<l; ++j) s[n++] = cg->s[i];
+    for (j=0; j<l; ++j) s[n++] = c->s[i];
   }
   expanded->s = (uint8_t*) s;
   expanded->n = n;
@@ -184,7 +175,7 @@ void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->unit = 1;
 }
 
-cgdata_t* fmt4_read_raw(char *fname, int verbose) {
+cdata_t* fmt4_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -204,25 +195,25 @@ cgdata_t* fmt4_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = (uint8_t*) s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '4';
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = (uint8_t*) s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '4';
+  return c;
 }
 
 /* 32 bit
    1 (1bit) + run length of NA (31 bits)
    0 (1bit) + floating number (always positive) (31bit, the sign bit is always 0)
  */
-void fmt4_compress(cgdata_t *cg) {
+void fmt4_compress(cdata_t *c) {
 
   uint64_t n=0, m=1<<20;
   uint32_t *s = calloc(sizeof(uint32_t), m);
   uint64_t i = 0; uint32_t l = 0;
-  uint32_t *s0 = (uint32_t*) cg->s;
-  for (i=0, l=0; i<cg->n; ++i) {
+  uint32_t *s0 = (uint32_t*) c->s;
+  for (i=0, l=0; i<c->n; ++i) {
     /* either not the same as before or reach block size max */
     if (!(s0[i] & (1ul<<31)) || l+2 >= (1ul<<31)) {
       if (l > 0) {
@@ -247,19 +238,19 @@ void fmt4_compress(cgdata_t *cg) {
     s[n++] = ((1<<31) | l);
   }
   
-  free(cg->s);
-  cg->s = (uint8_t*) s;
-  cg->n = n*4;
-  cg->compressed = 1;
+  free(c->s);
+  c->s = (uint8_t*) s;
+  c->n = n*4;
+  c->compressed = 1;
 }
 
-void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
+void fmt4_decompress(cdata_t *c, cdata_t *expanded) {
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
-  uint32_t *s0 = (uint32_t*) cg->s;
+  uint32_t *s0 = (uint32_t*) c->s;
   float_t *s = realloc(expanded->s, m*sizeof(float_t));
 
-  for(i=0; i< cg->n>>2; ++i) {
+  for(i=0; i< c->n>>2; ++i) {
     if (s0[i] >> 31) {
       l = s0[i]<<1>>1;
       if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(float_t));}
@@ -279,7 +270,7 @@ void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
 }
 
 /* the input has only 0,1,2 */
-cgdata_t* fmt5_read_raw(char *fname, int verbose) {
+cdata_t* fmt5_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -296,26 +287,26 @@ cgdata_t* fmt5_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = (uint8_t*) s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '5';
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = (uint8_t*) s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '5';
+  return c;
 }
 
 /*
   8 bits = 0 (1bit) | run length of NA (7bits)
   8 bits = 1 (1bit)|value (1bit) + 1 (1bit)|value (1bit) + ...
  */
-void fmt5_compress(cgdata_t *cg) {
+void fmt5_compress(cdata_t *c) {
   uint64_t n = 0;
   uint8_t *s = NULL;
   uint64_t i = 0; uint16_t l = 0; int last = 0; uint8_t u = 0; int offset = 6;
-  for (i=0, l=0; i<cg->n; ++i) {
-    if (cg->s[i] == 0 || cg->s[i] == 1) { /* 0 or 1 */
+  for (i=0, l=0; i<c->n; ++i) {
+    if (c->s[i] == 0 || c->s[i] == 1) { /* 0 or 1 */
       u |= (1<<(offset+1));
-      u |= (cg->s[i]<<offset);
+      u |= (c->s[i]<<offset);
       offset -= 2;
       if (last <= 1) {            /* 0/1 > 0/1 */
         if (offset < 0) {
@@ -354,30 +345,30 @@ void fmt5_compress(cgdata_t *cg) {
     s[n++] = l;
   }
 
-  free(cg->s);
-  cg->s = s;
-  cg->n = n;
-  cg->compressed = 1;
+  free(c->s);
+  c->s = s;
+  c->n = n;
+  c->compressed = 1;
 }
 
-void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
+void fmt5_decompress(cdata_t *c, cdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0, j=0;
   uint8_t *s = realloc(expanded->s, m*sizeof(uint8_t));
 
-  for (i=0; i<cg->n; ++i) {
-    if (cg->s[i] & (1<<7)) {
+  for (i=0; i<c->n; ++i) {
+    if (c->s[i] & (1<<7)) {
       int offset = 6;
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint8_t));}
       for (offset = 6; offset >= 0; offset -= 2) {
-        if ((cg->s[i]>>offset) & 0x2) {
-          s[n++] = ((cg->s[i]>>offset) & 0x1);
+        if ((c->s[i]>>offset) & 0x2) {
+          s[n++] = ((c->s[i]>>offset) & 0x1);
         } else {
           break;
         }
       }
     } else {
-      if (n+cg->s[i]+10>m) {m=n+cg->s[i]+10; m<<=1; s = realloc(s, m*sizeof(uint8_t));}
-      for (j=0; j < cg->s[i]; ++j) s[n++] = 2;
+      if (n+c->s[i]+10>m) {m=n+c->s[i]+10; m<<=1; s = realloc(s, m*sizeof(uint8_t));}
+      for (j=0; j < c->s[i]; ++j) s[n++] = 2;
     }
   }
 
@@ -389,7 +380,7 @@ void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
 }
 
 /* [ M (uint32_t) | U (uint32_t) ] */
-cgdata_t* fmt6_read_raw(char *fname, int verbose) {
+cdata_t* fmt6_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<10;
@@ -404,12 +395,12 @@ cgdata_t* fmt6_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cgdata_t *cg = calloc(sizeof(cgdata_t),1);
-  cg->s = (uint8_t*) s;
-  cg->n = n;
-  cg->compressed = 0;
-  cg->fmt = '6';
-  return cg;
+  cdata_t *c = calloc(sizeof(cdata_t),1);
+  c->s = (uint8_t*) s;
+  c->n = n;
+  c->compressed = 0;
+  c->fmt = '6';
+  return c;
 }
 
 /* compressed: assume little endian, TODO: use endian swap
@@ -417,12 +408,12 @@ cgdata_t* fmt6_read_raw(char *fname, int verbose) {
    2byte | L in [64,2^14]---- = L (14bit) + 2 (2bit)
    8byte | L in [2^14,2^62]-- =  L (62bit) + 3 (2bit)
 */
-void fmt6_compress(cgdata_t *cg) {
+void fmt6_compress(cdata_t *c) {
   uint8_t *s = NULL;
   uint64_t n = 0;
   uint64_t i = 0;
-  uint64_t *s0 = (uint64_t*) cg->s;
-  for (i=0; i<cg->n; ++i) {
+  uint64_t *s0 = (uint64_t*) c->s;
+  for (i=0; i<c->n; ++i) {
     uint64_t L = s0[i];
     if (L < (1<<6)-2) {
       s = realloc(s, n+1);
@@ -440,32 +431,32 @@ void fmt6_compress(cgdata_t *cg) {
       n += 8;
     }
   }
-  free(cg->s);
-  cg->s = s;
-  cg->n = n;
-  cg->compressed = 1;
+  free(c->s);
+  c->s = s;
+  c->n = n;
+  c->compressed = 1;
 }
 
-void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded) {
+void fmt6_decompress(cdata_t *c, cdata_t *expanded) {
   uint64_t i = 0, m = 1<<20,n = 0;
   uint64_t *s = realloc(expanded->s, m*sizeof(uint64_t));
-  while (i < cg->n) {
-    /* if ((cg->s[i] & 0x3) == 0) { */
-    /*   l = (((uint16_t*) (cg->s+i))[0])>>2; */
+  while (i < c->n) {
+    /* if ((c->s[i] & 0x3) == 0) { */
+    /*   l = (((uint16_t*) (c->s+i))[0])>>2; */
     /*   if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(uint64_t));} */
     /*   for (j=0; j<l; ++j) s[n++] = 0; */
     /*   i += 2; */
-    if ((cg->s[i] & 0x3) == 1) {
+    if ((c->s[i] & 0x3) == 1) {
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint64_t));}
-      s[n++] = ((cg->s[i])>>2);
+      s[n++] = ((c->s[i])>>2);
       i++;
-    } else if ((cg->s[i] & 0x3) == 2) {
+    } else if ((c->s[i] & 0x3) == 2) {
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint64_t));}
-      s[n++] = (((uint16_t*) (cg->s+i))[0])>>2;
+      s[n++] = (((uint16_t*) (c->s+i))[0])>>2;
       i += 2;
     } else {
       if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(uint64_t));}
-      s[n++] = (((uint64_t*) (cg->s+i))[0])>>2;
+      s[n++] = (((uint64_t*) (c->s+i))[0])>>2;
       i += 8;
     }
   }
@@ -476,13 +467,12 @@ void fmt6_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->unit = 8;
 }
 
-void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
+void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c) {
   uint64_t n = 0;
   uint8_t *s = NULL;
   uint64_t i=0; uint16_t l=0; uint8_t u0=0;
-  for (i=0, l=0; i<cg->n; ++i) {
-    /* unsigned char u = s[i>>3] & (1<<(n&0x7)); */
-    uint8_t u = (cg->s[i>>3]>>(i&0x7))&0x1;
+  for (i=0, l=0; i<c->n; ++i) {
+    uint8_t u = (c->s[i>>3]>>(i&0x7))&0x1;
     /* either not the same as before or reach block size max */
     if ((l != 0 && u != u0) || l+2 >= 1<<15) {
       s = realloc(s, n+3);
@@ -500,12 +490,12 @@ void fmta_tryBinary2byteRLE_ifsmaller(cgdata_t *cg) {
   s[n] = u0+'0';
   *((uint16_t*) (s+n+1)) = l;
   n += 3;
-  if (cg->n>>3 > n) {
-    free(cg->s);
-    cg->s = s;
-    cg->n = n;
-    cg->fmt = '1';
-    cg->compressed = 1;
+  if (c->n>>3 > n) {
+    free(c->s);
+    c->s = s;
+    c->n = n;
+    c->fmt = '1';
+    c->compressed = 1;
   }
 }
 

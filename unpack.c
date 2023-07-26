@@ -2,12 +2,12 @@
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "cgfile.h"
+#include "cfile.h"
 #include "vector.h"
 #include "snames.h"
 
 static int usage() {
-  fprintf(stderr, "\nUsage: yame unpack [options] <in.cg> [[sample 1], [sample 2], ...]\n\n");
+  fprintf(stderr, "\nUsage: yame unpack [options] <in.cx> [[sample 1], [sample 2], ...]\n\n");
 
   fprintf(stderr, "Options:\n");
 
@@ -28,22 +28,22 @@ static int usage() {
 }
 
 uint64_t f3_unpack_MU(uint8_t *data, uint8_t unit);
-static void print_cg1(cgdata_t *cg, uint64_t i, int f3_fmt) {
-  switch (cg->fmt) {
+static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
+  switch (c->fmt) {
   case '0': {
-      fputc(((cg->s[i>>3]>>(i&0x7))&0x1)+'0', stdout);
+      fputc(((c->s[i>>3]>>(i&0x7))&0x1)+'0', stdout);
       break;
   }
   case '1': {
-    fputc(cg->s[i], stdout);
+    fputc(c->s[i], stdout);
     break;
   }
   case '2': {
-    fprintf(stdout, "%s", f2_unpack_string(cg, i));
+    fprintf(stdout, "%s", f2_unpack_string(c, i));
     break;
   }
   case '3': {
-    uint64_t mu = f3_unpack_mu(cg, i);
+    uint64_t mu = f3_unpack_mu(c, i);
     if (f3_fmt == 0)
       fprintf(stdout, "%"PRIu64"", mu);
     else if (f3_fmt < 0)
@@ -57,45 +57,45 @@ static void print_cg1(cgdata_t *cg, uint64_t i, int f3_fmt) {
     break;
   }
   case '4': {
-    if (((float_t*) (cg->s))[i]<0) {
+    if (((float_t*) (c->s))[i]<0) {
       fputs("NA", stdout);
     } else {
-      fprintf(stdout, "%1.3f", ((float_t*) (cg->s))[i]);
+      fprintf(stdout, "%1.3f", ((float_t*) (c->s))[i]);
     }
     break;
   }
   case '5': {
-    if (cg->s[i] == 2) {
+    if (c->s[i] == 2) {
       fputs("NA", stdout);
     } else {
-      fputc(cg->s[i]+'0', stdout);
+      fputc(c->s[i]+'0', stdout);
     }
     break;
   }
   case '6': {
-    uint64_t *s = (uint64_t*) cg->s;
+    uint64_t *s = (uint64_t*) c->s;
     fprintf(stdout, "%"PRIu64, s[i]);
     break;
   }
-  default: usage(); wzfatal("Unrecognized format: %c.\n", cg->fmt);
+  default: usage(); wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
 }
 
-static void print_cgs_chunk(cgdata_v *cgs, uint64_t s, int f3_fmt) {
-  uint64_t i,m, k, kn = cgs->size;
-  cgdata_t expanded = {0};
-  decompress(ref_cgdata_v(cgs, 0), &expanded);
+static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
+  uint64_t i,m, k, kn = cs->size;
+  cdata_t expanded = {0};
+  decompress(ref_cdata_v(cs, 0), &expanded);
   uint64_t n = expanded.n;
-  cgdata_t *sliced = calloc(kn, sizeof(cgdata_t));
+  cdata_t *sliced = calloc(kn, sizeof(cdata_t));
   for (m=0; m <= n/s; ++m) {
     for (k=0; k<kn; ++k) {
-      decompress(ref_cgdata_v(cgs, k), &expanded);
+      decompress(ref_cdata_v(cs, k), &expanded);
       slice(&expanded, m*s, (m+1)*s-1, &sliced[k]);
     }
     for (i=0; i<sliced[0].n; ++i) {
       for (k=0; k<kn; ++k) {
         if(k) fputc('\t', stdout);
-        print_cg1(&sliced[k],i,f3_fmt);
+        print_cdata1(&sliced[k],i,f3_fmt);
       }
       fputc('\n', stdout);
     }
@@ -105,20 +105,20 @@ static void print_cgs_chunk(cgdata_v *cgs, uint64_t s, int f3_fmt) {
   free(expanded.s); free(sliced);
 }
 
-static void print_cgs(cgdata_v *cgs, int f3_fmt) {
-  uint64_t i, k, kn = cgs->size;
-  cgdata_t *expanded = calloc(kn, sizeof(cgdata_t));
+static void print_cdata(cdata_v *cs, int f3_fmt) {
+  uint64_t i, k, kn = cs->size;
+  cdata_t *expanded = calloc(kn, sizeof(cdata_t));
   for (k=0; k<kn; ++k) {
-    decompress(ref_cgdata_v(cgs, k), expanded+k);
+    decompress(ref_cdata_v(cs, k), expanded+k);
   }
   for (i=0; i<expanded[0].n; ++i) {
     for (k=0; k<kn; ++k) {
       if(k) fputc('\t', stdout);
-      print_cg1(expanded+k, i, f3_fmt);
+      print_cdata1(expanded+k, i, f3_fmt);
     }
     fputc('\n', stdout);
   }
-  for (k=0; k<kn; ++k) free_cgdata(&expanded[k]);
+  for (k=0; k<kn; ++k) free_cdata(&expanded[k]);
   free(expanded);
 }
 
@@ -149,7 +149,7 @@ int main_unpack(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  cgfile_t cgf = open_cgfile(argv[optind]);
+  cfile_t cf = open_cfile(argv[optind]);
   char *fname_index = get_fname_index(argv[optind]);
   index_t *idx = loadIndex(fname_index);
   if (fname_index) free(fname_index);
@@ -166,23 +166,23 @@ int main_unpack(int argc, char *argv[]) {
 
   // check if we have index
   if (!idx && (snames.n > 0 || tail > 0)) {
-    fprintf(stderr, "Error, the cg file needs indexing for random sample access.\n");
+    fprintf(stderr, "Error, the cx file needs indexing for random sample access.\n");
     fflush(stderr);
     exit(1);
   }
   
-  // read in the cgs
-  cgdata_v *cgs = NULL;
+  // read in the cdata
+  cdata_v *cs = NULL;
   if (snames.n > 0) {
-    cgs = read_cgs_with_snames(&cgf, idx, &snames);
+    cs = read_cdata_with_snames(&cf, idx, &snames);
   } else if (read_all) {
-    cgs = read_cgs_all(&cgf);
+    cs = read_cdata_all(&cf);
   } else if (head > 0) {
-    cgs = read_cgs_from_head(&cgf, head);
+    cs = read_cdata_from_head(&cf, head);
   } else if (tail > 0) {
-    cgs = read_cgs_from_tail(&cgf, idx, tail);
+    cs = read_cdata_from_tail(&cf, idx, tail);
   } else {
-    cgs = read_cgs_from_head(&cgf, 1);
+    cs = read_cdata_from_head(&cf, 1);
   }
 
   // set unit size
@@ -191,16 +191,16 @@ int main_unpack(int argc, char *argv[]) {
     fflush(stderr);
     exit(1);
   }
-  for (uint64_t i=0; i<cgs->size; ++i) ref_cgdata_v(cgs, i)->unit = unit;
+  for (uint64_t i=0; i<cs->size; ++i) ref_cdata_v(cs, i)->unit = unit;
 
-  // output the cgs
-  if (chunk) print_cgs_chunk(cgs, chunk_size, f3_fmt);
-  else print_cgs(cgs, f3_fmt);
+  // output the cs
+  if (chunk) print_cdata_chunk(cs, chunk_size, f3_fmt);
+  else print_cdata(cs, f3_fmt);
 
   // clean up
-  for (uint64_t i=0; i<cgs->size; ++i) free_cgdata(ref_cgdata_v(cgs,i));
-  free_cgdata_v(cgs);
-  bgzf_close(cgf.fh);
+  for (uint64_t i=0; i<cs->size; ++i) free_cdata(ref_cdata_v(cs,i));
+  free_cdata_v(cs);
+  bgzf_close(cf.fh);
   if (idx) cleanIndex(idx);
   cleanSampleNames(&snames);
   

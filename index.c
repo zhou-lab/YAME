@@ -2,16 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kstring.h"
-#include "cgfile.h"
+#include "cfile.h"
 
-char *get_fname_index(const char *fname_cg) {
+char *get_fname_index(const char *fname_cx) {
   char *fname_index = NULL;
-  fname_index = malloc(strlen(fname_cg) + strlen(".idx") + 1);
+  fname_index = malloc(strlen(fname_cx) + strlen(".idx") + 1);
   if (fname_index == NULL) {
     printf("Failed to allocate memory for index file name\n");
     return NULL;
   }
-  strcpy(fname_index, fname_cg);
+  strcpy(fname_index, fname_cx);
   strcat(fname_index, ".idx");
   return fname_index;
 }
@@ -87,19 +87,19 @@ index_t *insert_index(index_t *idx, char *sname, int64_t addr) {
   return idx;
 }
 
-static index_t* append_index(index_t *idx, cgfile_t *cgf, char* sname_to_append) {
+static index_t* append_index(index_t *idx, cfile_t *cf, char* sname_to_append) {
 
   int64_t addr;
-  cgdata_t cg = {0};
+  cdata_t c = {0};
   if (kh_size(idx) == 0) {      /* first item in index */
-    addr = bgzf_tell(cgf->fh);
+    addr = bgzf_tell(cf->fh);
   } else {
-    assert(bgzf_seek(cgf->fh, last_address(idx), SEEK_SET) == 0);
-    read_cg2(cgf, &cg);         /* read past the last cg data block */
-    addr = bgzf_tell(cgf->fh);
+    assert(bgzf_seek(cf->fh, last_address(idx), SEEK_SET) == 0);
+    read_cdata2(cf, &c);         /* read past the last c data block */
+    addr = bgzf_tell(cf->fh);
   }
-  read_cg2(cgf, &cg);      /* make sure we do have one additional data block */
-  if (cg.n > 0) {
+  read_cdata2(cf, &c);      /* make sure we do have one additional data block */
+  if (c.n > 0) {
     idx = insert_index(idx, sname_to_append, addr);
   } else {
     fprintf(stderr, "Failed to detect additional data.\n");
@@ -143,8 +143,8 @@ void clean_index_pairs(index_pair_t *idx_pairs, int n) {
   free(idx_pairs);
 }
 
-/* index_pair_t* load_index_pairs(char *fname_cg, int *n) { */
-/*   char *fname_index = get_fname_index(fname_cg); */
+/* index_pair_t* load_index_pairs(char *fname_cx, int *n) { */
+/*   char *fname_index = get_fname_index(fname_cx); */
 /*   index_t *idx = loadIndex(fname_index); */
 /*   if (!idx) { */
 /*     *n = 0; */
@@ -184,8 +184,8 @@ void writeIndex(FILE *fp, index_t *idx) {
   
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame index [options] <in.cg>\n");
-  fprintf(stderr, "The index file name default to <in.cg>.idx\n");
+  fprintf(stderr, "Usage: yame index [options] <in.cx>\n");
+  fprintf(stderr, "The index file name default to <in.cx>.idx\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -s [file path]   tab-delimited sample name list (use first column) \n");
@@ -199,16 +199,16 @@ static int usage() {
 
 int main_index(int argc, char *argv[]) {
 
-  int c, console = 0;
+  int c0, console = 0;
   char *fname_snames = NULL;
   char *sname_to_append = NULL;
-  while ((c = getopt(argc, argv, "cs:1:h"))>=0) {
-    switch (c) {
+  while ((c0 = getopt(argc, argv, "cs:1:h"))>=0) {
+    switch (c0) {
     case 'c': console = 1; break;
     case 's': fname_snames = strdup(optarg); break;
     case '1': sname_to_append = strdup(optarg); break;
     case 'h': return usage(); break;
-    default: usage(); wzfatal("Unrecognized option: %c.\n", c);
+    default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
     }
   }
 
@@ -219,16 +219,16 @@ int main_index(int argc, char *argv[]) {
 
   /* load index */
   char *fname_index = get_fname_index(argv[optind]);
-  cgfile_t cgf = open_cgfile(argv[optind]);
-  cgdata_t cg = {0};
+  cfile_t cf = open_cfile(argv[optind]);
+  cdata_t c = {0};
   if (sname_to_append) {        /* append new sample to existing index */
     
     index_t *idx = loadIndex(fname_index);
     if (idx) {
-      idx = append_index(idx, &cgf, sname_to_append);
+      idx = append_index(idx, &cf, sname_to_append);
     } else {
       idx = kh_init(index);
-      idx = append_index(idx, &cgf, sname_to_append);
+      idx = append_index(idx, &cf, sname_to_append);
     }
 
     FILE *out;
@@ -244,22 +244,22 @@ int main_index(int argc, char *argv[]) {
     index_t* idx = kh_init(index);
 
     if (snames.n >0) {               /* sample names is given */
-      int64_t addr = bgzf_tell(cgf.fh);
+      int64_t addr = bgzf_tell(cf.fh);
       for (int i=0; i< snames.n; ++i) {
-        if (!read_cg2(&cgf, &cg)) {
+        if (!read_cdata2(&cf, &c)) {
           fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
           fflush(stderr);
           exit(1);
         }
         insert_index(idx, snames.s[i], addr);
-        addr = bgzf_tell(cgf.fh);
+        addr = bgzf_tell(cf.fh);
       }
       
     } else {                    /* sample names are unknown */
 
       for (n=0; ; ++n) {
-        int64_t addr = bgzf_tell(cgf.fh);
-        if (!read_cg2(&cgf, &cg)) break;
+        int64_t addr = bgzf_tell(cf.fh);
+        if (!read_cdata2(&cf, &c)) break;
         sname_v = realloc(sname_v, sizeof(kstring_t)*(n+1));
         addr_v = realloc(addr_v, sizeof(int64_t)*(n+1));
         memset(&sname_v[n], 0, sizeof(kstring_t));
@@ -290,8 +290,8 @@ int main_index(int argc, char *argv[]) {
 
   free(fname_snames);
   free(fname_index);
-  bgzf_close(cgf.fh);
-  free(cg.s);
+  bgzf_close(cf.fh);
+  free(c.s);
   return 0;
 }
 

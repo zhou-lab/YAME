@@ -1,13 +1,13 @@
-#include "cgfile.h"
+#include "cfile.h"
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame subset [options] <in.cg> [<sample1>, ...]\n");
-  fprintf(stderr, "If -o <out.cg>, an index will also be generated. Otherwise, output .cg to stdout without index.\n");
+  fprintf(stderr, "Usage: yame subset [options] <in.cx> [<sample1>, ...]\n");
+  fprintf(stderr, "If -o <out.cx>, an index will also be generated. Otherwise, output .cx to stdout without index.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -o        output cg file name. if missing, output to stdout without index.\n");
+  fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
   fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
   fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
@@ -19,17 +19,17 @@ static int usage() {
 
 int main_subset(int argc, char *argv[]) {
 
-  int c; char *fname_snames = NULL;
+  int c0; char *fname_snames = NULL;
   int head = -1, tail = -1;
   char *fname_out = NULL;
-  while ((c = getopt(argc, argv, "o:l:H:T:h"))>=0) {
-    switch (c) {
+  while ((c0 = getopt(argc, argv, "o:l:H:T:h"))>=0) {
+    switch (c0) {
     case 'o': fname_out = strdup(optarg); break;
     case 'l': fname_snames = strdup(optarg); break;
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
     case 'h': return usage(); break;
-    default: usage(); wzfatal("Unrecognized option: %c.\n", c);
+    default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
     }
   }
 
@@ -39,7 +39,7 @@ int main_subset(int argc, char *argv[]) {
   }
 
   // input
-  cgfile_t cgf = open_cgfile(argv[optind]);
+  cfile_t cf = open_cfile(argv[optind]);
   char *fname_index = get_fname_index(argv[optind]);
   index_t *idx = loadIndex(fname_index);
   free(fname_index);
@@ -58,7 +58,7 @@ int main_subset(int argc, char *argv[]) {
 
   // check if we have index
   if (!idx) {
-    fprintf(stderr, "Error, the cg file needs indexing for subsetting.\n");
+    fprintf(stderr, "Error, the cx file needs indexing for subsetting.\n");
     fflush(stderr);
     exit(1);
   }
@@ -93,32 +93,32 @@ int main_subset(int argc, char *argv[]) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);
   }
-  cgdata_t cg = {0};
+  cdata_t c = {0};
   for (int i=0; i<snames.n; ++i) {
     int64_t index = getIndex(idx, snames.s[i]);
     assert(index >= 0);
-    assert(bgzf_seek(cgf.fh, index, SEEK_SET) == 0);
-    read_cg2(&cgf, &cg);
-    if (cg.n <= 0) break;
-    cgdata_write1(fp, &cg);
+    assert(bgzf_seek(cf.fh, index, SEEK_SET) == 0);
+    read_cdata2(&cf, &c);
+    if (c.n <= 0) break;
+    cdata_write1(fp, &c);
   }
   bgzf_close(fp);               // output
 
   if (fname_out) {
     // output index
-    cgfile_t cgf2 = open_cgfile(fname_out);
+    cfile_t cf2 = open_cfile(fname_out);
     index_t *idx2 = kh_init(index);
-    int64_t addr = bgzf_tell(cgf2.fh);
+    int64_t addr = bgzf_tell(cf2.fh);
     for (int i=0; i< snames.n; ++i) {
-      if (!read_cg2(&cgf2, &cg)) {
+      if (!read_cdata2(&cf2, &c)) {
         fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
         fflush(stderr);
         exit(1);
       }
       insert_index(idx2, snames.s[i], addr);
-      addr = bgzf_tell(cgf2.fh);
+      addr = bgzf_tell(cf2.fh);
     }
-    free(cg.s);
+    free(c.s);
 
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
@@ -126,12 +126,12 @@ int main_subset(int argc, char *argv[]) {
     fclose(out);
     free(fname_index2);
     free(fname_out);
-    bgzf_close(cgf2.fh);
+    bgzf_close(cf2.fh);
     freeIndex(idx2);
   }
   
   // clean up
-  bgzf_close(cgf.fh);
+  bgzf_close(cf.fh);
   cleanIndex(idx);
   cleanSampleNames(&snames);
   
