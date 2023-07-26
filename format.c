@@ -13,7 +13,7 @@ static int is_float(char *s) {
 }
 
 /* 8 bit for 8 cpgs, each is binary */
-cgdata_t* fmt0_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt0_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -112,7 +112,7 @@ void convertToFmt0(cgdata_t *cg) {
   *cg = cg_out;
 }
 
-cgdata_t* fmt1_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt1_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -184,7 +184,7 @@ void fmt1_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->unit = 1;
 }
 
-cgdata_t* fmt4_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt4_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -279,7 +279,7 @@ void fmt4_decompress(cgdata_t *cg, cgdata_t *expanded) {
 }
 
 /* the input has only 0,1,2 */
-cgdata_t* fmt5_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt5_read_raw(char *fname, int verbose) {
 
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -388,8 +388,8 @@ void fmt5_decompress(cgdata_t *cg, cgdata_t *expanded) {
   expanded->unit = 1;
 }
 
-/* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
-cgdata_t* fmt6_read_uncompressed(char *fname, int verbose) {
+/* [ M (uint32_t) | U (uint32_t) ] */
+cgdata_t* fmt6_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<10;

@@ -28,13 +28,13 @@ static int usage() {
   return 1;
 }
 
-cgdata_t *fmt0_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt1_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt2_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt3_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt4_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt5_read_uncompressed(char *fname, int verbose);
-cgdata_t *fmt6_read_uncompressed(char *fname, int verbose);
+cgdata_t *fmt0_read_raw(char *fname, int verbose);
+cgdata_t *fmt1_read_raw(char *fname, int verbose);
+cgdata_t *fmt2_read_raw(char *fname, int verbose);
+cgdata_t *fmt3_read_raw(char *fname, int verbose);
+cgdata_t *fmt4_read_raw(char *fname, int verbose);
+cgdata_t *fmt5_read_raw(char *fname, int verbose);
+cgdata_t *fmt6_read_raw(char *fname, int verbose);
 
 int main_pack(int argc, char *argv[]) {
 
@@ -64,53 +64,53 @@ int main_pack(int argc, char *argv[]) {
   cgdata_t *cg;
   switch (fmt) {
   case 'b': {
-    cg = fmt0_read_uncompressed(argv[optind], verbose);
+    cg = fmt0_read_raw(argv[optind], verbose);
     fmta_tryBinary2byteRLE_ifsmaller(cg);
     break;
   }
   case 's': {
-    cg = fmt2_read_uncompressed(argv[optind], verbose);
+    cg = fmt2_read_raw(argv[optind], verbose);
     break;
   }
   case 'm': {
-    cg = fmt3_read_uncompressed(argv[optind], verbose);
+    cg = fmt3_read_raw(argv[optind], verbose);
     break;
   }
   case 'n': {
-    cg = fmt4_read_uncompressed(argv[optind], verbose);
+    cg = fmt4_read_raw(argv[optind], verbose);
     break;
   }
   case '0': {
-    cg = fmt0_read_uncompressed(argv[optind], verbose);
+    cg = fmt0_read_raw(argv[optind], verbose);
     break;
   }
   case '1': {
-    cg = fmt1_read_uncompressed(argv[optind], verbose);
+    cg = fmt1_read_raw(argv[optind], verbose);
     fmt1_compress(cg);
     break;
   }
   case '2': {
-    cg = fmt2_read_uncompressed(argv[optind], verbose);
+    cg = fmt2_read_raw(argv[optind], verbose);
     fmt2_compress(cg);
     break;
   }
   case '3': {
-    cg = fmt3_read_uncompressed(argv[optind], verbose);
+    cg = fmt3_read_raw(argv[optind], verbose);
     fmt3_compress(cg);
     break;
   }
   case '4': {
-    cg = fmt4_read_uncompressed(argv[optind], verbose);
+    cg = fmt4_read_raw(argv[optind], verbose);
     fmt4_compress(cg);
     break;
   }
   case '5': {
-    cg = fmt5_read_uncompressed(argv[optind], verbose);
+    cg = fmt5_read_raw(argv[optind], verbose);
     fmt5_compress(cg);
     break;
   }
   case '6': {
-    cg = fmt6_read_uncompressed(argv[optind], verbose);
+    cg = fmt6_read_raw(argv[optind], verbose);
     fmt6_compress(cg);
     break;
   }

@@ -64,20 +64,8 @@ uint64_t f3_unpack_mu(cgdata_t *cg, uint64_t i) {
   return (M<<32) | (U & ((1ul<<32)-1));
 }
 
-/* static inline uint32_t compressMU32(uint64_t M, uint64_t U) { */
-/*   /\* compress the M and U to 32-bit  *\/ */
-/*   if (M > 0xffff || U > 0xffff) { */
-/*     uint64_t tmp; */
-/*     int im = 0; tmp=M; while(tmp>>16) { tmp>>=1; ++im; } */
-/*     int iu = 0; tmp=U; while(tmp>>16) { tmp>>=1; ++iu; } */
-/*     im = (im>iu ? im : iu); */
-/*     M>>=im; U>>=im; */
-/*   } */
-/*   return (uint32_t) (M<<16|U); */
-/* } */
-
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
-cgdata_t* fmt3_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt3_read_raw(char *fname, int verbose) {
   uint8_t unit = 8; // max size, zero loss
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
@@ -111,7 +99,7 @@ cgdata_t* fmt3_read_uncompressed(char *fname, int verbose) {
   return cg;
 }
 
-/* compressed: assume little endian, TODO: use endian swap
+/* compressed format
    2byte | U=M=0 -------------- = run len (14 bit) + 0 (2bit)
    1byte | U,M in [0,7] ------- = M (3bit) | U (3bit) + 1 (2bit)
    2byte | U,M in [0,127]------ = M (7bit) | U (7bit) + 2 (2bit)
@@ -121,7 +109,7 @@ void fmt3_compress(cgdata_t *cg) {
   uint8_t *s = NULL;
   uint64_t n = 0;
   uint64_t i = 0;
-  uint32_t l = 0;
+  uint64_t l = 0;
   for (i=0; i<cg->n; i++) {
     uint64_t MU = f3_unpack_mu(cg, i);
     uint64_t M = MU>>32;
@@ -129,7 +117,7 @@ void fmt3_compress(cgdata_t *cg) {
     if (M>0 || U>0 || l+2 >= 1<<14) {
       if (l>0) {
         s = realloc(s, n+2);
-        *((uint16_t*) (s+n)) = (uint16_t) l<<2;
+        pack_value(s+n, l<<2, 2);
         n += 2;
         if (M>0 || U>0) l = 0;
         else l = 1;
@@ -141,12 +129,12 @@ void fmt3_compress(cgdata_t *cg) {
           n++;
         } else if (M<127 && U<127) {
           s = realloc(s, n+2);
-          *((uint16_t*) (s+n)) = (M<<9) | (U<<2) | 0x2;
+          pack_value(s+n, (M<<9) | (U<<2) | 0x2, 2);
           n += 2;
         } else {
           fitMU(&M, &U, 31);
           s = realloc(s, n+8);
-          *((uint64_t*) (s+n)) = (M<<33) | (U<<2) | 3ul;
+          pack_value(s+n, (M<<33) | (U<<2) | 3ul, 8);
           n += 8;
         }
       }
@@ -196,46 +184,46 @@ static uint64_t get_data_length(cgdata_t *cg, uint8_t *unit) {
   return n;
 }
 
-void fmt3_decompress(cgdata_t *cg, cgdata_t *expanded) {
+void fmt3_decompress(cgdata_t *cg, cgdata_t *inflated) {
   uint8_t unit = 1;
   uint64_t n0 = get_data_length(cg, &unit);
-  if (!cg->unit) cg->unit = unit; // use inferred max unit if unset
-  uint8_t *s = calloc(cg->unit*n0, sizeof(uint8_t));
+  if (cg->unit) inflated->unit = cg->unit;
+  else inflated->unit = unit; // use inferred max unit if unset
+  uint8_t *s = calloc(inflated->unit*n0, sizeof(uint8_t));
   uint64_t n = 0; uint64_t modified = 0;
   for (uint64_t i=0; i < cg->n; ) {
     if ((cg->s[i] & 0x3) == 0) {
       uint64_t l = unpack_value(cg->s+i, 2)>>2; // the length is 14 bits, so unit = 2
-      memset(s+n*cg->unit, 0, cg->unit*l); n += l;
+      memset(s+n*inflated->unit, 0, inflated->unit*l); n += l;
       i += 2;
     } else if ((cg->s[i] & 0x3) == 1) {
       uint64_t M = (cg->s[i])>>5;
       uint64_t U = ((cg->s[i])>>2) & 0x7;
-      if (cg->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (cg->unit>>1)*8);
-      f3_pack_mu(s+(n++)*cg->unit, M, U, cg->unit);
+      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
+      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i++;
     } else if ((cg->s[i] & 0x3) == 2) {
       uint64_t M = unpack_value(cg->s+i, 2)>>2;
       uint64_t U = M & ((1ul<<7)-1);
       M >>= 7;
-      if (cg->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (cg->unit>>1)*8);
-      f3_pack_mu(s+(n++)*cg->unit, M, U, cg->unit);
+      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
+      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i += 2;
     } else {
       uint64_t M = unpack_value(cg->s+i, 8)>>2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
-      if (cg->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (cg->unit>>1)*8);
-      f3_pack_mu(s+(n++)*cg->unit, M, U, cg->unit);
+      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
+      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i += 8;
     }
   }
   assert(n0 == n);
-  expanded->s = s;
-  expanded->n = n;
-  expanded->compressed = 0;
-  expanded->fmt = '3';
-  expanded->unit = cg->unit;
+  inflated->s = s;
+  inflated->n = n;
+  inflated->compressed = 0;
+  inflated->fmt = '3';
 }

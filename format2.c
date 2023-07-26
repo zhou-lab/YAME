@@ -56,7 +56,7 @@ static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
 
 KHASH_MAP_INIT_STR(str2int, uint64_t) // Initialize a hashmap with keys as strings and values as uint64_t
 
-cgdata_t* fmt2_read_uncompressed(char *fname, int verbose) {
+cgdata_t* fmt2_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t *data = calloc(1<<10, sizeof(uint64_t));
