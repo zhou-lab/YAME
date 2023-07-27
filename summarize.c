@@ -10,7 +10,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame summarize [options] <query.cm>\n");
+  fprintf(stderr, "Usage: yame summary [options] <query.cm>\n");
   fprintf(stderr, "Query should be of format 3, can be a multi-sample set.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
@@ -130,7 +130,7 @@ static void format_stats(stats_t *st, uint64_t n_st, char *sq, char *sm, cdata_t
 }
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
-int main_summarize(int argc, char *argv[]) {
+int main_summary(int argc, char *argv[]) {
   int c; int print_header = 0; int in_memory = 0;
   char *fname_mask = NULL;
   char *fname_snames = NULL;
