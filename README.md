@@ -1,1 +1,1 @@
-# YAME (Yet Another Methylation toolsuite)
+# YAME (Yet Another MEthylation tool)
