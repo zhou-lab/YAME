@@ -26,7 +26,7 @@ int main_info(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  fprintf(stdout, "Sample\tN\tFormat\tUnitBytes\n");
+  fprintf(stdout, "File\tSample\tN\tFormat\tUnitBytes\n");
   for (int j = optind; j < argc; ++j) {
     char *fname_in = argv[j];
     cfile_t cf = open_cfile(fname_in);
