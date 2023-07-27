@@ -169,8 +169,7 @@ static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
       n++; i += 8;
     }
   }
-  if (nbits <= 4) *unit = 1;
-  else *unit = (nbits>>2) + 1; // nbits*2/8
+  *unit = ((nbits+3)>>2); // nbits*2/8
   return n;
 }
 
