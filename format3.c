@@ -31,37 +31,27 @@ static void pack_value(uint8_t *data, uint64_t value, uint8_t unit) {
 
 static uint64_t unpack_value(uint8_t *data, uint8_t unit) {
   uint64_t v = 0;
-  for (uint8_t i=0; i<unit; ++i) v |= data[i] << (8*i);
+  for (uint8_t i=0; i<unit; ++i) v |= ((uint64_t) data[i] << (8*i));
   return v;
 }
 
-static void f3_pack_mu(uint8_t *data, uint32_t M, uint32_t U, uint8_t unit) {
-  if (unit == 1) {
-    data[0] = ((M<<4) | (U&0xf));
-  } else {
-    if (unit > 8 || (unit&0x1)) {
-      fprintf(stderr, "[%s:%d] Unit size (%u) can only be 1,2,4,6,8.\n", __func__, __LINE__, unit);
-      fflush(stderr);
-      exit(1);
-    }
-    pack_value(data, U, unit/2);
-    pack_value(data+unit/2, M, unit/2);
+static void f3_pack_mu(uint8_t *data, uint64_t M, uint64_t U, uint8_t unit) {
+  if (!unit) {
+    fprintf(stderr, "[%s:%d] Unknown unit size.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
   }
+  pack_value(data, (M<<(unit*4)) | U, unit);
 }
 
 // note this function generate uin32_t not uint64_t. Please fix.
 uint64_t f3_unpack_mu(cdata_t *c, uint64_t i) {
-  uint64_t M = 0, U = 0;
-  if (c->unit == 1) {
-    M = c->s[i]>>4;
-    U = c->s[i]&0xf;
-  } else {
-    uint8_t *data = c->s + c->unit*i;
-    uint8_t k = 0;
-    for (uint8_t j=0; j<c->unit/2; ++j) U |= (data[k++] << (8*j));
-    for (uint8_t j=0; j<c->unit/2; ++j) M |= (data[k++] << (8*j));
+  uint8_t *data = c->s + c->unit*i;
+  uint64_t mu = 0;
+  for (uint8_t j=0; j<c->unit; ++j) {
+    mu |= (((uint64_t) data[j]) << (8*j));
   }
-  return (M<<32) | (U & ((1ul<<32)-1));
+  return (mu>>(c->unit*4)<<32) | (mu & ((1ul<<(c->unit*4))-1));
 }
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
@@ -179,7 +169,7 @@ static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
       n++; i += 8;
     }
   }
-  if (nbits <= 0xf) *unit = 1;
+  if (nbits <= 4) *unit = 1;
   else *unit = (nbits>>2) + 1; // nbits*2/8
   return n;
 }
@@ -200,7 +190,7 @@ void fmt3_decompress(cdata_t *c, cdata_t *inflated) {
       uint64_t M = (c->s[i])>>5;
       uint64_t U = ((c->s[i])>>2) & 0x7;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      else modified += fitMU(&M, &U, inflated->unit<<2);
       f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i++;
     } else if ((c->s[i] & 0x3) == 2) {
@@ -208,7 +198,7 @@ void fmt3_decompress(cdata_t *c, cdata_t *inflated) {
       uint64_t U = M & ((1ul<<7)-1);
       M >>= 7;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      else modified += fitMU(&M, &U, inflated->unit<<2);
       f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i += 2;
     } else {
@@ -216,7 +206,7 @@ void fmt3_decompress(cdata_t *c, cdata_t *inflated) {
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
       if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, (inflated->unit>>1)*8);
+      else modified += fitMU(&M, &U, inflated->unit<<2);
       f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
       i += 8;
     }

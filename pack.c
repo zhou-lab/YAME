@@ -86,32 +86,26 @@ int main_pack(int argc, char *argv[]) {
   }
   case '1': {
     c = fmt1_read_raw(argv[optind], verbose);
-    fmt1_compress(c);
     break;
   }
   case '2': {
     c = fmt2_read_raw(argv[optind], verbose);
-    fmt2_compress(c);
     break;
   }
   case '3': {
     c = fmt3_read_raw(argv[optind], verbose);
-    fmt3_compress(c);
     break;
   }
   case '4': {
     c = fmt4_read_raw(argv[optind], verbose);
-    fmt4_compress(c);
     break;
   }
   case '5': {
     c = fmt5_read_raw(argv[optind], verbose);
-    fmt5_compress(c);
     break;
   }
   case '6': {
     c = fmt6_read_raw(argv[optind], verbose);
-    fmt6_compress(c);
     break;
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
