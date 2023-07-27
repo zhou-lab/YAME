@@ -194,7 +194,7 @@ int main_summary(int argc, char *argv[]) {
     if (c_qry.n == 0) break;
     kstring_t sq = {0};
     if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
-    else ksprintf(&sq, "%"PRIu64"\t", kq+1);
+    else ksprintf(&sq, "%"PRIu64"", kq+1);
     decompress(&c_qry, &c_qry_inflated);
 
     if (fname_mask) {           /* apply any mask? */
