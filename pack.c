@@ -10,13 +10,13 @@ static int usage() {
   fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -f.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -b        binary data (.cb). Possible formats:\n");
+  fprintf(stderr, "    -b        binary data (.cm). Possible formats:\n");
   fprintf(stderr, "              (0) 1 byte for 8 binary cpgs\n"); 
   fprintf(stderr, "              (1) value (1 byte) + runlen (2 bytes). Input is one ASCII\n");
   fprintf(stderr, "              (5) 2-bit + NA-RLE. Input has only 0, 1, 2.\n");
-  fprintf(stderr, "    -s        state data (.cs):\n");
+  fprintf(stderr, "    -s        state data (.cm):\n");
   fprintf(stderr, "              (2) state text + index RLE.\n");
-  fprintf(stderr, "    -m        sequencing MU data (.cm, .cg, .ca, .cc, .ct):\n");
+  fprintf(stderr, "    -m        sequencing MU data (.cg, .ca, .cc, .ct):\n");
   fprintf(stderr, "              (3) MU RLE + ladder byte.\n");
   fprintf(stderr, "    -n        fraction data (.cn):\n");
   fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n");
