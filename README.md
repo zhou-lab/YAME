@@ -1,1 +1,1 @@
-# KnowYourCG
+# YAME (Yet Another Methylation toolsuite)
