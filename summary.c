@@ -244,8 +244,10 @@ int main_summary(int argc, char *argv[]) {
     }
     free(sq.s);
     free(c_qry.s); c_qry.s = NULL;
+    if (c_qry_inflated.s) free(c_qry_inflated.s);
+    c_qry_inflated.s = NULL;
   }
-  if (c_qry_inflated.s) free(c_qry_inflated.s);
+  if (n_st) free(st);
   if (in_memory) {
     for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
     free(c_masks);

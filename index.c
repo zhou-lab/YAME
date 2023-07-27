@@ -159,6 +159,7 @@ snames_t loadSampleNamesFromIndex(char *fname) {
   char *fname_index = get_fname_index(fname);
   index_t *idx = loadIndex(fname_index);
   snames_t snames = {0};
+  free(fname_index);
   if (!idx) return snames;
 
   index_pair_t *idx_pairs = index_pairs(idx, &(snames.n));
