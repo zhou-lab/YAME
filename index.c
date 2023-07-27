@@ -166,6 +166,7 @@ snames_t loadSampleNamesFromIndex(char *fname) {
   snames.s = calloc(snames.n, sizeof(char*));
   for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
   free(idx_pairs);          // ownership of keys are transfered to snames.s
+  cleanIndex(idx);
   return snames;
 }
 
