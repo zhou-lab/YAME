@@ -32,7 +32,7 @@ int main_info(int argc, char *argv[]) {
     cfile_t cf = open_cfile(fname_in);
     snames_t snames = loadSampleNamesFromIndex(fname_in);
     int i = 0;
-    for (i=0; i<snames.n; ++i) {
+    for (i=0; ; ++i) {
       cdata_t c = read_cdata1(&cf);
       if (c.n == 0) break;
       cdata_t expanded = {0};
