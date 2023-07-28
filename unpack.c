@@ -27,7 +27,6 @@ static int usage() {
   return 1;
 }
 
-uint64_t f3_unpack_MU(uint8_t *data, uint8_t unit);
 static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
   switch (c->fmt) {
   case '0': {
@@ -43,7 +42,7 @@ static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
     break;
   }
   case '3': {
-    uint64_t mu = f3_unpack_mu(c, i);
+    uint64_t mu = f3_get_mu(c, i);
     if (f3_fmt == 0)
       fprintf(stdout, "%"PRIu64"", mu);
     else if (f3_fmt < 0)

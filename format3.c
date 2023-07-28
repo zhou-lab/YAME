@@ -44,8 +44,12 @@ static void f3_pack_mu(uint8_t *data, uint64_t M, uint64_t U, uint8_t unit) {
   pack_value(data, (M<<(unit*4)) | U, unit);
 }
 
+void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U) {
+  f3_pack_mu(c->s+i*c->unit, M, U, c->unit);
+}
+
 // note this function generate uin32_t not uint64_t. Please fix.
-uint64_t f3_unpack_mu(cdata_t *c, uint64_t i) {
+uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
   uint8_t *data = c->s + c->unit*i;
   uint64_t mu = 0;
   for (uint8_t j=0; j<c->unit; ++j) {
@@ -102,7 +106,7 @@ void fmt3_compress(cdata_t *c) {
   uint64_t i = 0;
   uint64_t l = 0;
   for (i=0; i<c->n; i++) {
-    uint64_t MU = f3_unpack_mu(c, i);
+    uint64_t MU = f3_get_mu(c, i);
     uint64_t M = MU>>32;
     uint64_t U = MU<<32>>32;
     if (M>0 || U>0 || l+2 >= 1<<14) {

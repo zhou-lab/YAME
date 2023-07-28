@@ -49,7 +49,7 @@ static void summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, stats_t **st) 
     uint64_t nq=0;
     for (uint64_t i=0; i<c.n; ++i) {
       uint64_t index = f2_unpack_uint64(&c_mask, i);
-      uint64_t mu = f3_unpack_mu(&c, i);
+      uint64_t mu = f3_get_mu(&c, i);
       if (index >= (*n_st)) {
         fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
         fflush(stderr);
@@ -87,7 +87,7 @@ static void summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, stats_t **st) 
         exit(1);
       }
       for (uint64_t i=0; i<c.n; ++i) {
-        uint64_t mu = f3_unpack_mu(&c, i);
+        uint64_t mu = f3_get_mu(&c, i);
         if (mu) st1->n_q++;
         if (c_mask.s[i>>3]&(1<<(i&0x7))) {
           st1->n_m++;
@@ -97,7 +97,7 @@ static void summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, stats_t **st) 
           }}}
     } else {
       for (uint64_t i=0; i<c.n; ++i) {
-        uint64_t mu = f3_unpack_mu(&c, i);
+        uint64_t mu = f3_get_mu(&c, i);
         if (mu) {
           st1->sum_beta += MU2beta(mu);
           st1->n_o++;

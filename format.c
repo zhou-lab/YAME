@@ -37,6 +37,7 @@ cdata_t* fmt0_read_raw(char *fname, int verbose) {
   c->n = n;
   c->compressed = 0;
   c->fmt = '0';
+  c->unit = 1;
   return c;
 }
 
@@ -89,7 +90,7 @@ void convertToFmt0(cdata_t *c) {
     c_out.n = expanded.n;
     c_out.s = calloc((c_out.n>>3)+1,1);
     for (uint64_t i=0; i<expanded.n; ++i) {
-      uint64_t mu = f3_unpack_mu(&expanded, i);
+      uint64_t mu = f3_get_mu(&expanded, i);
       if (mu > 0) { /* equivalent to: 1 if M+U > 0 else 0 */
         c_out.s[i>>3] |= (1<<(i&0x7));
       }

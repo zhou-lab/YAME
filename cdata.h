@@ -63,6 +63,7 @@ void decompress2(cdata_t *c);
 void cdata_compress(cdata_t *c);
 
 static inline uint64_t cdata_n(cdata_t *c) {
+  if (!c->compressed) return c->n;
   cdata_t c2 = {0};
   decompress(c, &c2);
   uint64_t n = c2.n;
@@ -91,7 +92,8 @@ uint64_t fmt2_get_keys_n(cdata_t *c);
 
 void fmt3_compress(cdata_t *c);
 void fmt3_decompress(cdata_t *c, cdata_t *inflated);
-uint64_t f3_unpack_mu(cdata_t *c, uint64_t i);
+void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
+uint64_t f3_get_mu(cdata_t *c, uint64_t i);
 
 void fmt4_compress(cdata_t *c);
 void fmt4_decompress(cdata_t *c, cdata_t *inflated);
@@ -119,31 +121,6 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
   c_sliced->n = end - beg + 1;
   c_sliced->compressed = 0;
   c_sliced->fmt = c->fmt;
-}
-
-static inline uint64_t sumMUpair(uint64_t MU1, uint64_t MU2) {
-  uint64_t M = (MU1>>32) + (MU2>>32);
-  uint64_t U = (MU1&0xffffffff) + (MU2&0xffffffff);
-  if (M > 0xffffffff || U > 0xffffffff) {
-    uint64_t tmp;
-    int im = 0; tmp=M; while(tmp>>32) { tmp>>=1; ++im; }
-    int iu = 0; tmp=U; while(tmp>>32) { tmp>>=1; ++iu; }
-    im = (im>iu ? im : iu);
-    M>>=im; U>>=im;
-  }
-  return (M<<32|U);
-}
-
-static inline uint64_t MUbinarize(uint64_t MU) {
-  uint64_t M = MU>>32;
-  uint64_t U = MU&0xffffffff;
-  if (M==0 && U==0) {
-    return 0;
-  } else if (M>=U) {
-    return (1ul<<32);
-  } else {
-    return 1ul;
-  }
 }
 
 static inline uint64_t f2_unpack_uint64(cdata_t *c, uint64_t i) {
