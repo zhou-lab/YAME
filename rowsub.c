@@ -57,13 +57,12 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
 static void sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n, cdata_t *c2) {
 
   assert(!c->compressed);
-  c2->s = realloc(c2->s, n*c->unit);
+  c2->unit = c->unit;
+  c2->s = realloc(c2->s, n*c2->unit);
   c2->fmt = c->fmt;
   int64_t i;
   for (i=0; i<n; ++i) {
-    uint64_t *s = (uint64_t*) c->s;
-    uint64_t *s2 = (uint64_t*) c2->s;
-    s2[i] = s[row_indices[i]-1]; // input is 1-based
+    memcpy(c2->s+c2->unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
   }
   c2->n = n;
   c2->compressed = 0;
