@@ -51,7 +51,7 @@ static cdata_t rowop_binasum(cfile_t cf) {
   cout.compressed = 0;
   cout.fmt = '3';
   cout.unit = 8;                // max-size result
-  cout.s = malloc(sizeof(uint64_t)*cout.n);
+  cout.s = calloc(cout.n, sizeof(uint64_t));
   
   for (uint64_t k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -119,6 +119,7 @@ int main_rowop(int argc, char *argv[]) {
   cdata_write(fname_out, &cout, "wb", verbose);
   free(cout.s);
   bgzf_close(cf.fh);
+  if (fname_out) free(fname_out);
   
   return 0;
 }

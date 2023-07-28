@@ -91,7 +91,7 @@ int main_rowsub(int argc, char *argv[]) {
   cfile_t cf = open_cfile(fname);
   BGZF *fp_out = bgzf_dopen(fileno(stdout), "w");
   assert(fp_out != NULL);
-  for (uint64_t k=0; ; ++k) {
+  while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
     

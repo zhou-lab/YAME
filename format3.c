@@ -50,7 +50,7 @@ void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U) {
 
 // note this function generate uin32_t not uint64_t. Please fix.
 uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
-  uint8_t *data = c->s + c->unit*i;
+  uint8_t *data = c->s + (c->unit*i);
   uint64_t mu = 0;
   for (uint8_t j=0; j<c->unit; ++j) {
     mu |= (((uint64_t) data[j]) << (8*j));
@@ -109,7 +109,7 @@ void fmt3_compress(cdata_t *c) {
     uint64_t MU = f3_get_mu(c, i);
     uint64_t M = MU>>32;
     uint64_t U = MU<<32>>32;
-    if (M>0 || U>0 || l+2 >= 1<<14) {
+    if (M>0 || U>0 || l+2 >= (1ul<<14)) {
       if (l>0) {
         s = realloc(s, n+2);
         pack_value(s+n, l<<2, 2);
