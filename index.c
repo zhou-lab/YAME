@@ -265,7 +265,7 @@ int main_index(int argc, char *argv[]) {
         sname_v = realloc(sname_v, sizeof(kstring_t)*(n+1));
         addr_v = realloc(addr_v, sizeof(int64_t)*(n+1));
         memset(&sname_v[n], 0, sizeof(kstring_t));
-        ksprintf(&sname_v[n], "Unknown_%d", n+1);
+        ksprintf(&sname_v[n], "Unnamed_%d", n+1);
         addr_v[n] = addr;
       }
       

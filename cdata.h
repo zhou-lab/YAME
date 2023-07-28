@@ -62,6 +62,14 @@ void decompress(cdata_t *c, cdata_t *expanded);
 void decompress2(cdata_t *c);
 void cdata_compress(cdata_t *c);
 
+static inline uint64_t cdata_n(cdata_t *c) {
+  cdata_t c2 = {0};
+  decompress(c, &c2);
+  uint64_t n = c2.n;
+  free(c2.s);
+  return n;
+}
+
 void fmt0_decompress(cdata_t *c, cdata_t *inflated);
 
 void fmt1_compress(cdata_t *c);

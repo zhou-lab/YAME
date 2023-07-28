@@ -20,7 +20,7 @@ static int usage() {
   fprintf(stderr, "                   N <  0: M<tab>U\n");
   fprintf(stderr, "                   N >  0: Fraction (with number for the min coverage)\n");
   fprintf(stderr, "    -c        Enable chunk process\n");
-  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory efficient but could be lossier. Can only be 0,1,2,4,6,8. 0 means this will be inferred from data.\n");
+  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data.\n");
   fprintf(stderr, "    -s        Specify chunk size (default is 1M)\n");
   fprintf(stderr, "    -h        Display this help message\n\n");
 

@@ -55,8 +55,9 @@ uint64_t f3_unpack_mu(cdata_t *c, uint64_t i) {
 }
 
 /* uncompressed: [ M (uint32_t) | U (uint32_t) ] */
-cdata_t* fmt3_read_raw(char *fname, int verbose) {
-  uint8_t unit = 8; // max size, zero loss
+/* usually unit == 8 by default for minimal loss */
+cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
+  if (!unit) unit = 8;
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint8_t *s = NULL; uint64_t n = 0;
@@ -69,7 +70,7 @@ cdata_t* fmt3_read_raw(char *fname, int verbose) {
     uint64_t M = atol(fields[0]);
     uint64_t U = atol(fields[1]);
     s = realloc(s, (n+1)*unit);
-    fitMU(&M, &U, 32);
+    fitMU(&M, &U, unit*4);
     f3_pack_mu(s+n*unit, M, U, unit);
     n++;
     free_fields(fields, nfields);
