@@ -32,6 +32,7 @@ static void binasumFmt0(cdata_t *cout, cdata_t *c) {
 static void binasumFmt3(cdata_t *cout, cdata_t *c) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
+    if (!mu0) continue;
     uint64_t mu = f3_get_mu(cout, i);
     if ((mu0>>32) > (mu0<<32>>32)) {
       f3_set_mu(cout, i, ((mu>>32)+1), (mu<<32>>32));
