@@ -5,7 +5,7 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame rowops [options] <in.cx> <out.cx>\n");
+  fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out.cx>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
@@ -41,7 +41,7 @@ static void binasumFmt3(cdata_t *cout, cdata_t *c) {
   }
 }
 
-static cdata_t rowops_binasum(cfile_t cf) {
+static cdata_t rowop_binasum(cfile_t cf) {
   cdata_t c = read_cdata1(&cf);
   cdata_t cout = {0};
   if (c.n == 0) return cout;    // nothing in cfile
@@ -83,7 +83,7 @@ static cdata_t rowops_binasum(cfile_t cf) {
   return cout;
 }
 
-int main_rowops(int argc, char *argv[]) {
+int main_rowop(int argc, char *argv[]) {
 
   int c, verbose = 0;
   char *op = NULL;
@@ -109,7 +109,7 @@ int main_rowops(int argc, char *argv[]) {
   cfile_t cf = open_cfile(fname);
   cdata_t cout = {0};
   if (!op || strcmp(op, "binasum") == 0) { // default
-    cout = rowops_binasum(cf);
+    cout = rowop_binasum(cf);
   } else {
     fprintf(stderr, "[%s:%d] Unsupported operation: %s\n", __func__, __LINE__, op);
     fflush(stderr);

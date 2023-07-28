@@ -48,7 +48,7 @@ int main_summary(int argc, char *argv[]);
 int main_overlap(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
 int main_chunkchar(int argc, char *argv[]);
-int main_rowops(int argc, char *argv[]);
+int main_rowop(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 
 #define PACKAGE_VERSION "0.1.20230619"
@@ -72,7 +72,7 @@ static int usage()
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
   fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
   fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
-  fprintf(stderr, "     rowops       - Perform operations on rows.\n");
+  fprintf(stderr, "     rowop        - Perform operations on rows, e.g., sum binary values.\n");
   fprintf(stderr, "\n");
 
   return 1;
@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
   else if (strcmp(argv[1], "chunk") == 0) ret = main_chunk(argc-1, argv+1);
   else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);
-  else if (strcmp(argv[1], "rowops") == 0) ret = main_rowops(argc-1, argv+1);
+  else if (strcmp(argv[1], "rowop") == 0) ret = main_rowop(argc-1, argv+1);
   /* else if (strcmp(argv[1], "bundle") == 0) ret = main_bundle(argc-1, argv+1); */
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
