@@ -38,7 +38,7 @@ static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
     break;
   }
   case '2': {
-    fprintf(stdout, "%s", f2_unpack_string(c, i));
+    fprintf(stdout, "%s", f2_get_string(c, i));
     break;
   }
   case '3': {

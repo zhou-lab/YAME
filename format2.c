@@ -4,6 +4,27 @@
 #include "cdata.h"
 #include "khash.h"
 
+uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
+  if (!c->aux) fmt2_set_aux(c);
+  f2_aux_t *aux = (f2_aux_t*) c->aux;
+  uint8_t *d = aux->data + c->unit*i;
+  uint64_t value = 0;
+  for (uint8_t j=0; j<c->unit; ++j) value |= (d[j] << (8*j));
+  return value;
+}
+
+char* f2_get_string(cdata_t *c, uint64_t i) {
+  if (!c->aux) fmt2_set_aux(c);
+  f2_aux_t *aux = (f2_aux_t*) c->aux;
+  uint64_t val = f2_get_uint64(c, i);
+  if (val >= aux->nk) {
+    fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+  return aux->keys[val];
+}
+
 static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
   // Calculate the maximum value
   uint64_t max_value = 0;

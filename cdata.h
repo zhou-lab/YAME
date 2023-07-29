@@ -123,25 +123,7 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
   c_sliced->fmt = c->fmt;
 }
 
-static inline uint64_t f2_unpack_uint64(cdata_t *c, uint64_t i) {
-  if (!c->aux) fmt2_set_aux(c);
-  f2_aux_t *aux = (f2_aux_t*) c->aux;
-  uint8_t *d = aux->data + c->unit*i;
-  uint64_t value = 0;
-  for (uint8_t j=0; j<c->unit; ++j) value |= (d[j] << (8*j));
-  return value;
-}
-
-static inline char* f2_unpack_string(cdata_t *c, uint64_t i) {
-  if (!c->aux) fmt2_set_aux(c);
-  f2_aux_t *aux = (f2_aux_t*) c->aux;
-  uint64_t val = f2_unpack_uint64(c, i);
-  if (val >= aux->nk) {
-    fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
-    fflush(stderr);
-    exit(1);
-  }
-  return aux->keys[val];
-}
+uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
+char* f2_get_string(cdata_t *c, uint64_t i);
 
 #endif /* _CDATA_H */

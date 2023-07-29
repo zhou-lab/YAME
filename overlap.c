@@ -82,7 +82,8 @@ int main_overlap(int argc, char *argv[]) {
   cdata_t c_fea = {0};
   if (unseekable) {             /* only the first cdata */
     c_fea = read_cdata1(&cf_fea);
-    convertToFmt0(&c_fea);
+    if (c_fea.fmt == '2') decompress2(&c_fea);
+    else convertToFmt0(&c_fea);
   }
   if (print_header)
     fputs("Query\tFeature\tN_universe\tN_feature\tN_query\tN_overlap\n", stdout);
@@ -115,7 +116,8 @@ int main_overlap(int argc, char *argv[]) {
       for (uint64_t kf=0;;++kf) {
         cdata_t c_fea = read_cdata1(&cf_fea);
         if (c_fea.n == 0) break;
-        convertToFmt0(&c_fea);
+        if (c_fea.fmt == '2') decompress2(&c_fea);
+        else convertToFmt0(&c_fea);
         
         assert(c_qry.n == c_fea.n);
         if (c_uni.n > 0) bit_mask(c_fea.s, c_uni.s, c_uni.n);
