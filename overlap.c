@@ -22,27 +22,6 @@ static int usage() {
   return 1;
 }
 
-static void bit_mask(uint8_t *s, uint8_t *mask, size_t n) {
-  size_t i;
-  for (i=0; i<(n>>3)+1; ++i) s[i] &= mask[i];
-}
-
-static size_t bit_count(cdata_t c) {
-
-  /* create a look-up table */
-  int byte2cnt[256]; int p;
-  for (p=0; p<256; ++p) {
-    unsigned char q = p; int ii, cnt = 0;
-    for (ii=0; ii<8; ++ii) { if (q&1) cnt++; q>>=1; }
-    byte2cnt[p] = cnt;
-  }
-  
-  size_t i,k,m = 0;
-  for (i=0; i<(c.n>>3); ++i) m += byte2cnt[c.s[i]];
-  for (k=0; k<(c.n&0x7); ++k) m += (c.s[i]>>k) & 0x1;
-  return m;
-}
-
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
 int main_overlap(int argc, char *argv[]) {
   int c; char *upath = NULL; int print_header=0;

@@ -18,6 +18,7 @@ void decompress2(cdata_t *c) {
   cdata_t expanded = *c;
   expanded.s = NULL;
   decompress(c, &expanded);
+  free_cdata(c);
   *c = expanded;
 }
 
