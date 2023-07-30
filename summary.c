@@ -238,6 +238,7 @@ static stats_t* summarize1_fmt3(cdata_t c, cdata_t c_mask, uint64_t *n_st, char 
         st[0].n_o++;
         st[0].n_q++;
       }}
+    st[0].mean_beta = (double) st[0].sum_beta / st[0].n_o;
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
     
