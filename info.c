@@ -28,7 +28,7 @@ int main_info(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  fprintf(stdout, "File\tSample\tN\tFormat\tUnitBytes\n");
+  fprintf(stdout, "File\tSample\tNcol\tNrow\tFormat\tUnitBytes\n");
   for (int j = optind; j < argc; ++j) {
     char *fname_in = argv[j];
     cfile_t cf = open_cfile(fname_in);
@@ -45,6 +45,8 @@ int main_info(int argc, char *argv[]) {
       } else {
         fprintf(stdout, "%d", i+1);
       }
+      if (snames.n) fprintf(stdout, "\t%d", snames.n);
+      else fputs("\tNA", stdout);
       fprintf(stdout, "\t%"PRIu64"\t%c\t%u\n", expanded.n, expanded.fmt, expanded.unit);
       free(expanded.s); free(c.s);
       if (report1) break;

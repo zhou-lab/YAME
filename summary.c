@@ -324,27 +324,34 @@ static stats_t* summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, 
 }
 
 static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname_mask, const char *fname_qry) {
+  const char *fmask = "NA";
   for (uint64_t i=0; i<n_st; ++i) {
     stats_t s = st[i];
-    double odds_ratio = -1;
+    char *odds_ratio = NULL;
     if (fname_mask) {
       double n_mm = s.n_u - s.n_q - s.n_m + s.n_o;
       double n_mp = s.n_q - s.n_o;
       double n_pm = s.n_m - s.n_o;
-      odds_ratio = log2(n_mm*s.n_o / (n_mp*n_pm));
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%1.2f", log2(n_mm*s.n_o / (n_mp*n_pm)));
+      odds_ratio = tmp.s;
+      fmask = fname_mask;
     } else {
-      fname_mask = "NA";
+      kstring_t tmp = {0};
+      kputs("NA", &tmp);
+      odds_ratio = tmp.s;
+      fmask = "NA";
     }
-    fprintf(
-      stdout,
-      "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%1.2f\t",
-      fname_qry, s.sq, fname_mask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
+    fprintf(stdout,
+      "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s\t",
+      fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
     if (s.mean_beta < 0) {
       fputs("NA", stdout);
     } else {
       fprintf(stdout, "%1.3f", s.mean_beta);
     }
     fputc('\n', stdout);
+    free(odds_ratio);
   }
 
   if (n_st) {
