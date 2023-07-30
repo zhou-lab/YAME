@@ -89,6 +89,10 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   uint64_t keys_n = 0, keys_m = 1<<10;
   while (gzFile_read_line(fh, &line) > 0) {
     int ret; char *kc = strdup(line);
+    if (strlen(kc) == 0) { // use NA if the input is "". "" will confuse the separater inference and is prohibited.
+      kc = realloc(kc, 3);
+      strcpy(kc, "NA");
+    }
     k = kh_put(str2int, h, kc, &ret);
     if (ret) {  // The key didn't exist before
       kh_val(h, k) = keys_count++;
@@ -117,7 +121,7 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   c->compressed = 0;
   c->fmt = '2';
   c->aux = calloc(1, sizeof(f2_aux_t));
-  c->n = data_n;
+  c->n = data_n;  // when uncompressed, c->n is the data length not byte length
   c->s = calloc(1, keys_n_bytes + data_n*sizeof(uint64_t) + 1);
 
   // Write the keys to the data
