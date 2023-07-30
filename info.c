@@ -1,4 +1,5 @@
 #include "cfile.h"
+#include "kstring.h"
 
 static int usage() {
   fprintf(stderr, "\n");
@@ -28,7 +29,7 @@ int main_info(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  fprintf(stdout, "File\tSample\tNcol\tNrow\tFormat\tUnitBytes\n");
+  fprintf(stdout, "File\tSample\tNcol\tNrow\tFormat\tUnitBytes\tKeys\n");
   for (int j = optind; j < argc; ++j) {
     char *fname_in = argv[j];
     cfile_t cf = open_cfile(fname_in);
@@ -47,8 +48,30 @@ int main_info(int argc, char *argv[]) {
       }
       if (snames.n) fprintf(stdout, "\t%d", snames.n);
       else fputs("\tNA", stdout);
-      fprintf(stdout, "\t%"PRIu64"\t%c\t%u\n", expanded.n, expanded.fmt, expanded.unit);
-      free(expanded.s); free(c.s);
+      fprintf(stdout, "\t%"PRIu64"\t%c\t%u\t", expanded.n, expanded.fmt, expanded.unit);
+
+      kstring_t tmp = {0};
+      if (c.fmt == '2') {
+        uint64_t nk = fmt2_get_keys_n(&c);
+        ksprintf(&tmp, "N=%"PRIu64"|", nk);
+        const char *s = (char*) c.s;
+        for (uint64_t k=0; k<nk; ++k) {
+          if (k) kputc(',', &tmp);
+          kputs(s, &tmp);
+          s += (strlen(s)+1);
+          if (k+1 < nk && strlen(tmp.s) > 25) {
+            kputs(",...", &tmp);
+            break;
+          }
+        }
+      } else {
+        kputs("NA", &tmp);
+      }
+      fputs(tmp.s, stdout);
+      free(tmp.s);
+      fputc('\n', stdout);
+      
+      free(expanded.s); free_cdata(&c);
       if (report1) break;
     }
     cleanSampleNames2(snames);
