@@ -50,7 +50,7 @@ int main_chunkchar(int argc, char *argv[]);
 int main_rowop(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "0.1.20230619"
+#define PACKAGE_VERSION "0.2.20230730"
 
 static int usage()
 {

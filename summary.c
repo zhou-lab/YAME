@@ -326,14 +326,19 @@ static stats_t* summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, 
 static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname_mask, const char *fname_qry) {
   for (uint64_t i=0; i<n_st; ++i) {
     stats_t s = st[i];
-    double n_mm = s.n_u - s.n_q - s.n_m + s.n_o;
-    double n_mp = s.n_q - s.n_o;
-    double n_pm = s.n_m - s.n_o;
-    double odds_ratio = n_mm*s.n_o / (n_mp*n_pm);
+    double odds_ratio = -1;
+    if (fname_mask) {
+      double n_mm = s.n_u - s.n_q - s.n_m + s.n_o;
+      double n_mp = s.n_q - s.n_o;
+      double n_pm = s.n_m - s.n_o;
+      odds_ratio = log2(n_mm*s.n_o / (n_mp*n_pm));
+    } else {
+      fname_mask = "NA";
+    }
     fprintf(
       stdout,
       "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%1.2f\t",
-      fname_qry, s.sq, fname_mask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, log2(odds_ratio));
+      fname_qry, s.sq, fname_mask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
     if (s.mean_beta < 0) {
       fputs("NA", stdout);
     } else {
@@ -399,13 +404,7 @@ int main_summary(int argc, char *argv[]) {
     }
     snames_mask = loadSampleNamesFromIndex(fname_mask);
   }
-  char *fname_qry = argv[optind];
-  cfile_t cf_qry = open_cfile(fname_qry);
-  snames_t snames_qry = {0};
-  
-  if (fname_snames) snames_qry = loadSampleNames(fname_snames, 1);
-  else snames_qry = loadSampleNamesFromIndex(fname_qry);
-  
+ 
   if (print_header)
     fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\n", stdout);
 
@@ -422,68 +421,77 @@ int main_summary(int argc, char *argv[]) {
     }
   }
 
-  /* uint64_t n_st = 0; stats_t *st = NULL; */
-  for (uint64_t kq=0;;++kq) {
-    cdata_t c_qry = read_cdata1(&cf_qry);
-    if (c_qry.n == 0) break;
-    kstring_t sq = {0};
-    if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
-    else ksprintf(&sq, "%"PRIu64"", kq+1);
-    prepare_query(&c_qry);
+  for (int j = optind; j < argc; ++j) {
+    
+    char *fname_qry = argv[j];
+    cfile_t cf_qry = open_cfile(fname_qry);
+    snames_t snames_qry = {0};
+  
+    if (fname_snames) snames_qry = loadSampleNames(fname_snames, 1);
+    else snames_qry = loadSampleNamesFromIndex(fname_qry);
 
-    if (fname_mask) {           /* apply any mask? */
-      if (in_memory || unseekable) { /* in memory mask if unseekable */
-        for (uint64_t km=0;km<c_masks_n;++km) {
-          c_mask = c_masks[km];
-          kstring_t sm = {0};
-          if (snames_mask.n) kputs(snames_mask.s[km], &sm);
-          else ksprintf(&sm, "%"PRIu64"", km+1);
-          uint64_t n_st = 0;
-          stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-          format_stats_and_clean(st, n_st, fname_mask, fname_qry);
-          free(sm.s);
-        }
-      } else {                  /* mask is seekable */
-        if (bgzf_seek(cf_mask.fh, 0, SEEK_SET)!=0) {
-          fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
-          fflush(stderr);
-          exit(1);
-        }
-        for (uint64_t km=0;;++km) {
-          c_mask = read_cdata1(&cf_mask);
-          if (c_mask.n == 0) break;
-          prepare_mask(&c_mask);
+    for (uint64_t kq=0;;++kq) {
+      cdata_t c_qry = read_cdata1(&cf_qry);
+      if (c_qry.n == 0) break;
+      kstring_t sq = {0};
+      if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
+      else ksprintf(&sq, "%"PRIu64"", kq+1);
+      prepare_query(&c_qry);
 
-          kstring_t sm = {0};
-          if (snames_mask.n) kputs(snames_mask.s[km], &sm);
-          else ksprintf(&sm, "%"PRIu64"", km+1);
-          uint64_t n_st = 0;
-          stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-          format_stats_and_clean(st, n_st, fname_mask, fname_qry);
-          free(sm.s);
-          free_cdata(&c_mask);
+      if (fname_mask) {           /* apply any mask? */
+        if (in_memory || unseekable) { /* in memory mask if unseekable */
+          for (uint64_t km=0;km<c_masks_n;++km) {
+            c_mask = c_masks[km];
+            kstring_t sm = {0};
+            if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+            else ksprintf(&sm, "%"PRIu64"", km+1);
+            uint64_t n_st = 0;
+            stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
+            format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+            free(sm.s);
+          }
+        } else {                  /* mask is seekable */
+          if (bgzf_seek(cf_mask.fh, 0, SEEK_SET)!=0) {
+            fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
+            fflush(stderr);
+            exit(1);
+          }
+          for (uint64_t km=0;;++km) {
+            c_mask = read_cdata1(&cf_mask);
+            if (c_mask.n == 0) break;
+            prepare_mask(&c_mask);
+
+            kstring_t sm = {0};
+            if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+            else ksprintf(&sm, "%"PRIu64"", km+1);
+            uint64_t n_st = 0;
+            stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
+            format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+            free(sm.s);
+            free_cdata(&c_mask);
+          }
         }
+      } else {                    /* whole dataset summary if missing mask */
+        kstring_t sm = {0};
+        kputs("global", &sm);
+        uint64_t n_st = 0;
+        stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
+        format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+        free(sm.s);
       }
-    } else {                    /* whole dataset summary if missing mask */
-      kstring_t sm = {0};
-      kputs("global", &sm);
-      uint64_t n_st = 0;
-      stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-      format_stats_and_clean(st, n_st, fname_mask, fname_qry);
-      free(sm.s);
+      free(sq.s);
+      free(c_qry.s); c_qry.s = NULL;
     }
-    free(sq.s);
-    free(c_qry.s); c_qry.s = NULL;
+    if (in_memory) {
+      for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
+      free(c_masks);
+    } else if (c_mask.s) free_cdata(&c_mask);
+    bgzf_close(cf_qry.fh);
+    cleanSampleNames2(snames_qry);
+    if (fname_snames) free(fname_snames);
   }
-  if (in_memory) {
-    for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
-    free(c_masks);
-  } else if (c_mask.s) free_cdata(&c_mask);
-  bgzf_close(cf_qry.fh);
   if (fname_mask) bgzf_close(cf_mask.fh);
   if (fname_mask) free(fname_mask);
-  if (fname_snames) free(fname_snames);
-  cleanSampleNames2(snames_qry);
   cleanSampleNames2(snames_mask);
   
   return 0;

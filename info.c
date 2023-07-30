@@ -5,6 +5,7 @@ static int usage() {
   fprintf(stderr, "Usage: yame info [options] <in.cx>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    -1        Report one record per file.\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -13,9 +14,10 @@ static int usage() {
 
 int main_info(int argc, char *argv[]) {
 
-  int c;
-  while ((c = getopt(argc, argv, "vh"))>=0) {
+  int c; int report1 = 0;
+  while ((c = getopt(argc, argv, "1hv"))>=0) {
     switch (c) {
+    case '1': report1 = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -45,6 +47,7 @@ int main_info(int argc, char *argv[]) {
       }
       fprintf(stdout, "\t%"PRIu64"\t%c\t%u\n", expanded.n, expanded.fmt, expanded.unit);
       free(expanded.s); free(c.s);
+      if (report1) break;
     }
     cleanSampleNames2(snames);
     bgzf_close(cf.fh);
