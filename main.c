@@ -45,7 +45,6 @@ int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
 int main_info(int argc, char *argv[]);
 int main_summary(int argc, char *argv[]);
-int main_overlap(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
 int main_chunkchar(int argc, char *argv[]);
 int main_rowop(int argc, char *argv[]);
@@ -67,7 +66,6 @@ static int usage()
   fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
   fprintf(stderr, "     info         - Display basic parameter of the cx file.\n");
   fprintf(stderr, "     summary      - calculate summary, with or without masks.\n");
-  fprintf(stderr, "     overlap      - Compute the overlap of cx files (faster than summary).\n");
   fprintf(stderr, "     index        - Index samples in a cx file.\n");
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
   fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
@@ -88,7 +86,6 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
   else if (strcmp(argv[1], "info") == 0) ret = main_info(argc-1, argv+1);
   else if (strcmp(argv[1], "summary") == 0) ret = main_summary(argc-1, argv+1);
-  else if (strcmp(argv[1], "overlap") == 0) ret = main_overlap(argc-1, argv+1);
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);
   else if (strcmp(argv[1], "chunk") == 0) ret = main_chunk(argc-1, argv+1);
   else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);

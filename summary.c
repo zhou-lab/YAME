@@ -11,10 +11,11 @@
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: yame summary [options] <query.cm>\n");
-  fprintf(stderr, "Query should be of format 3, can be a multi-sample set.\n");
+  fprintf(stderr, "Query should be of format 0,1,2,3, can be a multi-sample set.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -m        Binary (.cb) file, can be multi-sample.\n");
+  fprintf(stderr, "              If '-', the whole sample will bed kept in memory, same as -M.\n");
   fprintf(stderr, "    -M        All masks will be loaded to memory. This save disk IO.\n");
   fprintf(stderr, "    -H        Suppress header printing.\n");
   fprintf(stderr, "    -s        Sample list provided to override the query index file.\n");
@@ -36,6 +37,191 @@ typedef struct stats_t {
   char* sm;                     // mask name
   char* sq;                     // query name
 } stats_t;
+
+static stats_t* summarize1_fmt1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, char *sq) {
+
+  stats_t *st = NULL;
+  if (c_mask.n == 0) {          // no mask
+
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c.n;
+    st[0].n_q = bit_count(c);
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    
+  } else if (c_mask.fmt <= '1') { // binary mask
+
+    if (c_mask.n != c.n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
+      fflush(stderr);
+      exit(1);
+    }
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c.n;
+    st[0].n_q = bit_count(c);
+    st[0].n_m = bit_count(c_mask);
+    cdata_t tmp = {0};
+    tmp.s = malloc((c.n>>3)+1); tmp.n = c.n;
+    memcpy(tmp.s, c.s, (c.n>>3)+1);
+    bit_mask(tmp.s, c_mask.s, c_mask.n);
+    st[0].n_o = bit_count(tmp);
+    free(tmp.s);
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].mean_beta = -1;
+
+  } else if (c_mask.fmt == '2') { // state mask
+
+    if (c_mask.n != c.n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
+      fflush(stderr);
+      exit(1);
+    }
+    if (!c_mask.aux) fmt2_set_aux(&c_mask);
+    f2_aux_t *aux = (f2_aux_t*) c_mask.aux;
+    *n_st = aux->nk;
+    st = calloc((*n_st), sizeof(stats_t));
+    uint64_t nq=0;
+    for (uint64_t i=0; i<c.n; ++i) {
+      uint64_t index = f2_get_uint64(&c_mask, i);
+      if (index >= (*n_st)) {
+        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+        fflush(stderr);
+        exit(1);
+      }
+      if (c.s[i>>3]&(1<<(i&0x7))) {
+        st[index].n_o++;
+        nq++;
+      }
+      st[index].n_m++;
+    }
+    for (uint64_t k=0; k < (*n_st); ++k) {
+      st[k].n_q = nq;
+      st[k].n_u = c.n;
+      st[k].sum_beta = -1;
+      st[k].mean_beta = -1;
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
+      st[k].sm = tmp.s;
+      st[k].sq = strdup(sq);
+    }
+    
+  } else {                      // other masks
+    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask.fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  return st;
+}
+
+static stats_t* summarize1_fmt2(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, char *sq) {
+
+  stats_t *st = NULL;
+  if (c_mask.n == 0) {          // no mask
+    
+    if (!c.aux) fmt2_set_aux(&c);
+    f2_aux_t *aux = (f2_aux_t*) c.aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    for (uint64_t i=0; i<c.n; ++i) cnts[f2_get_uint64(&c, i)]++;
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c.n;
+      st[k].n_q = cnts[k];
+      st[k].n_m = 0;
+      st[k].n_o = 0;
+      st[k].mean_beta = -1;
+      st[k].sum_beta = -1;
+      st[k].sm = strdup(sm);
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+      st[k].sq = tmp.s;
+    }
+    free(cnts);
+    
+  } else if (c_mask.fmt <= '1') { // binary mask
+
+    if (!c.aux) fmt2_set_aux(&c);
+    f2_aux_t *aux = (f2_aux_t*) c.aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t n_m = 0;
+    for (uint64_t i=0; i<c.n; ++i) {
+      if (c_mask.s[i>>3]&(1<<(i&0x7))) {
+        n_m++;
+        cnts[f2_get_uint64(&c, i)]++;
+      }
+      cnts_q[f2_get_uint64(&c, i)]++;
+    }
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c.n;
+      st[k].n_q = cnts_q[k];
+      st[k].n_o = cnts[k];
+      st[k].n_m = n_m;
+      st[k].mean_beta = -1;
+      st[k].sum_beta = -1;
+      st[k].sm = strdup(sm);
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+      st[k].sq = tmp.s;
+    }
+    free(cnts);
+    
+  } else if (c_mask.fmt == '2') { // state mask
+
+    if (c_mask.n != c.n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
+      fflush(stderr);
+      exit(1);
+    }
+
+    if (!c_mask.aux) fmt2_set_aux(&c_mask);
+    f2_aux_t *aux_m = (f2_aux_t*) c_mask.aux;
+
+    if (!c.aux) fmt2_set_aux(&c);
+    f2_aux_t *aux_q = (f2_aux_t*) c.aux;
+
+    *n_st = aux_m->nk * aux_q->nk;
+    st = calloc((*n_st), sizeof(stats_t));
+    uint64_t *nq = calloc(aux_q->nk, sizeof(uint64_t));
+    uint64_t *nm = calloc(aux_m->nk, sizeof(uint64_t));
+    for (uint64_t i=0; i<c.n; ++i) {
+      uint64_t im = f2_get_uint64(&c_mask, i);
+      uint64_t iq = f2_get_uint64(&c, i);
+      st[im * aux_q->nk + iq].n_o++;
+      nq[iq]++;
+      nm[im]++;
+    }
+    for (uint64_t im=0; im<aux_m->nk; ++im) {
+      for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
+        stats_t *st1 = &st[im * aux_q->nk + iq];
+        st1->n_o++;
+        st1->n_u = c.n;
+        st1->n_q = nq[iq];
+        st1->n_m = nm[im];
+        st1->mean_beta = -1;
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
+        st1->sm = tmp.s;
+        memset(&tmp, 0, sizeof(kstring_t));
+        ksprintf(&tmp, "%s-%s", sq, aux_q->keys[iq]);
+        st1->sq = tmp.s;
+      }
+    }
+    free(nq); free(nm);
+    
+  } else {                      // other masks
+    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask.fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  return st;
+}
 
 static stats_t* summarize1_fmt3(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, char *sq) {
 
@@ -109,191 +295,6 @@ static stats_t* summarize1_fmt3(cdata_t c, cdata_t c_mask, uint64_t *n_st, char 
       st[k].n_q = nq;
       st[k].n_u = c.n;
       st[k].mean_beta = st[k].sum_beta / st[k].n_o;
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
-      st[k].sm = tmp.s;
-      st[k].sq = strdup(sq);
-    }
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask.fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
-static stats_t* summarize1_fmt2(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, char *sq) {
-
-  stats_t *st = NULL;
-  if (c_mask.n == 0) {          // no mask
-    
-    if (!c.aux) fmt2_set_aux(&c);
-    f2_aux_t *aux = (f2_aux_t*) c.aux;
-    *n_st = aux->nk;
-    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
-    for (uint64_t i=0; i<c.n; ++i) cnts[f2_get_uint64(&c, i)]++;
-    st = calloc(aux->nk, sizeof(stats_t));
-    for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c.n;
-      st[k].n_q = cnts[k];
-      st[k].n_m = 0;
-      st[k].n_o = 0;
-      st[k].mean_beta = -1;
-      st[k].sum_beta = 0;
-      st[k].sm = strdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
-    }
-    free(cnts);
-    
-  } else if (c_mask.fmt <= '1') { // binary mask
-
-    if (!c.aux) fmt2_set_aux(&c);
-    f2_aux_t *aux = (f2_aux_t*) c.aux;
-    *n_st = aux->nk;
-    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t n_m = 0;
-    for (uint64_t i=0; i<c.n; ++i) {
-      if (c_mask.s[i>>3]&(1<<(i&0x7))) {
-        n_m++;
-        cnts[f2_get_uint64(&c, i)]++;
-      }
-      cnts_q[f2_get_uint64(&c, i)]++;
-    }
-    st = calloc(aux->nk, sizeof(stats_t));
-    for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c.n;
-      st[k].n_q = cnts_q[k];
-      st[k].n_o = cnts[k];
-      st[k].n_m = n_m;
-      st[k].mean_beta = -1;
-      st[k].sum_beta = 0;
-      st[k].sm = strdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
-    }
-    free(cnts);
-    
-  } else if (c_mask.fmt == '2') { // state mask
-
-    if (c_mask.n != c.n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
-      fflush(stderr);
-      exit(1);
-    }
-
-    if (!c_mask.aux) fmt2_set_aux(&c_mask);
-    f2_aux_t *aux_m = (f2_aux_t*) c_mask.aux;
-
-    if (!c.aux) fmt2_set_aux(&c);
-    f2_aux_t *aux_q = (f2_aux_t*) c.aux;
-
-    *n_st = aux_m->nk * aux_q->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t *nq = calloc(aux_q->nk, sizeof(uint64_t));
-    uint64_t *nm = calloc(aux_m->nk, sizeof(uint64_t));
-    for (uint64_t i=0; i<c.n; ++i) {
-      uint64_t im = f2_get_uint64(&c_mask, i);
-      uint64_t iq = f2_get_uint64(&c, i);
-      st[im * aux_q->nk + iq].n_o++;
-      nq[iq]++;
-      nm[im]++;
-    }
-    for (uint64_t im=0; im<aux_m->nk; ++im) {
-      for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
-        stats_t *st1 = &st[im * aux_q->nk + iq];
-        st1->n_o++;
-        st1->n_u = c.n;
-        st1->n_q = nq[iq];
-        st1->n_m = nm[im];
-        st1->mean_beta = -1;
-        kstring_t tmp = {0};
-        ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
-        st1->sm = tmp.s;
-        memset(&tmp, 0, sizeof(kstring_t));
-        ksprintf(&tmp, "%s-%s", sq, aux_q->keys[iq]);
-        st1->sq = tmp.s;
-      }
-    }
-    free(nq); free(nm);
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask.fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
-static stats_t* summarize1_fmt1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, char *sq) {
-
-  stats_t *st = NULL;
-  if (c_mask.n == 0) {          // no mask
-
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c.n;
-    st[0].n_q = bit_count(c);
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    
-  } else if (c_mask.fmt <= '1') { // binary mask
-
-    if (c_mask.n != c.n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
-      fflush(stderr);
-      exit(1);
-    }
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c.n;
-    st[0].n_q = bit_count(c);
-    st[0].n_m = bit_count(c_mask);
-    cdata_t tmp = {0};
-    tmp.s = malloc((c.n>>3)+1); tmp.n = c.n;
-    memcpy(tmp.s, c.s, (c.n>>3)+1);
-    bit_mask(tmp.s, c_mask.s, c_mask.n);
-    st[0].n_o = bit_count(tmp);
-    free(tmp.s);
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].mean_beta = -1;
-
-  } else if (c_mask.fmt == '2') { // state mask
-
-    if (c_mask.n != c.n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
-      fflush(stderr);
-      exit(1);
-    }
-    if (!c_mask.aux) fmt2_set_aux(&c_mask);
-    f2_aux_t *aux = (f2_aux_t*) c_mask.aux;
-    *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t nq=0;
-    for (uint64_t i=0; i<c.n; ++i) {
-      uint64_t index = f2_get_uint64(&c_mask, i);
-      if (index >= (*n_st)) {
-        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
-        fflush(stderr);
-        exit(1);
-      }
-      if (c.s[i>>3]&(1<<(i&0x7))) {
-        st[index].sum_beta += 1;
-        st[index].n_o++;
-        nq++;
-      }
-      st[index].n_m++;
-    }
-    for (uint64_t k=0; k < (*n_st); ++k) {
-      st[k].n_q = nq;
-      st[k].n_u = c.n;
-      st[k].mean_beta = -1;
       kstring_t tmp = {0};
       ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
       st[k].sm = tmp.s;
@@ -431,7 +432,7 @@ int main_summary(int argc, char *argv[]) {
     prepare_query(&c_qry);
 
     if (fname_mask) {           /* apply any mask? */
-      if (in_memory) {          /* in memory mask */
+      if (in_memory || unseekable) { /* in memory mask if unseekable */
         for (uint64_t km=0;km<c_masks_n;++km) {
           c_mask = c_masks[km];
           kstring_t sm = {0};
@@ -442,13 +443,6 @@ int main_summary(int argc, char *argv[]) {
           format_stats_and_clean(st, n_st, fname_mask, fname_qry);
           free(sm.s);
         }
-      } else if (unseekable) {  /* mask is unseekable */
-        kstring_t sm = {0};
-        kputs("mask", &sm);
-        uint64_t n_st = 0;
-        stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-        format_stats_and_clean(st, n_st, fname_mask, fname_qry);
-        free(sm.s);
       } else {                  /* mask is seekable */
         if (bgzf_seek(cf_mask.fh, 0, SEEK_SET)!=0) {
           fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
