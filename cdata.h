@@ -72,8 +72,8 @@ static inline size_t bit_count(cdata_t c) {
   }
   
   size_t i,k,m = 0;
-  for (i=0; i<(c.n>>3); ++i) m += byte2cnt[c.s[i]];
-  for (k=0; k<(c.n&0x7); ++k) m += (c.s[i]>>k) & 0x1;
+  for (i=0; i<(c.n>>3); ++i) m += byte2cnt[c.s[i]];   // full bytes
+  for (k=0; k<(c.n&0x7); ++k) m += (c.s[i]>>k) & 0x1; // last byte
   return m;
 }
 

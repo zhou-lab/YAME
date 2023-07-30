@@ -200,6 +200,29 @@ static stats_t* summarize1_fmt1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char 
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
     
+  } else if (c_mask.fmt <= '1') { // binary mask
+
+    if (c_mask.n != c.n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
+      fflush(stderr);
+      exit(1);
+    }
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c.n;
+    st[0].n_q = bit_count(c);
+    st[0].n_m = bit_count(c_mask);
+    cdata_t tmp = {0};
+    tmp.s = malloc((c.n>>3)+1); tmp.n = c.n;
+    memcpy(tmp.s, c.s, (c.n>>3)+1);
+    bit_mask(tmp.s, c_mask.s, c_mask.n);
+    st[0].n_o = bit_count(tmp);
+    free(tmp.s);
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].mean_beta = 0.0;
+    
   } else {                      // other masks
     fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask.fmt);
     fflush(stderr);
