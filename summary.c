@@ -18,6 +18,8 @@ static int usage() {
   fprintf(stderr, "              If '-', the whole sample will bed kept in memory, same as -M.\n");
   fprintf(stderr, "    -M        All masks will be loaded to memory. This save disk IO.\n");
   fprintf(stderr, "    -H        Suppress header printing.\n");
+  fprintf(stderr, "    -q        The backup query file name if the query file name is '-'.\n");
+  fprintf(stderr, "    -F        Use full feature/query file name instead of base name.\n");
   fprintf(stderr, "    -s        Sample list provided to override the query index file.\n");
   fprintf(stderr, "    -h        This help.\n");
   fprintf(stderr, "\n");
@@ -324,8 +326,9 @@ static stats_t* summarize1(cdata_t c, cdata_t c_mask, uint64_t *n_st, char *sm, 
   }
 }
 
-static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname_mask, const char *fname_qry) {
+static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname_mask, const char *fname_qry, int full_name) {
   const char *fmask = "NA";
+  if (!full_name) fname_qry = get_basename(fname_qry);
   for (uint64_t i=0; i<n_st; ++i) {
     stats_t s = st[i];
     char *odds_ratio = NULL;
@@ -336,7 +339,8 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
       kstring_t tmp = {0};
       ksprintf(&tmp, "%1.2f", log2(n_mm*s.n_o / (n_mp*n_pm)));
       odds_ratio = tmp.s;
-      fmask = fname_mask;
+      if (full_name) fmask = fname_mask;
+      else fmask = get_basename(fname_mask);
     } else {
       kstring_t tmp = {0};
       kputs("NA", &tmp);
@@ -344,8 +348,8 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
       fmask = "NA";
     }
     fprintf(stdout,
-      "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s\t",
-      fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
+            "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s\t",
+            fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
     if (s.mean_beta < 0) {
       fputs("NA", stdout);
     } else {
@@ -383,14 +387,18 @@ static void prepare_mask(cdata_t *c) {
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
 int main_summary(int argc, char *argv[]) {
   int c; int print_header = 1; int in_memory = 0;
+  int full_name = 0;
   char *fname_mask = NULL;
   char *fname_snames = NULL;
-  while ((c = getopt(argc, argv, "m:MHs:h"))>=0) {
+  char *fname_qry_stdin = NULL;
+  while ((c = getopt(argc, argv, "m:MHFs:q:h"))>=0) {
     switch (c) {
     case 'm': fname_mask = strdup(optarg); break;
     case 'M': in_memory = 1; break;
     case 'H': print_header = 0; break;
+    case 'F': full_name = 1; break;
     case 's': fname_snames = strdup(optarg); break;
+    case 'q': fname_qry_stdin = optarg; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -438,6 +446,9 @@ int main_summary(int argc, char *argv[]) {
     if (fname_snames) snames_qry = loadSampleNames(fname_snames, 1);
     else snames_qry = loadSampleNamesFromIndex(fname_qry);
 
+    if (strcmp(fname_qry, "-")==0 && fname_qry_stdin)
+      fname_qry = fname_qry_stdin;
+
     for (uint64_t kq=0;;++kq) {
       cdata_t c_qry = read_cdata1(&cf_qry);
       if (c_qry.n == 0) break;
@@ -455,7 +466,7 @@ int main_summary(int argc, char *argv[]) {
             else ksprintf(&sm, "%"PRIu64"", km+1);
             uint64_t n_st = 0;
             stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-            format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+            format_stats_and_clean(st, n_st, fname_mask, fname_qry, full_name);
             free(sm.s);
           }
         } else {                  /* mask is seekable */
@@ -474,7 +485,7 @@ int main_summary(int argc, char *argv[]) {
             else ksprintf(&sm, "%"PRIu64"", km+1);
             uint64_t n_st = 0;
             stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-            format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+            format_stats_and_clean(st, n_st, fname_mask, fname_qry, full_name);
             free(sm.s);
             free_cdata(&c_mask);
           }
@@ -484,7 +495,7 @@ int main_summary(int argc, char *argv[]) {
         kputs("global", &sm);
         uint64_t n_st = 0;
         stats_t *st = summarize1(c_qry, c_mask, &n_st, sm.s, sq.s);
-        format_stats_and_clean(st, n_st, fname_mask, fname_qry);
+        format_stats_and_clean(st, n_st, fname_mask, fname_qry, full_name);
         free(sm.s);
       }
       free(sq.s);

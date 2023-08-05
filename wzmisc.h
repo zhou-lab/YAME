@@ -90,6 +90,17 @@ static inline int strcount_char(char *s, char c) {
   return n;
 }
 
+static inline const char* get_basename(const char* filepath) {
+  const char* last_slash = strrchr(filepath, '/'); // Find the last occurrence of '/'
+  if (last_slash == NULL) {
+    last_slash = strrchr(filepath, '\\'); // If on Windows, find the last occurrence of '\'
+  }
+  if (last_slash == NULL) {
+    return filepath; // If no slash found, return the original filepath as it is the basename.
+  }
+  return last_slash + 1; // Increment the pointer to point to the character after the slash (basename).
+}
+
 /***************
  * min and max *
  ***************/
