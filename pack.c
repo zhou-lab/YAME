@@ -6,8 +6,9 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pack [options] <in.bed> <out.cx>\n");
+  fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
   fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -f.\n");
+  fprintf(stderr, "The input text file must have the same dimension and order as your reference CpG bed file.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -b        binary data (.cm). Possible formats:\n");
@@ -17,6 +18,7 @@ static int usage() {
   fprintf(stderr, "    -s        state data (.cm):\n");
   fprintf(stderr, "              (2) state text + index RLE.\n");
   fprintf(stderr, "    -m        sequencing MU data (.cg, .ca, .cc, .ct):\n");
+  fprintf(stderr, "              The input is a 2-column text file with M and U being the two integer columns.\n");
   fprintf(stderr, "              (3) MU RLE + ladder byte.\n");
   fprintf(stderr, "    -n        fraction data (.cn):\n");
   fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n");
