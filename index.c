@@ -181,7 +181,7 @@ void writeIndex(FILE *fp, index_t *idx) {
   }
   
   // Clean up the hash map and array
-  free(pairs);
+  clean_index_pairs(pairs, n);
 }
   
 static int usage() {

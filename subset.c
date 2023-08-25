@@ -49,7 +49,7 @@ int main_subset(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind < argc) {      // sample names from command line
     for(int i = optind; i < argc; ++i) {
-      snames.s = realloc(snames.s, (snames.n+1));
+      snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
       snames.s[snames.n++] = strdup(argv[i]);
     }
   } else {                      // from a file list
@@ -81,7 +81,7 @@ int main_subset(int argc, char *argv[]) {
         snames.s[snames.n++] = strdup(pairs[i].key);
       }
     }
-    free(pairs);
+    clean_index_pairs(pairs, npairs);
   }
 
   // output
