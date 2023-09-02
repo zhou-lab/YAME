@@ -12,6 +12,7 @@ static int usage() {
   fprintf(stderr, "Options:\n");
 
   fprintf(stderr, "    -a        Process all samples\n");
+  fprintf(stderr, "    -C        Output column names\n");
   fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
   fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
@@ -128,7 +129,8 @@ int main_unpack(int argc, char *argv[]) {
   uint64_t chunk_size = 1000000; char *fname_snames = NULL;
   int head = -1, tail = -1;
   uint8_t unit = 0; // default: auto-inferred
-  while ((c = getopt(argc, argv, "cs:H:T:f:u:ah"))>=0) {
+  int print_column_names = 0;
+  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:Cah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -136,6 +138,7 @@ int main_unpack(int argc, char *argv[]) {
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
     case 'u': unit = atoi(optarg); break;
+    case 'C': print_column_names = 1; break;
     case 'a': read_all = 1; break;
     case 'f': f3_fmt = atoi(optarg); break;
     case 'h': return usage(); break;
@@ -148,8 +151,9 @@ int main_unpack(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  cfile_t cf = open_cfile(argv[optind]);
-  char *fname_index = get_fname_index(argv[optind]);
+  char *fname_in = strdup(argv[optind]);
+  cfile_t cf = open_cfile(fname_in);
+  char *fname_index = get_fname_index(fname_in);
   index_t *idx = loadIndex(fname_index);
   if (fname_index) free(fname_index);
 
@@ -164,7 +168,7 @@ int main_unpack(int argc, char *argv[]) {
   }
 
   // check if we have index
-  if (!idx && (snames.n > 0 || tail > 0)) {
+  if ((tail > 0 && !idx) || (snames.n > 0 && strcmp(fname_in, "-") != 0 && !idx)) {
     fprintf(stderr, "Error, the cx file needs indexing for random sample access.\n");
     fflush(stderr);
     exit(1);
@@ -172,7 +176,7 @@ int main_unpack(int argc, char *argv[]) {
   
   // read in the cdata
   cdata_v *cs = NULL;
-  if (snames.n > 0) {
+  if (idx && snames.n > 0) {
     cs = read_cdata_with_snames(&cf, idx, &snames);
   } else if (read_all) {
     cs = read_cdata_all(&cf);
@@ -192,6 +196,20 @@ int main_unpack(int argc, char *argv[]) {
   }
   for (uint64_t i=0; i<cs->size; ++i) ref_cdata_v(cs, i)->unit = unit;
 
+  // output headers
+  if (print_column_names) {
+    if (!snames.n) {
+      fprintf(stderr, "[%s:%d] Error, index file is missing for printing sample names.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
+    for (int i=0; i<snames.n; ++i) {
+      if (i) fputc('\t', stdout);
+      fputs(snames.s[i], stdout);
+    }
+    fputc('\n', stdout);
+  }
+
   // output the cs
   if (chunk) print_cdata_chunk(cs, chunk_size, f3_fmt);
   else print_cdata(cs, f3_fmt);
@@ -200,6 +218,7 @@ int main_unpack(int argc, char *argv[]) {
   for (uint64_t i=0; i<cs->size; ++i) free_cdata(ref_cdata_v(cs,i));
   free_cdata_v(cs);
   bgzf_close(cf.fh);
+  free(fname_in);
   if (idx) cleanIndex(idx);
   cleanSampleNames(&snames);
   

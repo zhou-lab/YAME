@@ -399,14 +399,6 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
   }
 }
 
-static void prepare_query(cdata_t *c) {
-  if (c->fmt < '2') {
-    convertToFmt0(c);
-  } else {
-    decompress2(c);
-  }
-}
-
 static void prepare_mask(cdata_t *c) {
   if (c->fmt < '2') {
     convertToFmt0(c);
@@ -484,7 +476,7 @@ int main_summary(int argc, char *argv[]) {
       kstring_t sq = {0};
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
-      prepare_query(&c_qry);
+      prepare_mask(&c_qry);
 
       if (config.fname_mask) {           /* apply any mask? */
         if (config.in_memory || unseekable) { /* in memory mask if unseekable */
