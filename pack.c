@@ -22,6 +22,8 @@ static int usage() {
   fprintf(stderr, "              (3) MU RLE + ladder byte.\n");
   fprintf(stderr, "    -n        fraction data (.cn):\n");
   fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n");
+  fprintf(stderr, "    -d        cytosine coordinates.\n");
+  fprintf(stderr, "              (7) compressed BED format for CGs\n");
   fprintf(stderr, "    -f [int]  format. See options above. -b, -s, -m, -n provide the default based on the data size\n");
   fprintf(stderr, "              This option specifies the exact format.\n");
   fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data.\n");
@@ -38,16 +40,18 @@ cdata_t *fmt3_read_raw(char *fname, uint8_t unit, int verbose);
 cdata_t *fmt4_read_raw(char *fname, int verbose);
 cdata_t *fmt5_read_raw(char *fname, int verbose);
 cdata_t *fmt6_read_raw(char *fname, int verbose);
+cdata_t *fmt7_read_raw(char *fname, int verbose);
 
 int main_pack(int argc, char *argv[]) {
 
   int c0; int verbose=0; char fmt='a'; uint8_t unit = 8;
-  while ((c0 = getopt(argc, argv, "bsmnf:u:vh"))>=0) {
+  while ((c0 = getopt(argc, argv, "bsmndf:u:vh"))>=0) {
     switch (c0) {
     case 'b': fmt = 'b'; break;
     case 's': fmt = 's'; break;
     case 'm': fmt = 'm'; break;
     case 'n': fmt = 'n'; break;
+    case 'd': fmt = 'd'; break;
     case 'f': fmt = optarg[0]; break;
     case 'u': unit = atoi(optarg); break;
     case 'v': verbose = 1; break;
@@ -84,6 +88,10 @@ int main_pack(int argc, char *argv[]) {
     c = fmt4_read_raw(argv[optind], verbose);
     break;
   }
+  case 'd': {
+    c = fmt7_read_raw(argv[optind], verbose);
+    break;
+  }
   case '0': {
     c = fmt0_read_raw(argv[optind], verbose);
     break;
@@ -110,6 +118,10 @@ int main_pack(int argc, char *argv[]) {
   }
   case '6': {
     c = fmt6_read_raw(argv[optind], verbose);
+    break;
+  }
+  case '7': {
+    c = fmt7_read_raw(argv[optind], verbose);
     break;
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);

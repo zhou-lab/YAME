@@ -147,4 +147,16 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
 char* f2_get_string(cdata_t *c, uint64_t i);
 
+typedef struct row_reader_t {
+  uint64_t index;
+  char *chrm;                   // pointer to cdata_t.s
+  uint64_t loc;                 // pointer to cdata_t.s
+  uint64_t value;
+} row_reader_t;
+
+// while (row_reader_next_loc(rdr, c)) {
+//   fprintf(stdout, "%s\t%"PRIu64"\n", rdr->chrm, rdr->value);
+// }
+int row_reader_next_loc(row_reader_t *rdr, cdata_t *c);
+
 #endif /* _CDATA_H */
