@@ -51,7 +51,7 @@ int main_rowop(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 int main_mask(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "0.2.20230730"
+#define PACKAGE_VERSION "0.3.20230904"
 
 static int usage()
 {
