@@ -14,6 +14,7 @@ static int usage() {
   fprintf(stderr, "    -a        Process all samples\n");
   fprintf(stderr, "    -C        Output column names\n");
   fprintf(stderr, "    -R [PATH] Row coordinate .cr file name.\n");
+  fprintf(stderr, "    -r        Row coordinate output in chrm_beg1 instead of chrm-beg0-end1.\n");
   fprintf(stderr, "    -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the\n");
   fprintf(stderr, "              total number of samples.\n");
@@ -33,7 +34,12 @@ static int usage() {
   return 1;
 }
 
-static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
+typedef struct cdata_pfmt_t {
+  int f3;
+  int f7;
+} cdata_pfmt_t;
+
+static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
   switch (c->fmt) {
   case '0': {
       fputc(((c->s[i>>3]>>(i&0x7))&0x1)+'0', stdout);
@@ -49,14 +55,14 @@ static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
   }
   case '3': {
     uint64_t mu = f3_get_mu(c, i);
-    if (f3_fmt == 0)
+    if (pfmt.f3 == 0)
       fprintf(stdout, "%"PRIu64"", mu);
-    else if (f3_fmt < 0)
+    else if (pfmt.f3 < 0)
       fprintf(stdout, "%"PRIu64"\t%"PRIu64"",mu>>32, mu<<32>>32);
     else {
       uint64_t M = mu>>32;
       uint64_t U = mu<<32>>32;
-      if ((M==0 && U==0) || (M+U) < (uint64_t) f3_fmt) fputs("NA", stdout);
+      if ((M==0 && U==0) || (M+U) < (uint64_t) pfmt.f3) fputs("NA", stdout);
       else fprintf(stdout, "%1.3f", (double) M/(M+U));
     }
     break;
@@ -95,14 +101,18 @@ static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
       fflush(stderr);
       exit(1);
     }
-    fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value+1);
+    if (pfmt.f7) {
+      fprintf(stdout, "%s_%"PRIu64"", rdr->chrm, rdr->value);
+    } else {
+      fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value+1);
+    }
     break;
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
 }
 
-static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
+static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
 
   if (ref_cdata_v(cs, 0)->fmt == '7') {
     fprintf(stderr, "[%s:%d] Unpack does not support format 7 chunking.\n", __func__, __LINE__);
@@ -123,7 +133,7 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
     for (i=0; i<sliced[0].n; ++i) {
       for (k=0; k<kn; ++k) {
         if(k) fputc('\t', stdout);
-        print_cdata1(&sliced[k],i,f3_fmt);
+        print_cdata1(&sliced[k], i, pfmt);
       }
       fputc('\n', stdout);
     }
@@ -133,7 +143,7 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
   free(expanded.s); free(sliced);
 }
 
-static void print_cdata(cdata_v *cs, int f3_fmt, char *fname_row) {
+static void print_cdata(cdata_v *cs, cdata_pfmt_t pfmt, char *fname_row) {
   uint64_t i, k, kn = cs->size;
   cdata_t *inflated = calloc(kn, sizeof(cdata_t));
   for (k=0; k<kn; ++k) {
@@ -160,10 +170,10 @@ static void print_cdata(cdata_v *cs, int f3_fmt, char *fname_row) {
     cr = read_cdata1(&cf_row);
   }
   for (i=0; i<n; ++i) {
-    if (cr.s) print_cdata1(&cr, i, 0);
+    if (cr.s) print_cdata1(&cr, i, pfmt);
     for (k=0; k<kn; ++k) {
       if(k || cr.s) fputc('\t', stdout);
-      print_cdata1(inflated+k, i, f3_fmt);
+      print_cdata1(inflated+k, i, pfmt);
     }
     fputc('\n', stdout);
   }
@@ -175,13 +185,13 @@ static void print_cdata(cdata_v *cs, int f3_fmt, char *fname_row) {
 int main_unpack(int argc, char *argv[]) {
 
   int c, read_all = 0, chunk = 0;
-  int f3_fmt = 0;
+  cdata_pfmt_t pfmt = {0};
   uint64_t chunk_size = 1000000; char *fname_snames = NULL;
   int head = -1, tail = -1;
   uint8_t unit = 0; // default: auto-inferred
   int print_column_names = 0;
   char *fname_row = NULL;
-  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:ah"))>=0) {
+  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:rah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -191,8 +201,9 @@ int main_unpack(int argc, char *argv[]) {
     case 'u': unit = atoi(optarg); break;
     case 'C': print_column_names = 1; break;
     case 'R': fname_row = strdup(optarg); break;
+    case 'r': pfmt.f7 = 1; break;
     case 'a': read_all = 1; break;
-    case 'f': f3_fmt = atoi(optarg); break;
+    case 'f': pfmt.f3 = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -248,6 +259,9 @@ int main_unpack(int argc, char *argv[]) {
   }
   for (uint64_t i=0; i<cs->size; ++i) ref_cdata_v(cs, i)->unit = unit;
 
+  int col1_is_row_index=0;
+  if (ref_cdata_v(cs, 0)->fmt == '7') col1_is_row_index = 1;
+  
   // output headers
   if (print_column_names) {
     if (!snames.n) {
@@ -255,16 +269,20 @@ int main_unpack(int argc, char *argv[]) {
       fflush(stderr);
       exit(1);
     }
+    if (fname_row || col1_is_row_index) {
+      if (pfmt.f7) fputs("chrm_beg1", stdout);
+      else fputs("chrm\tbeg0\tend1", stdout);
+    }
     for (int i=0; i<snames.n; ++i) {
-      if (i) fputc('\t', stdout);
+      if (fname_row || col1_is_row_index || i) fputc('\t', stdout);
       fputs(snames.s[i], stdout);
     }
     fputc('\n', stdout);
   }
 
   // output the cs
-  if (chunk) print_cdata_chunk(cs, chunk_size, f3_fmt); // TODO: chunking is a little redundant to rowsub
-  else print_cdata(cs, f3_fmt, fname_row);
+  if (chunk) print_cdata_chunk(cs, chunk_size, pfmt); // TODO: chunking is a little redundant to rowsub
+  else print_cdata(cs, pfmt, fname_row);
 
   // clean up
   for (uint64_t i=0; i<cs->size; ++i) free_cdata(ref_cdata_v(cs,i));
