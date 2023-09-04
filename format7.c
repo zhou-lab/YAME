@@ -190,6 +190,7 @@ cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end) {
         if (chrm) append_end(&(cr2.s), &n);
         chrm = rdr.chrm;
         append_chrm(chrm, &(cr2.s), &n);
+        last = 0;
       }
       append_loc(rdr.value - last, &(cr2.s), &n);
       n_rec++;

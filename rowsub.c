@@ -219,16 +219,25 @@ int main_rowsub(int argc, char *argv[]) {
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
-    
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
-    cdata_t c3 = {0};
-    if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
-    else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);
-    else c3 = sliceToBlock(&c2, config.beg, config.end);
-    cdata_compress(&c3);
-    cdata_write1(fp_out, &c3);
-    free(c3.s); free(c2.s); free(c.s);
+    if (c.fmt == '7') {
+      cdata_t c2;
+      if (row_indices) c2 = fmt7_sliceToIndices(&c, row_indices, n_indices);
+      else if (c_mask.n) c2 = fmt7_sliceToMask(&c, &c_mask);
+      else c2 = fmt7_sliceToBlock(&c, config.beg, config.end);
+      cdata_write1(fp_out, &c2);
+      free_cdata(&c2);
+    } else {
+      cdata_t c2 = {0};
+      decompress(&c, &c2);
+      cdata_t c3 = {0};
+      if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
+      else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);
+      else c3 = sliceToBlock(&c2, config.beg, config.end);
+      cdata_compress(&c3);
+      cdata_write1(fp_out, &c3);
+      free(c3.s); free(c2.s);
+    }
+    free_cdata(&c);
   }
   bgzf_close(cf.fh);
   bgzf_close(fp_out);
