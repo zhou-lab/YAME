@@ -66,7 +66,8 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
       wzfatal("Field 1 or 2 is not a nonnegative integer.");
 
     uint64_t loc = atol(fields[1])+1;
-    if (!chrm || strcmp(chrm, fields[0]) != 0) {
+    if (!chrm || strcmp(chrm, fields[0]) != 0 ||
+        loc < last) { // if unsorted, this will treat as a new chromosome.
       if (chrm) {
         append_end(&s, &n);
         free(chrm);
@@ -92,51 +93,6 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
   c->fmt = '7';
   c->unit = 1;
   return c;
-}
-
-// beg and end are both 0-based
-void fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end, cdata_t *cr2) {
-  if (cr->fmt != '7') {
-    fprintf(stderr, "[%s:%d] Expect format 7 but got %c.\n", __func__, __LINE__, cr->fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  
-  uint64_t n0 = fmt7_data_length(cr);
-  if (end > n0-1) end = n0-1; // 0-base
-  if (beg > n0-1) {
-    fprintf(stderr, "[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, n0);
-    fflush(stderr);
-    exit(1);
-  }
-
-  row_reader_t rdr = {0};
-  uint64_t n = 0;
-  uint64_t i = 0, n_rec = 0;
-  char *chrm = NULL; uint64_t last = 0;
-  memset(cr2, 0, sizeof(cdata_t));
-  while (row_reader_next_loc(&rdr, cr)) {
-    if (i >= beg && i <= end) {
-      if (chrm != rdr.chrm) {
-        if (chrm) append_end(&(cr2->s), &n);
-        chrm = rdr.chrm;
-        append_chrm(chrm, &(cr2->s), &n);
-      }
-      append_loc(rdr.value - last, &(cr2->s), &n);
-      n_rec++;
-      last = rdr.value;
-    }
-    i++;
-  }
-  if (n_rec != end - beg + 1) {
-    fprintf(stderr, "[%s:%d] row slicing has inconsistent dimension (n: %"PRIu64", expected: %"PRIu64")\n", __func__, __LINE__, n_rec, end - beg + 1);
-    fflush(stderr);
-    exit(1);
-  }
-  cr2->unit = cr->unit;
-  cr2->fmt = cr->fmt;
-  cr2->n = n;
-  cr2->compressed = 1;
 }
 
 int row_reader_next_loc(row_reader_t *rdr, cdata_t *c) {
@@ -174,20 +130,138 @@ int fmt7_next_bed(cdata_t *c) {
   return row_reader_next_loc(rdr, c);
 }
 
-// no decompression, just calculate N and prepare row_reader
-void fmt7_decompress(cdata_t *c, cdata_t *inflated) {
-  inflated->s = malloc(c->n);
-  memcpy(inflated->s, c->s, c->n);
-  inflated->unit = 1;
-  inflated->aux = calloc(1,sizeof(row_reader_t));
-  inflated->compressed = 0;
-  inflated->fmt = '7';
-  inflated->n = c->n;
-}
-
 uint64_t fmt7_data_length(cdata_t *c) {
   row_reader_t rdr = {0};
   uint64_t n = 0;
   while (row_reader_next_loc(&rdr, c)) n++;
   return n;
+}
+
+typedef struct chrmlocs_t {
+  uint64_t *chrmlocs;
+  uint64_t n;
+  char **chrms;
+  int nchrms;
+} chrmlocs_t;
+
+// no decompression, just calculate N and prepare row_reader
+chrmlocs_t fmt7_decompress(cdata_t *c) {
+  chrmlocs_t locs = {0};
+  locs.n = fmt7_data_length(c);
+  locs.chrmlocs = calloc(locs.n, sizeof(uint64_t));
+  row_reader_t rdr = {0};
+  char *chrm = NULL;
+  uint64_t i = 0;
+  while (row_reader_next_loc(&rdr, c)) {
+    if (chrm != rdr.chrm) {
+      chrm = rdr.chrm;
+      locs.chrms = realloc(locs.chrms, (++(locs.nchrms))*sizeof(char*));
+      locs.chrms[locs.nchrms-1] = strdup(chrm);
+    }
+    locs.chrmlocs[i++] = (((uint64_t) (locs.nchrms-1) << (6*8)) | rdr.value);
+  }
+  return locs;
+}
+
+// beg and end are both 0-based
+cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end) {
+  if (cr->fmt != '7') {
+    fprintf(stderr, "[%s:%d] Expect format 7 but got %c.\n", __func__, __LINE__, cr->fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  
+  uint64_t n0 = fmt7_data_length(cr);
+  if (end > n0-1) end = n0-1; // 0-base
+  if (beg > n0-1) {
+    fprintf(stderr, "[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, n0);
+    fflush(stderr);
+    exit(1);
+  }
+
+  row_reader_t rdr = {0};
+  uint64_t n = 0;
+  uint64_t i = 0, n_rec = 0;
+  char *chrm = NULL; uint64_t last = 0;
+  cdata_t cr2 = {0};
+  while (row_reader_next_loc(&rdr, cr)) {
+    if (i >= beg && i <= end) {
+      if (chrm != rdr.chrm) {
+        if (chrm) append_end(&(cr2.s), &n);
+        chrm = rdr.chrm;
+        append_chrm(chrm, &(cr2.s), &n);
+      }
+      append_loc(rdr.value - last, &(cr2.s), &n);
+      n_rec++;
+      last = rdr.value;
+    }
+    i++;
+  }
+  if (n_rec != end - beg + 1) {
+    fprintf(stderr, "[%s:%d] row slicing has inconsistent dimension (n: %"PRIu64", expected: %"PRIu64")\n", __func__, __LINE__, n_rec, end - beg + 1);
+    fflush(stderr);
+    exit(1);
+  }
+  cr2.unit = cr->unit;
+  cr2.fmt = cr->fmt;
+  cr2.n = n;
+  cr2.compressed = 1;
+  return cr2;
+}
+
+cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices) {
+
+  chrmlocs_t locs = fmt7_decompress(cr);
+  uint8_t *s = NULL; uint64_t n = 0;
+  char *chrm = NULL; uint64_t last = 0;
+  for (uint64_t i=0; i<(uint64_t) n_indices; ++i) {
+    uint64_t loc = locs.chrmlocs[row_indices[i]-1]<<16>>16;
+    uint64_t ichrm = locs.chrmlocs[row_indices[i]-1]>>48;
+    if (!chrm || chrm != locs.chrms[ichrm] || loc < last) {
+      if (chrm) append_end(&s, &n);
+      append_chrm(locs.chrms[ichrm], &s, &n);
+      chrm = locs.chrms[ichrm];
+      last = 0;
+    }
+    append_loc(loc - last, &s, &n);
+    last = loc;
+  }
+  free(locs.chrmlocs);
+  free(locs.chrms);
+
+  cdata_t cr2 = {0};
+  cr2.s = s;
+  cr2.n = n;
+  cr2.fmt = '7';
+  cr2.compressed = 1;
+  cr2.unit = 1;
+  return cr2;
+}
+
+cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask) {
+
+  row_reader_t rdr = {0};
+  uint64_t n = 0;
+  uint64_t i = 0, n_rec = 0;
+  char *chrm = NULL; uint64_t last = 0;
+  cdata_t cr2 = {0};
+  while (row_reader_next_loc(&rdr, cr)) {
+    if (c_mask->s[i>>3]&(1<<(i&0x7))) {
+      if (chrm != rdr.chrm) {
+        if (chrm) append_end(&(cr2.s), &n);
+        chrm = rdr.chrm;
+        append_chrm(chrm, &(cr2.s), &n);
+        last = 0;
+      }
+      append_loc(rdr.value - last, &(cr2.s), &n);
+      n_rec++;
+      last = rdr.value;
+    }
+    i++;
+  }
+  cr2.unit = cr->unit;
+  cr2.fmt = cr->fmt;
+  cr2.n = n;
+  cr2.compressed = 1;
+  return cr2;
 }

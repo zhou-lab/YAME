@@ -94,6 +94,7 @@ static inline uint64_t cdata_n(cdata_t *c) {
 }
 
 void fmt0_decompress(cdata_t *c, cdata_t *inflated);
+void convertToFmt0(cdata_t *c);
 
 void fmt1_compress(cdata_t *c);
 void fmt1_decompress(cdata_t *c, cdata_t *inflated);
@@ -128,12 +129,11 @@ void fmt5_decompress(cdata_t *c, cdata_t *inflated);
 void fmt6_compress(cdata_t *c);
 void fmt6_decompress(cdata_t *c, cdata_t *inflated);
 
-void fmt7_decompress(cdata_t *c, cdata_t *inflated);
 int fmt7_next_bed(cdata_t *c);
 uint64_t fmt7_data_length(cdata_t *c);
-void fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end, cdata_t *cr2);
-
-void convertToFmt0(cdata_t *c);
+cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end);
+cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices);
+cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask);
 
 static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_sliced) {
 

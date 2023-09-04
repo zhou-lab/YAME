@@ -3,7 +3,7 @@
 #include "cfile.h"
 
 typedef struct config_t {
-  char *fname_index;
+  char *fname_rindex;
   uint64_t beg;
   uint64_t end;
   int64_t index;
@@ -18,7 +18,9 @@ static int usage(config_t *config) {
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -R [PATH] co-subset row coordinates.\n");
-  fprintf(stderr, "    -l [PATH] File name for row index list. If given, other index formats are ignored.\n");
+  fprintf(stderr, "              The subset row coordinate is appended in output as the first file.\n");
+  fprintf(stderr, "    -m [PATH] mask file (format 1 or 2).\n");
+  fprintf(stderr, "    -l [PATH] File name for 1-based row index. If given, other index formats are ignored.\n");
   fprintf(stderr, "    -b        begin-end format: begin index, 0-base.\n");
   fprintf(stderr, "    -e        begin-end format: end index 1-base.\n");
   fprintf(stderr, "    -i        index-block-size format: index (0-base).\n");
@@ -68,23 +70,29 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
   return indices;
 }
 
-static void sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n, cdata_t *c2) {
-  assert(!c->compressed);
-  c2->unit = c->unit;
-  c2->s = realloc(c2->s, n*c2->unit);
-  c2->fmt = c->fmt;
+static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
+  if (c->compressed) {
+    fprintf(stderr, "[%s:%d] Slicing compressed data.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+  cdata_t c2 = {0};
+  c2.unit = c->unit;
+  c2.s = realloc(c2.s, n*c2.unit);
+  c2.fmt = c->fmt;
   int64_t i;
   for (i=0; i<n; ++i) {
-    memcpy(c2->s+c2->unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
+    memcpy(c2.s+c2.unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
   }
-  c2->n = n;
-  c2->compressed = 0;
+  c2.n = n;
+  c2.compressed = 0;
+  return c2;
 }
 
 // beg and end are both 0-based
-static void sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c2) {
+static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
   if (c->compressed) {
-    fprintf(stderr, "[%s:%d] Input is compressed.\n", __func__, __LINE__);
+    fprintf(stderr, "[%s:%d] Slicing compressed data.\n", __func__, __LINE__);
     fflush(stderr);
     exit(1);
   }
@@ -94,26 +102,60 @@ static void sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c2) {
     fflush(stderr);
     exit(1);
   }
-  
+
+  cdata_t c2 = {0};
   uint64_t n = end - beg + 1;
-  c2->unit = c->unit;
-  c2->s = realloc(c2->s, n*c2->unit);
-  c2->fmt = c->fmt;
-  memcpy(c2->s, c->s+c->unit*beg, c->unit*n);
-  c2->n = n;
-  c2->compressed = 0;
+  c2.unit = c->unit;
+  c2.s = realloc(c2.s, n*c2.unit);
+  c2.fmt = c->fmt;
+  memcpy(c2.s, c->s+c->unit*beg, c->unit*n);
+  c2.n = n;
+  c2.compressed = 0;
+  return c2;
+}
+
+static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
+  if (c->compressed) {
+    fprintf(stderr, "[%s:%d] Slicing compressed data.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+  if (c->n != c_mask->n) {
+    fprintf(stderr, "[%s:%d] Mask (N=%"PRIu64") and data (N=%"PRIu64") are of different lengths.\n",
+            __func__, __LINE__, c_mask->n, c->n);
+    fflush(stderr);
+    exit(1);
+  }
+
+  uint64_t n = 0;
+  for (uint64_t i=0; i<c->n; ++i)
+    if (c_mask->s[i>>3]&(1<<(i&0x7))) n++;
+
+  cdata_t c2 = {0};
+  c2.unit = c->unit;
+  c2.s = realloc(c2.s, n*c2.unit);
+  c2.fmt = c->fmt;
+  for (uint64_t i=0, k=0; i<c->n; ++i) {
+    if (c_mask->s[i>>3]&(1<<(i&0x7)))
+      memcpy(c2.s+(k++)*c->unit, c->s+i*c->unit, c->unit);
+  }
+  c2.n = n;
+  c2.compressed = 0;
+  return c2;
+
 }
 
 int main_rowsub(int argc, char *argv[]) {
 
   config_t config = {
-    .fname_index = NULL,
+    .fname_rindex = NULL,
     .index = -1, .isize = 1000000, .beg = 0, .end = 1};
-  int c; char *fname_row = NULL;
-  while ((c = getopt(argc, argv, "R:b:e:i:s:vh"))>=0) {
+  int c; char *fname_row = NULL; char *fname_mask = NULL;
+  while ((c = getopt(argc, argv, "R:m:l:b:e:i:s:vh"))>=0) {
     switch (c) {
     case 'R': fname_row = strdup(optarg); break;
-    case 'l': config.fname_index = optarg; break;
+    case 'm': fname_mask = strdup(optarg); break;
+    case 'l': config.fname_rindex = optarg; break;
     case 'b': config.beg = atoi(optarg); break;   /* assume 0-index */
     case 'e': config.end = atoi(optarg)-1; break; /* convert to 0-index */
     case 'i': config.index = atoi(optarg); break; /* 0-index */
@@ -136,8 +178,21 @@ int main_rowsub(int argc, char *argv[]) {
 
   int64_t *row_indices = NULL;
   int64_t n_indices=0;
-  if (config.fname_index) {
-    row_indices = load_row_indices(config.fname_index, &n_indices);
+  if (config.fname_rindex) {
+    row_indices = load_row_indices(config.fname_rindex, &n_indices);
+  }
+
+  cdata_t c_mask = {0};
+  if (fname_mask) {
+    cfile_t cf_mask = open_cfile(fname_mask);
+    c_mask = read_cdata1(&cf_mask);
+    if (c_mask.fmt >= '2') {
+      fprintf(stderr, "[%s:%d] Mask is not binary.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
+    convertToFmt0(&c_mask);
+    bgzf_close(cf_mask.fh);
   }
 
   cfile_t cf = open_cfile(fname);
@@ -148,11 +203,13 @@ int main_rowsub(int argc, char *argv[]) {
     exit(1);
   }
 
-  if (fname_row && !row_indices) {
+  if (fname_row) {
     cfile_t cf_row = open_cfile(fname_row);
     cdata_t cr = read_cdata1(&cf_row);
-    cdata_t cr2 = {0};
-    fmt7_sliceToBlock(&cr, config.beg, config.end, &cr2);
+    cdata_t cr2;
+    if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices);
+    else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask);
+    else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end);
     cdata_write1(fp_out, &cr2);
     free_cdata(&cr);
     free_cdata(&cr2);
@@ -166,12 +223,9 @@ int main_rowsub(int argc, char *argv[]) {
     cdata_t c2 = {0};
     decompress(&c, &c2);
     cdata_t c3 = {0};
-    c3.s = NULL;
-    if (row_indices) {
-      sliceToIndices(&c2, row_indices, n_indices, &c3);
-    } else {
-      sliceToBlock(&c2, config.beg, config.end, &c3);
-    }
+    if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
+    else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);
+    else c3 = sliceToBlock(&c2, config.beg, config.end);
     cdata_compress(&c3);
     cdata_write1(fp_out, &c3);
     free(c3.s); free(c2.s); free(c.s);

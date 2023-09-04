@@ -473,6 +473,10 @@ int main_summary(int argc, char *argv[]) {
     for (uint64_t kq=0;;++kq) {
       cdata_t c_qry = read_cdata1(&cf_qry);
       if (c_qry.n == 0) break;
+      if (c_qry.fmt == '7') { // skip format 7
+        free_cdata(&c_qry); c_qry.s = NULL;
+        continue;
+      }
       kstring_t sq = {0};
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
