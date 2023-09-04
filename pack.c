@@ -7,7 +7,7 @@
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
-  fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -f.\n");
+  fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -r, -f.\n");
   fprintf(stderr, "The input text file must have the same dimension and order as your reference CpG bed file.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
@@ -22,11 +22,14 @@ static int usage() {
   fprintf(stderr, "              (3) MU RLE + ladder byte.\n");
   fprintf(stderr, "    -n        fraction data (.cn):\n");
   fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n");
-  fprintf(stderr, "    -d        cytosine coordinates.\n");
+  fprintf(stderr, "    -r        row cytosine coordinates (.cr file).\n");
   fprintf(stderr, "              (7) compressed BED format for CGs\n");
-  fprintf(stderr, "    -f [int]  format. See options above. -b, -s, -m, -n provide the default based on the data size\n");
+  fprintf(stderr, "    -f [int]  Alternative number-based format spec:\n");
+  fprintf(stderr, "              See options above. -b, -s, -m, -n, -r.\n");
   fprintf(stderr, "              This option specifies the exact format.\n");
-  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data.\n");
+  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory\n");
+  fprintf(stderr, "              efficient but could be lossier. Can only be 1-8.\n");
+  fprintf(stderr, "              0 means this will be inferred from data.\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -45,13 +48,13 @@ cdata_t *fmt7_read_raw(char *fname, int verbose);
 int main_pack(int argc, char *argv[]) {
 
   int c0; int verbose=0; char fmt='a'; uint8_t unit = 8;
-  while ((c0 = getopt(argc, argv, "bsmndf:u:vh"))>=0) {
+  while ((c0 = getopt(argc, argv, "bsmnrf:u:vh"))>=0) {
     switch (c0) {
     case 'b': fmt = 'b'; break;
     case 's': fmt = 's'; break;
     case 'm': fmt = 'm'; break;
     case 'n': fmt = 'n'; break;
-    case 'd': fmt = 'd'; break;
+    case 'r': fmt = 'r'; break;
     case 'f': fmt = optarg[0]; break;
     case 'u': unit = atoi(optarg); break;
     case 'v': verbose = 1; break;
@@ -88,7 +91,7 @@ int main_pack(int argc, char *argv[]) {
     c = fmt4_read_raw(argv[optind], verbose);
     break;
   }
-  case 'd': {
+  case 'r': {
     c = fmt7_read_raw(argv[optind], verbose);
     break;
   }

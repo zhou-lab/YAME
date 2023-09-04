@@ -13,6 +13,22 @@ static int usage() {
   return 1;
 }
 
+static void cdata_length(cdata_t *c, uint64_t *n, uint8_t *u) {
+  switch(c->fmt) {
+  case '7': {
+    *n = fmt7_data_length(c);
+    *u = 1;
+    break; }
+  default: {
+    cdata_t inflated = {0};
+    decompress(c, &inflated);
+    *n = inflated.n;
+    *u = inflated.unit;
+    free(inflated.s);
+    break; }
+  }
+}
+
 int main_info(int argc, char *argv[]) {
 
   int c; int report1 = 0;
@@ -38,8 +54,6 @@ int main_info(int argc, char *argv[]) {
     for (i=0; ; ++i) {
       cdata_t c = read_cdata1(&cf);
       if (c.n == 0) break;
-      cdata_t expanded = {0};
-      decompress(&c, &expanded);
       fprintf(stdout, "%s\t", fname_in);
       if (snames.n) {
         fputs(snames.s[i], stdout);
@@ -48,7 +62,9 @@ int main_info(int argc, char *argv[]) {
       }
       if (snames.n) fprintf(stdout, "\t%d", snames.n);
       else fputs("\tNA", stdout);
-      fprintf(stdout, "\t%"PRIu64"\t%c\t%u\t", expanded.n, expanded.fmt, expanded.unit);
+      uint64_t length = 0; uint8_t unit = 0;
+      cdata_length(&c, &length, &unit);
+      fprintf(stdout, "\t%"PRIu64"\t%c\t%u\t", length, c.fmt, unit);
 
       kstring_t tmp = {0};
       if (c.fmt == '2') {
@@ -71,7 +87,7 @@ int main_info(int argc, char *argv[]) {
       free(tmp.s);
       fputc('\n', stdout);
       
-      free(expanded.s); free_cdata(&c);
+      free_cdata(&c);
       if (report1) break;
     }
     cleanSampleNames2(snames);

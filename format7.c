@@ -94,6 +94,51 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
   return c;
 }
 
+// beg and end are both 0-based
+void fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end, cdata_t *cr2) {
+  if (cr->fmt != '7') {
+    fprintf(stderr, "[%s:%d] Expect format 7 but got %c.\n", __func__, __LINE__, cr->fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  
+  uint64_t n0 = fmt7_data_length(cr);
+  if (end > n0-1) end = n0-1; // 0-base
+  if (beg > n0-1) {
+    fprintf(stderr, "[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, n0);
+    fflush(stderr);
+    exit(1);
+  }
+
+  row_reader_t rdr = {0};
+  uint64_t n = 0;
+  uint64_t i = 0, n_rec = 0;
+  char *chrm = NULL; uint64_t last = 0;
+  memset(cr2, 0, sizeof(cdata_t));
+  while (row_reader_next_loc(&rdr, cr)) {
+    if (i >= beg && i <= end) {
+      if (chrm != rdr.chrm) {
+        if (chrm) append_end(&(cr2->s), &n);
+        chrm = rdr.chrm;
+        append_chrm(chrm, &(cr2->s), &n);
+      }
+      append_loc(rdr.value - last, &(cr2->s), &n);
+      n_rec++;
+      last = rdr.value;
+    }
+    i++;
+  }
+  if (n_rec != end - beg + 1) {
+    fprintf(stderr, "[%s:%d] row slicing has inconsistent dimension (n: %"PRIu64", expected: %"PRIu64")\n", __func__, __LINE__, n_rec, end - beg + 1);
+    fflush(stderr);
+    exit(1);
+  }
+  cr2->unit = cr->unit;
+  cr2->fmt = cr->fmt;
+  cr2->n = n;
+  cr2->compressed = 1;
+}
+
 int row_reader_next_loc(row_reader_t *rdr, cdata_t *c) {
   if (rdr->loc >= c->n) return 0;
   if (c->s[rdr->loc] == 0xff || !rdr->index) {
@@ -122,13 +167,27 @@ int row_reader_next_loc(row_reader_t *rdr, cdata_t *c) {
   return 1;
 }
 
+int fmt7_next_bed(cdata_t *c) {
+  row_reader_t *rdr;
+  if (!c->aux) c->aux = calloc(1, sizeof(row_reader_t));
+  rdr = (row_reader_t*) c->aux;
+  return row_reader_next_loc(rdr, c);
+}
+
+// no decompression, just calculate N and prepare row_reader
 void fmt7_decompress(cdata_t *c, cdata_t *inflated) {
+  inflated->s = malloc(c->n);
+  memcpy(inflated->s, c->s, c->n);
+  inflated->unit = 1;
+  inflated->aux = calloc(1,sizeof(row_reader_t));
+  inflated->compressed = 0;
+  inflated->fmt = '7';
+  inflated->n = c->n;
+}
+
+uint64_t fmt7_data_length(cdata_t *c) {
   row_reader_t rdr = {0};
-  uint64_t n=0;
+  uint64_t n = 0;
   while (row_reader_next_loc(&rdr, c)) n++;
-  inflated->s = realloc(inflated->s, n*sizeof(uint64_t));
-  uint64_t *s = (uint64_t*) inflated->s;
-  memset(&rdr, 0, sizeof(row_reader_t));
-  while (row_reader_next_loc(&rdr, c)) s[rdr.index-1] = rdr.value;
-  
+  return n;
 }

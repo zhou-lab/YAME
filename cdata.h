@@ -53,6 +53,7 @@ static inline void free_cdata(cdata_t *c) {
     free(((f2_aux_t*) c->aux)->keys);
     free(c->aux);
   }
+  if (c->fmt == '7' && c->aux) free(c->aux);
   c->s = NULL;
 }
 
@@ -110,6 +111,8 @@ void fmt2_decompress(cdata_t *c, cdata_t *inflated);
 void fmt2_set_aux(cdata_t *c);
 uint8_t* fmt2_get_data(cdata_t *c);
 uint64_t fmt2_get_keys_n(cdata_t *c);
+uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
+char* f2_get_string(cdata_t *c, uint64_t i);
 
 void fmt3_compress(cdata_t *c);
 void fmt3_decompress(cdata_t *c, cdata_t *inflated);
@@ -124,6 +127,11 @@ void fmt5_decompress(cdata_t *c, cdata_t *inflated);
 
 void fmt6_compress(cdata_t *c);
 void fmt6_decompress(cdata_t *c, cdata_t *inflated);
+
+void fmt7_decompress(cdata_t *c, cdata_t *inflated);
+int fmt7_next_bed(cdata_t *c);
+uint64_t fmt7_data_length(cdata_t *c);
+void fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end, cdata_t *cr2);
 
 void convertToFmt0(cdata_t *c);
 
@@ -143,9 +151,6 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
   c_sliced->compressed = 0;
   c_sliced->fmt = c->fmt;
 }
-
-uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
-char* f2_get_string(cdata_t *c, uint64_t i);
 
 typedef struct row_reader_t {
   uint64_t index;

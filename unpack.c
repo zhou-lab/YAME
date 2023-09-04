@@ -13,17 +13,22 @@ static int usage() {
 
   fprintf(stderr, "    -a        Process all samples\n");
   fprintf(stderr, "    -C        Output column names\n");
-  fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
-  fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
-  fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
-  fprintf(stderr, "    -f [N]    Display format. Options are:\n");
+  fprintf(stderr, "    -R [PATH] Row coordinate .cr file name.\n");
+  fprintf(stderr, "    -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line.\n");
+  fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the\n");
+  fprintf(stderr, "              total number of samples.\n");
+  fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the\n");
+  fprintf(stderr, "              total number of samples. Requires index.\n");
+  fprintf(stderr, "    -f [N]    Display format for data format 3. Options are:\n");
   fprintf(stderr, "                   N == 0: Compound MU\n");
   fprintf(stderr, "                   N <  0: M<tab>U\n");
   fprintf(stderr, "                   N >  0: Fraction (with number for the min coverage)\n");
   fprintf(stderr, "    -c        Enable chunk process\n");
-  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data.\n");
-  fprintf(stderr, "    -s        Specify chunk size (default is 1M)\n");
-  fprintf(stderr, "    -h        Display this help message\n\n");
+  fprintf(stderr, "    -s        Chunk size (default is 1M)\n");
+  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number needs less memory\n");
+  fprintf(stderr, "              efficient but could be lossier. Can only be 1-8.\n");
+  fprintf(stderr, "              0 means this will be inferred from data.\n");
+  fprintf(stderr, "    -h        Display this help message.\n\n");
 
   return 1;
 }
@@ -77,11 +82,34 @@ static void print_cdata1(cdata_t *c, uint64_t i, int f3_fmt) {
     fprintf(stdout, "%"PRIu64, s[i]);
     break;
   }
+  case '7': {
+    if (!fmt7_next_bed(c)) {
+      fprintf(stderr, "[%s:%d] next BED record unfound.\n", __func__, __LINE__);
+      fflush(stderr);
+      exit(1);
+    }
+    row_reader_t *rdr = (row_reader_t*) c->aux;
+    if (rdr->index != i+1) {
+      fprintf(stderr, "[%s:%d] row reader index mismatch (i=%"PRIu64", rdr.index=%"PRIu64").\n",
+              __func__, __LINE__, i, rdr->index);
+      fflush(stderr);
+      exit(1);
+    }
+    fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value+1);
+    break;
+  }
   default: usage(); wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
 }
 
 static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
+
+  if (ref_cdata_v(cs, 0)->fmt == '7') {
+    fprintf(stderr, "[%s:%d] Unpack does not support format 7 chunking.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+  
   uint64_t i,m, k, kn = cs->size;
   cdata_t expanded = {0};
   decompress(ref_cdata_v(cs, 0), &expanded);
@@ -105,21 +133,43 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, int f3_fmt) {
   free(expanded.s); free(sliced);
 }
 
-static void print_cdata(cdata_v *cs, int f3_fmt) {
+static void print_cdata(cdata_v *cs, int f3_fmt, char *fname_row) {
   uint64_t i, k, kn = cs->size;
-  cdata_t *expanded = calloc(kn, sizeof(cdata_t));
+  cdata_t *inflated = calloc(kn, sizeof(cdata_t));
   for (k=0; k<kn; ++k) {
-    decompress(ref_cdata_v(cs, k), expanded+k);
+    cdata_t *c = ref_cdata_v(cs,k);
+    if (c->fmt == '7') {
+      memcpy(inflated+k, c, sizeof(cdata_t));
+      inflated[k].s = malloc(c->n);
+      memcpy(inflated[k].s, c->s, c->n);
+    } else {
+      decompress(c, inflated+k);
+    }
   }
-  for (i=0; i<expanded[0].n; ++i) {
+
+  uint64_t n = 0;
+  if (inflated[0].fmt == '7') {
+    n = fmt7_data_length(&inflated[0]);
+  } else {
+    n = inflated[0].n;
+  }
+
+  cdata_t cr = {0};
+  if (fname_row) {
+    cfile_t cf_row = open_cfile(fname_row);
+    cr = read_cdata1(&cf_row);
+  }
+  for (i=0; i<n; ++i) {
+    if (cr.s) print_cdata1(&cr, i, 0);
     for (k=0; k<kn; ++k) {
-      if(k) fputc('\t', stdout);
-      print_cdata1(expanded+k, i, f3_fmt);
+      if(k || cr.s) fputc('\t', stdout);
+      print_cdata1(inflated+k, i, f3_fmt);
     }
     fputc('\n', stdout);
   }
-  for (k=0; k<kn; ++k) free_cdata(&expanded[k]);
-  free(expanded);
+  if (cr.s) free_cdata(&cr);
+  for (k=0; k<kn; ++k) free_cdata(&inflated[k]);
+  free(inflated);
 }
 
 int main_unpack(int argc, char *argv[]) {
@@ -130,7 +180,8 @@ int main_unpack(int argc, char *argv[]) {
   int head = -1, tail = -1;
   uint8_t unit = 0; // default: auto-inferred
   int print_column_names = 0;
-  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:Cah"))>=0) {
+  char *fname_row = NULL;
+  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:ah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -139,6 +190,7 @@ int main_unpack(int argc, char *argv[]) {
     case 'T': tail = atoi(optarg); break;
     case 'u': unit = atoi(optarg); break;
     case 'C': print_column_names = 1; break;
+    case 'R': fname_row = strdup(optarg); break;
     case 'a': read_all = 1; break;
     case 'f': f3_fmt = atoi(optarg); break;
     case 'h': return usage(); break;
@@ -173,7 +225,7 @@ int main_unpack(int argc, char *argv[]) {
     fflush(stderr);
     exit(1);
   }
-  
+
   // read in the cdata
   cdata_v *cs = NULL;
   if (idx && snames.n > 0) {
@@ -211,8 +263,8 @@ int main_unpack(int argc, char *argv[]) {
   }
 
   // output the cs
-  if (chunk) print_cdata_chunk(cs, chunk_size, f3_fmt);
-  else print_cdata(cs, f3_fmt);
+  if (chunk) print_cdata_chunk(cs, chunk_size, f3_fmt); // TODO: chunking is a little redundant to rowsub
+  else print_cdata(cs, f3_fmt, fname_row);
 
   // clean up
   for (uint64_t i=0; i<cs->size; ++i) free_cdata(ref_cdata_v(cs,i));

@@ -9,7 +9,6 @@ void decompress(cdata_t *c, cdata_t *expanded) {
   case '4': { fmt4_decompress(c, expanded); break; }
   case '5': { fmt5_decompress(c, expanded); break; }
   case '6': { fmt6_decompress(c, expanded); break; }
-  /* case '7': { fmt7_decompress(c, expanded); break; } */
   default: wzfatal("Unrecognized format: %c.\n", c->fmt);
   }
   /* shouldn't reach here */

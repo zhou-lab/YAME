@@ -17,7 +17,8 @@ static int usage(config_t *config) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -l        File name for row index list. If this is given, other index formats are ignored.\n");
+  fprintf(stderr, "    -R [PATH] co-subset row coordinates.\n");
+  fprintf(stderr, "    -l [PATH] File name for row index list. If given, other index formats are ignored.\n");
   fprintf(stderr, "    -b        begin-end format: begin index, 0-base.\n");
   fprintf(stderr, "    -e        begin-end format: end index 1-base.\n");
   fprintf(stderr, "    -i        index-block-size format: index (0-base).\n");
@@ -68,7 +69,6 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
 }
 
 static void sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n, cdata_t *c2) {
-
   assert(!c->compressed);
   c2->unit = c->unit;
   c2->s = realloc(c2->s, n*c2->unit);
@@ -81,14 +81,15 @@ static void sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n, cdata_t 
   c2->compressed = 0;
 }
 
+// beg and end are both 0-based
 static void sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c2) {
   if (c->compressed) {
     fprintf(stderr, "[%s:%d] Input is compressed.\n", __func__, __LINE__);
     fflush(stderr);
     exit(1);
   }
-  if (end > c->n) end = c->n-1; // 0-base
-  if (beg > c->n) {
+  if (end > c->n-1) end = c->n-1; // 0-base
+  if (beg > c->n-1) {
     fprintf(stderr, "[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, c->n);
     fflush(stderr);
     exit(1);
@@ -108,15 +109,16 @@ int main_rowsub(int argc, char *argv[]) {
   config_t config = {
     .fname_index = NULL,
     .index = -1, .isize = 1000000, .beg = 0, .end = 1};
-  int c;
-  while ((c = getopt(argc, argv, "b:e:i:s:vh"))>=0) {
+  int c; char *fname_row = NULL;
+  while ((c = getopt(argc, argv, "R:b:e:i:s:vh"))>=0) {
     switch (c) {
-    case 'h': return usage(&config); break;
+    case 'R': fname_row = strdup(optarg); break;
     case 'l': config.fname_index = optarg; break;
     case 'b': config.beg = atoi(optarg); break;   /* assume 0-index */
     case 'e': config.end = atoi(optarg)-1; break; /* convert to 0-index */
     case 'i': config.index = atoi(optarg); break; /* 0-index */
     case 's': config.isize = atoi(optarg); break;
+    case 'h': return usage(&config); break;
     default: usage(&config); wzfatal("Unrecognized option: %c.\n", c);
     }
   }
@@ -145,6 +147,18 @@ int main_rowsub(int argc, char *argv[]) {
     fflush(stderr);
     exit(1);
   }
+
+  if (fname_row && !row_indices) {
+    cfile_t cf_row = open_cfile(fname_row);
+    cdata_t cr = read_cdata1(&cf_row);
+    cdata_t cr2 = {0};
+    fmt7_sliceToBlock(&cr, config.beg, config.end, &cr2);
+    cdata_write1(fp_out, &cr2);
+    free_cdata(&cr);
+    free_cdata(&cr2);
+    bgzf_close(cf_row.fh);
+  }
+  
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
@@ -166,6 +180,7 @@ int main_rowsub(int argc, char *argv[]) {
   bgzf_close(fp_out);
 
   if (n_indices) free(row_indices);
+  if (fname_row) free(fname_row);
   
   return 0;
 }
