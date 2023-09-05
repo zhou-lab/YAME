@@ -228,6 +228,7 @@ cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices
     last = loc;
   }
   free(locs.chrmlocs);
+  for (int i=0; i<locs.nchrms; ++i) free(locs.chrms[i]);
   free(locs.chrms);
 
   cdata_t cr2 = {0};

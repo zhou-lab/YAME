@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <inttypes.h>
 #include <wordexp.h>
+#include "khash.h"
 #include "wzmisc.h"
 #include "wzmisc.h"
 #include "wzbed.h"
@@ -154,14 +155,38 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
 
 typedef struct row_reader_t {
   uint64_t index;
-  char *chrm;                   // pointer to cdata_t.s
-  uint64_t loc;                 // pointer to cdata_t.s
+  char *chrm;                   // on cdata_t.s
+  uint64_t loc;                 // on cdata_t.s
   uint64_t value;
 } row_reader_t;
 
-// while (row_reader_next_loc(rdr, c)) {
-//   fprintf(stdout, "%s\t%"PRIu64"\n", rdr->chrm, rdr->value);
-// }
+KHASH_MAP_INIT_STR(str2int, uint64_t) // Initialize a hashmap with keys as strings and values as uint64_t
+
+typedef struct chromosome_t {
+  uint64_t *locs;
+  uint64_t *vals;
+  uint64_t *inds;
+  uint64_t n;
+} chromosome_t;
+
+typedef struct row_finder_t {
+  chromosome_t *chrms;
+  int n;
+  khash_t(str2int) *h; // chromosome string > chromosome_t
+} row_finder_t;
+
+static inline void free_row_finder(row_finder_t *fdr) {
+  for (int i=0; i<fdr->n; ++i) {
+    free(fdr->chrms[i].locs);
+    free(fdr->chrms[i].vals);
+    free(fdr->chrms[i].inds);
+  }
+  free(fdr->chrms);
+  kh_destroy(str2int, fdr->h);
+}
+
 int row_reader_next_loc(row_reader_t *rdr, cdata_t *c);
+row_finder_t init_finder(cdata_t *cr);
+uint64_t row_finder_search(char *chrm, uint64_t beg1, row_finder_t *fdr, cdata_t *cr);
 
 #endif /* _CDATA_H */

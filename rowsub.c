@@ -20,7 +20,8 @@ static int usage(config_t *config) {
   fprintf(stderr, "    -R [PATH] co-subset row coordinates.\n");
   fprintf(stderr, "              The subset row coordinate is appended in output as the first file.\n");
   fprintf(stderr, "    -m [PATH] mask file (format 1 or 2).\n");
-  fprintf(stderr, "    -l [PATH] File name for 1-based row index. If given, other index formats are ignored.\n");
+  fprintf(stderr, "    -l [PATH] 1-based row indices. If given, other index formats are ignored.\n");
+  fprintf(stderr, "    -L [PATH] row indices in the format of chrm_beg1.\n");
   fprintf(stderr, "    -b        begin-end format: begin index, 0-base.\n");
   fprintf(stderr, "    -e        begin-end format: end index 1-base.\n");
   fprintf(stderr, "    -i        index-block-size format: index (0-base).\n");
@@ -65,6 +66,74 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
       free(field);
     }
   }
+  free(line);
+  gzclose(fp);
+  return indices;
+}
+
+static int split_string_and_number(const char* input, char** out_string, uint64_t* out_number) {
+  // Find the position of the underscore ('_')
+  const char *underscore = strchr(input, '_');
+  if (!underscore) return -1; // underscore not found
+
+  // Allocate memory for the string part (including the null-terminator)
+  *out_string = malloc(underscore - input + 1);
+  if (!*out_string) return -2; // memory allocation failed
+
+  // Copy the string part to the output
+  strncpy(*out_string, input, underscore - input);
+  (*out_string)[underscore - input] = '\0'; // Null-terminate
+
+  // Convert the number part to uint64_t
+  char *endptr;
+  *out_number = strtoull(underscore + 1, &endptr, 10);
+
+  // Check if conversion was successful
+  if (*endptr != '\0') { free(*out_string); return -3; }
+  return 0; // success
+}
+
+static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int64_t *n_indices) {
+  int64_t *indices = NULL;
+  /* snames_t snames = {0}; */
+  if (fname_rnindex == NULL) { *n_indices = 0; return indices; }
+  gzFile fp;
+  if (strcmp(fname_rnindex, "-") == 0) {
+    fp = gzdopen(fileno(stdin), "r");
+  } else {
+    fp = gzopen(fname_rnindex, "r");
+    if (!fp) {
+      fprintf(stderr, "[%s:%d] Fatal, cannot open file: %s\n",
+              __func__, __LINE__, fname_rnindex);
+      fflush(stderr);
+      exit(1);
+    }
+  }
+  
+  if (fp == NULL) return indices;
+  
+  row_finder_t fdr = init_finder(cr);
+  *n_indices = 0;
+  char *line = NULL;
+  while (gzFile_read_line(fp, &line) > 0) {
+    char *chrm = NULL;
+    uint64_t beg1 = 0;
+    if (split_string_and_number(line, &chrm, &beg1) < 0) {
+      fprintf(stderr, "Failed to extract coordinate: %s\n", line);
+      fflush(stderr);
+      exit(1);
+    }
+    indices = realloc(indices, ((*n_indices)+1)*sizeof(int64_t));
+    indices[(*n_indices)] = row_finder_search(chrm, beg1, &fdr, cr);
+    if (!indices[(*n_indices)]) {
+      fprintf(stderr, "[%s:%d] Cannot find coordinate: %s\n", __func__, __LINE__, line);
+      fflush(stderr);
+      exit(1);
+    }
+    (*n_indices)++;
+    free(chrm);
+  }
+  free_row_finder(&fdr);
   free(line);
   gzclose(fp);
   return indices;
@@ -151,11 +220,13 @@ int main_rowsub(int argc, char *argv[]) {
     .fname_rindex = NULL,
     .index = -1, .isize = 1000000, .beg = 0, .end = 1};
   int c; char *fname_row = NULL; char *fname_mask = NULL;
-  while ((c = getopt(argc, argv, "R:m:l:b:e:i:s:vh"))>=0) {
+  char *fname_rnindex = NULL;
+  while ((c = getopt(argc, argv, "R:m:l:L:b:e:i:s:vh"))>=0) {
     switch (c) {
     case 'R': fname_row = strdup(optarg); break;
     case 'm': fname_mask = strdup(optarg); break;
-    case 'l': config.fname_rindex = optarg; break;
+    case 'l': config.fname_rindex = strdup(optarg); break;
+    case 'L': fname_rnindex = strdup(optarg); break;
     case 'b': config.beg = atoi(optarg); break;   /* assume 0-index */
     case 'e': config.end = atoi(optarg)-1; break; /* convert to 0-index */
     case 'i': config.index = atoi(optarg); break; /* 0-index */
@@ -206,6 +277,10 @@ int main_rowsub(int argc, char *argv[]) {
   if (fname_row) {
     cfile_t cf_row = open_cfile(fname_row);
     cdata_t cr = read_cdata1(&cf_row);
+    if (!row_indices && fname_rnindex) {
+      row_indices = load_row_indices_by_names(fname_rnindex, &cr, &n_indices);
+    }
+    
     cdata_t cr2;
     if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices);
     else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask);
@@ -244,6 +319,7 @@ int main_rowsub(int argc, char *argv[]) {
 
   if (n_indices) free(row_indices);
   if (fname_row) free(fname_row);
+  if (fname_rnindex) free(fname_rnindex);
   
   return 0;
 }

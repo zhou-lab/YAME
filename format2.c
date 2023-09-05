@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cdata.h"
-#include "khash.h"
 
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
   if (!c->aux) fmt2_set_aux(c);
@@ -74,8 +73,6 @@ static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
   
   return rle;
 }
-
-KHASH_MAP_INIT_STR(str2int, uint64_t) // Initialize a hashmap with keys as strings and values as uint64_t
 
 cdata_t* fmt2_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
