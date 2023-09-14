@@ -473,6 +473,11 @@ int main_summary(int argc, char *argv[]) {
     for (uint64_t kq=0;;++kq) {
       cdata_t c_qry = read_cdata1(&cf_qry);
       if (c_qry.n == 0) break;
+      if (snames_qry.n && kq >= (unsigned) snames_qry.n) {
+        fprintf(stderr, "[%s:%d] More data (N=%"PRIu64") found than specified in the index file (N=%d).\n", __func__, __LINE__, kq+1, snames_qry.n);
+        fflush(stderr);
+        exit(1);
+      }
       if (c_qry.fmt == '7') { // skip format 7
         free_cdata(&c_qry); c_qry.s = NULL;
         continue;
