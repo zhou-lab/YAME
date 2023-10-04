@@ -62,13 +62,13 @@ uint64_t row_finder_search(char *chrm, uint64_t beg1, row_finder_t *fdr, cdata_t
   rdr.loc = chrmt.locs[i];
   rdr.value = chrmt.vals[i];
   rdr.index = chrmt.inds[i];
-  while (row_reader_next_loc(&rdr, cr) && cr->s[rdr.loc] != 0xff) {
+  do {
     if (rdr.value == beg1) { // found
       return (int64_t) rdr.index;
     } else if (rdr.value > beg1) {
       return 0;
     }
-  }
+  } while (row_reader_next_loc(&rdr, cr) && cr->s[rdr.loc] != 0xff);
   return 0;
 }
 

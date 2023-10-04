@@ -17,15 +17,15 @@ static int usage(config_t *config) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
+  fprintf(stderr, "    -l [PATH] rows in 1-based indices. If given, other index formats are ignored.\n");
+  fprintf(stderr, "    -L [PATH] rows in the format of chrm_beg1. This option requires -R.\n");
   fprintf(stderr, "    -R [PATH] co-subset row coordinates.\n");
   fprintf(stderr, "              The subset row coordinate is appended in output as the first file.\n");
-  fprintf(stderr, "    -m [PATH] mask file (format 1 or 2).\n");
-  fprintf(stderr, "    -l [PATH] 1-based row indices. If given, other index formats are ignored.\n");
-  fprintf(stderr, "    -L [PATH] row indices in the format of chrm_beg1.\n");
-  fprintf(stderr, "    -b        begin-end format: begin index, 0-base.\n");
-  fprintf(stderr, "    -e        begin-end format: end index 1-base.\n");
-  fprintf(stderr, "    -i        index-block-size format: index (0-base).\n");
-  fprintf(stderr, "    -s        index-block-size format: size (N=%"PRIu64").\n", config->isize);
+  fprintf(stderr, "    -m [PATH] rows specified as a mask file (format 1 or 2).\n");
+  fprintf(stderr, "    -b        rows as a range (begin-end format): begin index, 0-base.\n");
+  fprintf(stderr, "    -e        rows as a range (begin-end format): end index 1-base.\n");
+  fprintf(stderr, "    -i        rows as a range (index-block-size format): index (0-base).\n");
+  fprintf(stderr, "    -s        rows as a range (index-block-size format): size (N=%"PRIu64").\n", config->isize);
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -270,6 +270,12 @@ int main_rowsub(int argc, char *argv[]) {
   BGZF *fp_out = bgzf_dopen(fileno(stdout), "w");
   if (fp_out == NULL) {
     fprintf(stderr, "[%s:%d] Cannot open output stream.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+
+  if (fname_rnindex && !fname_row) {
+    fprintf(stderr, "[%s:%d] Missing -R for BED coordinates.\n", __func__, __LINE__);
     fflush(stderr);
     exit(1);
   }

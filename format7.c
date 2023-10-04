@@ -96,8 +96,8 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
 }
 
 int row_reader_next_loc(row_reader_t *rdr, cdata_t *c) {
-  if (rdr->loc >= c->n) return 0;
-  if (c->s[rdr->loc] == 0xff || !rdr->index) {
+  if (rdr->loc >= c->n) return 0; // past chromosome length
+  if (c->s[rdr->loc] == 0xff || !rdr->index) { // hit end of chromosome
     if (c->s[rdr->loc] == 0xff) rdr->loc++;
     rdr->chrm = (char*) c->s + rdr->loc;
     rdr->loc += strlen(rdr->chrm)+1;
