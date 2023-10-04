@@ -265,9 +265,31 @@ int main_unpack(int argc, char *argv[]) {
   // output headers
   if (print_column_names) {
     if (!snames.n) {
-      fprintf(stderr, "[%s:%d] Error, index file is missing for printing sample names.\n", __func__, __LINE__);
-      fflush(stderr);
-      exit(1);
+      if (idx) {
+        int n0 = 0;
+        index_pair_t *idx_pairs = index_pairs(idx, &n0);
+        if (read_all) {
+          snames.n = n0;
+          snames.s = calloc(snames.n, sizeof(char*));
+          for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
+        } else if (head > 0) {
+          snames.n = head;
+          snames.s = calloc(snames.n, sizeof(char*));
+          for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
+        } else if (tail > 0) {
+          snames.n = tail;
+          snames.s = calloc(snames.n, sizeof(char*));
+          for (int i=0; i<tail; ++i) snames.s[i] = idx_pairs[n0-tail+i].key;
+        } else {
+          snames.n = 1; snames.s = calloc(1, sizeof(char*));
+          snames.s[0] = idx_pairs[0].key;
+        }
+        free(idx_pairs);          // ownership of keys are transfered to snames.s
+      } else {
+        fprintf(stderr, "[%s:%d] Error, index file is missing for printing sample names.\n", __func__, __LINE__);
+        fflush(stderr);
+        exit(1);
+      }
     }
     if (fname_row || col1_is_row_index) {
       if (pfmt.f7) fputs("chrm_beg1", stdout);
