@@ -35,6 +35,7 @@ static uint64_t unpack_value(uint8_t *data, uint8_t unit) {
   return v;
 }
 
+// TODO: add fitMU here to be safe
 static void f3_pack_mu(uint8_t *data, uint64_t M, uint64_t U, uint8_t unit) {
   if (!unit) {
     fprintf(stderr, "[%s:%d] Unknown unit size.\n", __func__, __LINE__);

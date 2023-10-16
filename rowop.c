@@ -13,6 +13,7 @@ static int usage() {
   fprintf(stderr, "              binasum: sum binary data to M and U (format 3).\n");
   fprintf(stderr, "              musum: sum M and U separately (format 3).\n");
   fprintf(stderr, "              mean: mean beta and counts of data points.\n");
+  fprintf(stderr, "              binstring: binarize data to a row-wise string.\n");
   fprintf(stderr, "    -c        minimum sequencing depth for rowops (default 1).\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -187,6 +188,58 @@ static void rowop_mean(cfile_t cf, char *fname_out, unsigned mincov) {
       fprintf(out, "%1.3f\t%d\n", fracs[i] / cnts[i], cnts[i]);
     }
   }
+  free(cnts); free(fracs);
+  if (fname_out) fclose(out);
+}
+
+static void rowop_binstring(cfile_t cf, char *fname_out) {
+  cdata_t c = read_cdata1(&cf);
+  if (c.n == 0) return;    // nothing in cfile
+  uint64_t n = cdata_n(&c);
+  uint64_t binstring_bytes = 0;
+  uint8_t *binstring = NULL;
+  uint64_t k=0;
+  for (k=0; ; ++k) {
+    if (k) c = read_cdata1(&cf); // skip 1st cdata
+    if (c.n == 0) break;
+    cdata_t c2 = {0};
+    decompress(&c, &c2);
+
+    if (binstring_bytes*8 <= k) {
+      binstring_bytes++;
+      binstring = realloc(binstring, (binstring_bytes*n));
+      memset(binstring + (binstring_bytes-1)*n, 0, sizeof(n));
+    }
+    
+    switch (c.fmt) {
+    case '3': {
+      for (uint64_t i=0; i<c2.n; ++i) {
+        uint64_t mu = f3_get_mu(&c2, i);
+        if ((mu>>32) > (mu<<32>>32)) {
+          binstring[(k>>3)*n+i] |= (1<<(k&0x7));
+        }
+      }
+      break;
+    }
+    default: {
+      fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
+      fflush(stderr);
+      exit(1);
+    }}
+
+    free(c.s); free(c2.s);
+  }
+
+  FILE *out;
+  if (fname_out) { out = fopen(fname_out, "w");
+  } else { out = stdout; }
+  for (uint64_t i=0; i<n; ++i) {
+    for (uint64_t kk=0; kk<k; ++kk) {
+      fputc('0'+((binstring[(kk>>3)*n+i] >> (kk&0x7))&0x1), out);
+    }
+    fputc('\n', out);
+  }
+  free(binstring);
   if (fname_out) fclose(out);
 }
 
@@ -227,6 +280,8 @@ int main_rowop(int argc, char *argv[]) {
     cout = rowop_musum(cf);
     cdata_write(fname_out, &cout, "wb", verbose);
     free(cout.s);
+  } else if (strcmp(op, "binstring") == 0) {
+    rowop_binstring(cf, fname_out);
   } else {
     fprintf(stderr, "[%s:%d] Unsupported operation: %s\n", __func__, __LINE__, op);
     fflush(stderr);
