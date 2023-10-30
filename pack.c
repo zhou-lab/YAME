@@ -130,12 +130,10 @@ int main_pack(int argc, char *argv[]) {
   }
   default: usage(); wzfatal("Unrecognized format: %c.\n", fmt);
   }
-  fprintf(stderr, "N1=%"PRIu64"\n", c->n);
-  fflush(stderr);
   cdata_write(fname_out, c, "w", verbose);
-  /* free_cdata(c); free(c); */
+  free_cdata(c); free(c);
 
-  /* if (fname_out) free(fname_out); */
+  if (fname_out) free(fname_out);
   return 0;
 }
 
