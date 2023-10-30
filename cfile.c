@@ -148,36 +148,31 @@ void cdata_write1(BGZF *fp, cdata_t *c) {
   uint64_t sig = CDSIG;
   if (bgzf_write(fp, &sig, sizeof(uint64_t)) < 0) {
     fprintf(stderr, "Error writing signature to file\n");
-    bgzf_close(fp);
     return;
   }
 
   // Write the format
   if (bgzf_write(fp, &(c->fmt), sizeof(uint8_t)) < 0) {
     fprintf(stderr, "Error writing format to file\n");
-    bgzf_close(fp);
     return;
   }
 
   // Write the count
   if (bgzf_write(fp, &(c->n), sizeof(uint64_t)) < 0) {
     fprintf(stderr, "Error writing count to file\n");
-    bgzf_close(fp);
     return;
   }
 
   // Write the data
   if (bgzf_write(fp, c->s, cdata_nbytes(c)) < 0) {
     fprintf(stderr, "Error writing data to file\n");
-    bgzf_close(fp);
     return;
   }
 }
 
 void cdata_write(char *fname_out, cdata_t *c, const char *mode, int verbose) {
 
-  if (!c->compressed) cdata_compress(c);
-  
+  if (!c->compressed) cdata_compress(c);  
   BGZF* fp;
   if (fname_out) fp = bgzf_open2(fname_out, mode);
   else fp = bgzf_dopen(fileno(stdout), mode);

@@ -24,6 +24,10 @@ char* f2_get_string(cdata_t *c, uint64_t i) {
   return aux->keys[val];
 }
 
+// Caution: this is efficient for chromatin states but
+// not efficient to encode sequence contexts like dinucleotide context
+// for dinucleotide contexts, we should use format 0 or 1
+// TODO: we should have a bit-packed, non-RLE format for this
 static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
   // Calculate the maximum value
   uint64_t max_value = 0;

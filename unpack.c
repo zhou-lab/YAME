@@ -14,7 +14,9 @@ static int usage() {
   fprintf(stderr, "    -a        Process all samples\n");
   fprintf(stderr, "    -C        Output column names\n");
   fprintf(stderr, "    -R [PATH] Row coordinate .cr file name.\n");
-  fprintf(stderr, "    -r        Row coordinate output in chrm_beg1 instead of chrm-beg0-end1.\n");
+  fprintf(stderr, "    -r        0: Row coordinate output in chrm-beg0-end1 (default, for cg).\n");
+  fprintf(stderr, "              1: Row coordinate output in chrm-beg0-end0 (for allc).\n");
+  fprintf(stderr, "              other: Row coordinate output in chrm_beg1.\n");
   fprintf(stderr, "    -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the\n");
   fprintf(stderr, "              total number of samples.\n");
@@ -101,10 +103,12 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
       fflush(stderr);
       exit(1);
     }
-    if (pfmt.f7) {
-      fprintf(stdout, "%s_%"PRIu64"", rdr->chrm, rdr->value);
-    } else {
+    if (pfmt.f7 == 0) {
       fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value+1);
+    } else if (pfmt.f7 == 1) {
+      fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value);
+    } else {
+      fprintf(stdout, "%s_%"PRIu64"", rdr->chrm, rdr->value);
     }
     break;
   }
@@ -191,7 +195,7 @@ int main_unpack(int argc, char *argv[]) {
   uint8_t unit = 0; // default: auto-inferred
   int print_column_names = 0;
   char *fname_row = NULL;
-  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:rah"))>=0) {
+  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:r:ah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -201,7 +205,7 @@ int main_unpack(int argc, char *argv[]) {
     case 'u': unit = atoi(optarg); break;
     case 'C': print_column_names = 1; break;
     case 'R': fname_row = strdup(optarg); break;
-    case 'r': pfmt.f7 = 1; break;
+    case 'r': pfmt.f7 = atoi(optarg); break;
     case 'a': read_all = 1; break;
     case 'f': pfmt.f3 = atoi(optarg); break;
     case 'h': return usage(); break;
@@ -292,8 +296,9 @@ int main_unpack(int argc, char *argv[]) {
       }
     }
     if (fname_row || col1_is_row_index) {
-      if (pfmt.f7) fputs("chrm_beg1", stdout);
-      else fputs("chrm\tbeg0\tend1", stdout);
+      if (pfmt.f7 == 0) fputs("chrm\tbeg0\tend1", stdout);
+      else if (pfmt.f7 == 1) fputs("chrm\tbeg0\tend0", stdout);
+      else fputs("chrm_beg1", stdout);
     }
     for (int i=0; i<snames.n; ++i) {
       if (fname_row || col1_is_row_index || i) fputc('\t', stdout);
