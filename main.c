@@ -50,6 +50,7 @@ int main_chunkchar(int argc, char *argv[]);
 int main_rowop(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 int main_mask(int argc, char *argv[]);
+int main_dsample(int argc, char *argv[]);
 
 #define PACKAGE_VERSION "0.3.20230904"
 
@@ -73,6 +74,7 @@ static int usage()
   fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
   fprintf(stderr, "     rowop        - Perform operations on rows, e.g., sum binary values.\n");
   fprintf(stderr, "     mask         - Mask methylation data by setting masked record to M=U=0.\n");
+  fprintf(stderr, "     dsample      - Downsample methylation data by setting unsampled records to M=U=0.\n");
   fprintf(stderr, "\n");
 
   return 1;

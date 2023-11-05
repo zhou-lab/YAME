@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include "cfile.h"
 #include "snames.h"
 
@@ -26,16 +27,16 @@ void Fisher_Yates_shuffle(uint64_t *array, uint64_t n) {
   }
 }
 
-void downsample(cdata_t *c, int64_t N) {
+void downsample(cdata_t *c, uint64_t N) {
   cdata_t c2 = {0};
   decompress(c, &c2);
-  int64_t N_indices = 0;
+  uint64_t N_indices = 0;
   for (uint64_t i=0; i<c->n; ++i)
     if (f3_get_mu(c, i)) N_indices++;
 
   if (N >= N_indices) return; // more elements to sample than exist
   
-  uint64_t *indices = N_indices*sizeof(uint64_t);
+  uint64_t *indices = calloc(N_indices, sizeof(uint64_t));
   uint64_t j = 0;
   for (uint64_t i = 0; i<c->n; ++i)
     if (f3_get_mu(c, i)) indices[j++] = i;
@@ -43,7 +44,7 @@ void downsample(cdata_t *c, int64_t N) {
   Fisher_Yates_shuffle(indices, N_indices);
 
   uint8_t *to_include = calloc(c->n/8+1, 1);
-  for (uint64_t j = 0; j<N; ++i)
+  for (uint64_t j = 0; j<N; ++j)
     to_include[indices[j]>>3] |= (1<<(indices[j]&0x7));
 
   for (uint64_t i = 0; i<c->n; ++i) {
@@ -57,13 +58,12 @@ int main_dsample(int argc, char *argv[]) {
 
   int c, verbose = 0;
   unsigned seed = (unsigned int)time(NULL);
-  int64_t N = 0;
-  char *op = NULL;
+  uint64_t N = 0;
   while ((c = getopt(argc, argv, "vo:c:h"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
-    case 's': seed = strtoul(optarg); break;
-    case 'N': N = atoi(optarg); break;
+    case 's': seed = strtoul(optarg, NULL, 10); break;
+    case 'N': N = strtoul(optarg, NULL, 10); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -80,7 +80,6 @@ int main_dsample(int argc, char *argv[]) {
     fname_out = strdup(argv[optind+1]);
 
   cfile_t cf = open_cfile(fname);
-  cdata_t cout = {0};
   srand(seed);
   for (uint64_t kq=0;;++kq) {
     cdata_t c = read_cdata1(&cf);
