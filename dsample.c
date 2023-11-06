@@ -9,7 +9,6 @@ static int usage() {
   fprintf(stderr, "Usage: yame dsample [options] <in.cx> <out.cx>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -s [N]    seed for sampling.\n");
   fprintf(stderr, "    -N [N]    number of records to sample. (default: 100).\n");
   fprintf(stderr, "              When higher than available, capped to available.\n");
@@ -65,12 +64,11 @@ cdata_t* downsample(cdata_t *c0, cdata_t *c, uint64_t N) {
 
 int main_dsample(int argc, char *argv[]) {
 
-  int c, verbose = 0;
+  int c;
   unsigned seed = (unsigned int)time(NULL);
   uint64_t N = 100;
-  while ((c = getopt(argc, argv, "vs:N:h"))>=0) {
+  while ((c = getopt(argc, argv, "s:N:h"))>=0) {
     switch (c) {
-    case 'v': verbose = 1; break;
     case 's': seed = strtoul(optarg, NULL, 10); break;
     case 'N': N = strtoul(optarg, NULL, 10); break;
     case 'h': return usage(); break;
@@ -87,7 +85,16 @@ int main_dsample(int argc, char *argv[]) {
   char *fname_out = NULL;
   if (argc >= optind + 2)
     fname_out = strdup(argv[optind+1]);
-
+  
+  BGZF* fp;
+  if (fname_out) fp = bgzf_open2(fname_out, "wb");
+  else fp = bgzf_dopen(fileno(stdout), "wb");
+  if (fp == NULL) {
+    fprintf(stderr, "[%s:%d] Error opening file for writing: %s\n", __func__, __LINE__, fname_out);
+    fflush(stderr);
+    exit(1);
+  }
+  
   cfile_t cf = open_cfile(fname);
   srand(seed);
   for (uint64_t kq=0;;++kq) {
@@ -95,11 +102,13 @@ int main_dsample(int argc, char *argv[]) {
     if (c.n == 0) break;
     cdata_t c2 = {0};
     downsample(&c, &c2, N);
-    cdata_write(fname_out, &c2, "wb", verbose);
+    if (!c2.compressed) cdata_compress(&c2);
+    cdata_write1(fp, &c2);
     free_cdata(&c); free_cdata(&c2);
   }
   
   bgzf_close(cf.fh);
+  bgzf_close(fp);
   if (fname_out) free(fname_out);
   
   return 0;
