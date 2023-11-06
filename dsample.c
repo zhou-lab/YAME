@@ -11,7 +11,8 @@ static int usage() {
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
   fprintf(stderr, "    -s [N]    seed for sampling.\n");
-  fprintf(stderr, "    -N [N]    number of cg to sample.\n");
+  fprintf(stderr, "    -N [N]    number of records to sample. (default: 100).\n");
+  fprintf(stderr, "              When higher than available, capped to available.\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -27,14 +28,20 @@ void Fisher_Yates_shuffle(uint64_t *array, uint64_t n) {
   }
 }
 
-void downsample(cdata_t *c, uint64_t N) {
-  cdata_t c2 = {0};
-  decompress(c, &c2);
+cdata_t* downsample(cdata_t *c0, cdata_t *c, uint64_t N) {
+
+  if (c0->fmt != '3') {
+    fprintf(stderr, "[%s:%d] Input must be of format 3.\n", __func__, __LINE__);
+    fflush(stderr);
+    exit(1);
+  }
+  
+  decompress(c0, c);
   uint64_t N_indices = 0;
   for (uint64_t i=0; i<c->n; ++i)
     if (f3_get_mu(c, i)) N_indices++;
 
-  if (N >= N_indices) return; // more elements to sample than exist
+  if (N >= N_indices) return c; // more elements to sample than exist
   
   uint64_t *indices = calloc(N_indices, sizeof(uint64_t));
   uint64_t j = 0;
@@ -52,14 +59,16 @@ void downsample(cdata_t *c, uint64_t N) {
       f3_set_mu(c, i, 0, 0);
     }
   }
+  free(indices); free(to_include);
+  return c;
 }
 
 int main_dsample(int argc, char *argv[]) {
 
   int c, verbose = 0;
   unsigned seed = (unsigned int)time(NULL);
-  uint64_t N = 0;
-  while ((c = getopt(argc, argv, "vo:c:h"))>=0) {
+  uint64_t N = 100;
+  while ((c = getopt(argc, argv, "vs:N:h"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
     case 's': seed = strtoul(optarg, NULL, 10); break;
@@ -84,8 +93,10 @@ int main_dsample(int argc, char *argv[]) {
   for (uint64_t kq=0;;++kq) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
-    downsample(&c, N);
-    cdata_write(fname_out, &c, "wb", verbose);
+    cdata_t c2 = {0};
+    downsample(&c, &c2, N);
+    cdata_write(fname_out, &c2, "wb", verbose);
+    free_cdata(&c); free_cdata(&c2);
   }
   
   bgzf_close(cf.fh);
