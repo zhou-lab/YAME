@@ -161,7 +161,7 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
 // beg and end are both 0-based
 static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
   if (c->compressed) {
-    fprintf(stderr, "[%s:%d] Slicing compressed data.\n", __func__, __LINE__);
+    fprintf(stderr, "[%s:%d] Cannot slice compressed data.\n", __func__, __LINE__);
     fflush(stderr);
     exit(1);
   }
@@ -173,12 +173,11 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
   }
 
   cdata_t c2 = {0};
-  uint64_t n = end - beg + 1;
   c2.unit = c->unit;
-  c2.s = realloc(c2.s, n*c2.unit);
+  c2.s = realloc(c2.s, (end-beg+1)*c2.unit);
   c2.fmt = c->fmt;
-  memcpy(c2.s, c->s+c->unit*beg, c->unit*n);
-  c2.n = n;
+  memcpy(c2.s, c->s+c->unit*beg, c->unit*(end-beg+1));
+  c2.n = end-beg+1;
   c2.compressed = 0;
   return c2;
 }

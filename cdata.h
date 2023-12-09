@@ -148,9 +148,10 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
 
   c_sliced->s = realloc(c_sliced->s, (end-beg+1)*c->unit);
   memcpy(c_sliced->s, c->s+beg*c->unit, (end-beg+1)*c->unit);
-  c_sliced->n = end - beg + 1;
+  c_sliced->n = end-beg+1;
   c_sliced->compressed = 0;
   c_sliced->fmt = c->fmt;
+  c_sliced->unit = c->unit;
 }
 
 typedef struct row_reader_t {
