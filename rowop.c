@@ -212,14 +212,14 @@ static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, u
 
 // the following doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
-static void rowop_std(cfile_t cf, char *fname) {
+static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
 
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return; // nothing in cfile, output nothing
   uint64_t n = cdata_n(&c);
   uint32_t *cnts = calloc(n, sizeof(uint32_t));
-  double sum = calloc(n, sizeof(double));
-  double sum_sq = calloc(n, sizeof(double));
+  double *sum = calloc(n, sizeof(double));
+  double *sum_sq = calloc(n, sizeof(double));
   
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -252,7 +252,7 @@ static void rowop_std(cfile_t cf, char *fname) {
       fprintf(out, "%1.3f\t%d\n", sqrt((sum_sq[i] / cnts[i]) - mean * mean), cnts[i]);
     }
   }
-  free(cnts); free(fracs);
+  free(cnts); free(sum_sq); free(sum);
   if (fname_out) fclose(out);
 }
 

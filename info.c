@@ -53,13 +53,13 @@ int main_info(int argc, char *argv[]) {
     int i = 0;
     for (i=0; ; ++i) {
       cdata_t c = read_cdata1(&cf);
+      if (c.n == 0) break;
       if (snames.n && i >= snames.n) {
         fprintf(stderr, "[%s:%d] More data (N=%d) found than specified in the index file (N=%d).\n", __func__, __LINE__, i+1, snames.n);
         fflush(stderr);
         exit(1);
       }
 
-      if (c.n == 0) break;
       fprintf(stdout, "%s\t", fname_in);
       if (snames.n) {
         fputs(snames.s[i], stdout);
