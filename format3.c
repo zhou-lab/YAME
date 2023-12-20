@@ -3,7 +3,7 @@
 #include <string.h>
 #include "cdata.h"
 
-static int is_nonnegative_int(char *s) {
+static int is_int(char *s) {
   size_t i;
   for (i=0; i<strlen(s); ++i) {
     if (!isdigit(s[i])) return 0;
@@ -70,7 +70,7 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
   while (gzFile_read_line(fh, &line) > 0) {
     line_get_fields(line, "\t", &fields, &nfields);
     if (nfields < 2) wzfatal("Number of fields <2. Abort.");
-    if (!is_nonnegative_int(fields[0]) || !is_nonnegative_int(fields[1]))
+    if (!is_int(fields[0]) || !is_int(fields[1]))
       wzfatal("Field 1 or 2 is not a nonnegative integer.");
     uint64_t M = atol(fields[0]);
     uint64_t U = atol(fields[1]);

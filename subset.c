@@ -99,7 +99,11 @@ int main_subset(int argc, char *argv[]) {
     assert(index >= 0);
     assert(bgzf_seek(cf.fh, index, SEEK_SET) == 0);
     read_cdata2(&cf, &c);
-    if (c.n <= 0) break;
+    if (c.n <= 0) {
+      fprintf(stderr, "[%s:%d] Error, cannot find %s.\n", __func__, __LINE__, snames.s[i]);
+      fflush(stderr);
+      exit(1);
+    }
     cdata_write1(fp, &c);
   }
   bgzf_close(fp);               // output

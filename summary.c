@@ -14,9 +14,10 @@ static int usage() {
   fprintf(stderr, "Query should be of format 0,1,2,3, can be a multi-sample set.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -m        Binary (.cb) file, can be multi-sample.\n");
+  fprintf(stderr, "    -m        Mask feature (.cx) file, can be multi-sample.\n");
   fprintf(stderr, "              If '-', the whole sample will bed kept in memory, same as -M.\n");
   fprintf(stderr, "    -M        All masks will be loaded to memory. This save disk IO.\n");
+  fprintf(stderr, "    -u        Optional universe set as a .cx file. If given, the masks and queries are both subset.\n");
   fprintf(stderr, "    -H        Suppress header printing.\n");
   fprintf(stderr, "    -q        The backup query file name if the query file name is '-'.\n");
   fprintf(stderr, "    -F        Use full feature/query file name instead of base name.\n");
@@ -51,14 +52,14 @@ typedef struct config_t {
   char *fname_qry_stdin;
 } config_t;
 
-static stats_t* summarize1_fmt1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+static stats_t* summarize1_queryfmt1(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
   stats_t *st = NULL;
   if (c_mask->n == 0) {          // no mask
 
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
     st[0].n_q = bit_count(c[0]);
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
@@ -73,7 +74,6 @@ static stats_t* summarize1_fmt1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
     st[0].n_q = bit_count(c[0]);
     st[0].n_m = bit_count(c_mask[0]);
     cdata_t tmp = {0};
@@ -113,7 +113,6 @@ static stats_t* summarize1_fmt1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     }
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
-      st[k].n_u = c->n;
       st[k].sum_beta = -1;
       st[k].mean_beta = -1;
       if (config->section_name) {
@@ -134,7 +133,8 @@ static stats_t* summarize1_fmt1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
   return st;
 }
 
-static stats_t* summarize1_fmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+static stats_t* summarize1_queryfmt2(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
   stats_t *st = NULL;
   if (c_mask->n == 0) {          // no mask
@@ -146,7 +146,6 @@ static stats_t* summarize1_fmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     for (uint64_t i=0; i<c->n; ++i) cnts[f2_get_uint64(c, i)]++;
     st = calloc(aux->nk, sizeof(stats_t));
     for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c->n;
       st[k].n_q = cnts[k];
       st[k].n_m = 0;
       st[k].n_o = 0;
@@ -180,7 +179,6 @@ static stats_t* summarize1_fmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     }
     st = calloc(aux->nk, sizeof(stats_t));
     for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c->n;
       st[k].n_q = cnts_q[k];
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
@@ -222,7 +220,6 @@ static stats_t* summarize1_fmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
       for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
         stats_t *st1 = &st[im * aux_q->nk + iq];
         st1->n_o++;
-        st1->n_u = c->n;
         st1->n_q = nq[iq];
         st1->n_m = nm[im];
         st1->mean_beta = -1;
@@ -252,14 +249,14 @@ static stats_t* summarize1_fmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
   return st;
 }
 
-static stats_t* summarize1_fmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+static stats_t* summarize1_queryfmt3(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
   stats_t *st = NULL;
   if (c_mask->n == 0) {            // no mask
     
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
       if (mu) {
@@ -275,7 +272,6 @@ static stats_t* summarize1_fmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
     if (c_mask->n != c->n) {
       fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
       fflush(stderr);
@@ -323,7 +319,6 @@ static stats_t* summarize1_fmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
     }
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
-      st[k].n_u = c->n;
       st[k].mean_beta = st[k].sum_beta / st[k].n_o;
       if (config->section_name) {
         kstring_t tmp = {0};
@@ -345,11 +340,13 @@ static stats_t* summarize1_fmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, cha
 
 static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
   if (c->fmt == '3') {
-    return summarize1_fmt3(c, c_mask, n_st, sm, sq, config);
+    return summarize1_queryfmt3(c, c_mask, n_st, sm, sq, config);
   } else if (c->fmt == '2') {
-    return summarize1_fmt2(c, c_mask, n_st, sm, sq, config);
+    return summarize1_queryfmt2(c, c_mask, n_st, sm, sq, config);
   } else if (c->fmt == '0') {
-    return summarize1_fmt1(c, c_mask, n_st, sm, sq, config);
+    return summarize1_queryfmt1(c, c_mask, n_st, sm, sq, config);
+  /* } else if (c->fmt == '6') { */
+    /* return summarize1_queryfmt6(c, c_mask, n_st, sm, sq, config); */
   } else {
     fprintf(stderr, "[%s:%d] Query format %c unsupported.\n", __func__, __LINE__, c->fmt);
     fflush(stderr);
@@ -411,7 +408,7 @@ static void prepare_mask(cdata_t *c) {
 int main_summary(int argc, char *argv[]) {
   int c;
   config_t config = {0};
-  while ((c = getopt(argc, argv, "m:MHFTs:q:h"))>=0) {
+  while ((c = getopt(argc, argv, "m:u:MHFTs:q:h"))>=0) {
     switch (c) {
     case 'm': config.fname_mask = strdup(optarg); break;
     case 'M': config.in_memory = 1; break;
@@ -441,9 +438,10 @@ int main_summary(int argc, char *argv[]) {
     }
     snames_mask = loadSampleNamesFromIndex(config.fname_mask);
   }
- 
-  if (!config.no_header)
+
+  if (!config.no_header) {
     fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\n", stdout);
+  }
 
   cdata_t *c_masks = NULL; uint64_t c_masks_n = 0;
   if (config.in_memory) {              /* load in-memory masks */
@@ -459,7 +457,6 @@ int main_summary(int argc, char *argv[]) {
   }
 
   for (int j = optind; j < argc; ++j) {
-    
     char *fname_qry = argv[j];
     cfile_t cf_qry = open_cfile(fname_qry);
     snames_t snames_qry = {0};
@@ -486,7 +483,7 @@ int main_summary(int argc, char *argv[]) {
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
       prepare_mask(&c_qry);
-
+      
       if (config.fname_mask) {           /* apply any mask? */
         if (config.in_memory || unseekable) { /* in memory mask if unseekable */
           for (uint64_t km=0;km<c_masks_n;++km) {

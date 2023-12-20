@@ -12,9 +12,9 @@ static int usage() {
   fprintf(stderr, "    -o        operations: {binasum}\n");
   fprintf(stderr, "                  binasum: sum binary data to M and U (format 3).\n");
   fprintf(stderr, "                  musum: sum M and U separately (format 3).\n");
-  fprintf(stderr, "                  mean: mean beta and counts of data points.\n");
-  fprintf(stderr, "                  std: standard deviation.\n");
-  fprintf(stderr, "                  binstring: binarize data to a row-wise string.\n");
+  fprintf(stderr, "                  mean: mean beta and counts of data points (format 3).\n");
+  fprintf(stderr, "                  std: standard deviation (format 3).\n");
+  fprintf(stderr, "                  binstring: binarize data to a row-wise string (format 3).\n");
   fprintf(stderr, "    -c        minimum sequencing depth for rowops (default 1).\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");

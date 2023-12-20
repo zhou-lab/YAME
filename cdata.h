@@ -42,7 +42,8 @@ typedef struct cdata_t {
 static inline uint64_t cdata_nbytes(cdata_t *c) {
   uint64_t n = 0;
   switch(c->fmt) {
-  case '0': n = (c->n>>3)+1; break;
+  case '0': n = ((c->n+7)>>3); break;
+  case '6': n = ((c->n+3)>>2); break;
   default: n = c->n;
   }
   return n;
