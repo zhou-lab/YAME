@@ -21,10 +21,10 @@ cdata_t* fmt6_read_raw(char *fname, int verbose) {
   while (gzFile_read_line(fh, &line) > 0) {
     line_get_fields(line, "\t", &fields, &nfields);
     if (nfields < 2) wzfatal("Number of fields < 2. Abort.");
-    if (!is_int(fields[0]) || !is_int(fields[1])) wzfatal("First two columns must be integers.");
+    if (!is_int(fields[1])) wzfatal("The 2nd column must be integers.");
     s = realloc(s, n/4 + 1);
     // Binarize fields[0] to the first bit and fields[1] to the second bit
-    s[n/4] |= (atoi(fields[0]) & 1) << (2*(n%4));
+    s[n/4] |= (fields[0][0] != '0') << (2*(n%4));
     s[n/4] |= (atoi(fields[1]) & 1) << (2*(n%4) + 1);
     n++;
     free_fields(fields, nfields);
