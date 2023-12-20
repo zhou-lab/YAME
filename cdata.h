@@ -59,11 +59,6 @@ static inline void free_cdata(cdata_t *c) {
   c->s = NULL;
 }
 
-static inline void bit_mask(uint8_t *s, uint8_t *mask, size_t n) {
-  size_t i;
-  for (i=0; i<(n>>3)+1; ++i) s[i] &= mask[i];
-}
-
 static inline size_t bit_count(cdata_t c) {
 
   /* create a look-up table */
@@ -97,6 +92,7 @@ static inline uint64_t cdata_n(cdata_t *c) {
 
 void fmt0_decompress(cdata_t *c, cdata_t *inflated);
 void convertToFmt0(cdata_t *c);
+#define FMT0_IN_SET(c, i) ((c).s[i>>3] & (1<<(i&0x7)))
 
 void fmt1_compress(cdata_t *c);
 void fmt1_decompress(cdata_t *c, cdata_t *inflated);
@@ -130,6 +126,8 @@ void fmt5_decompress(cdata_t *c, cdata_t *inflated);
 
 void fmt6_compress(cdata_t *c);
 void fmt6_decompress(cdata_t *c, cdata_t *inflated);
+#define FMT6_IN_SET(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2)))
+#define FMT6_IN_UNI(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2+1)))
 
 int fmt7_next_bed(cdata_t *c);
 uint64_t fmt7_data_length(cdata_t *c);

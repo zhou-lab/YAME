@@ -86,10 +86,11 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
     break;
   }
   case '6': {
-    uint64_t *s = (uint64_t*) c->s;
-    fprintf(stdout, "%"PRIu64"\t%"PRIu64,
-            ((s[i/4]>>(2*(i%4)))&1),
-            ((s[i/4]>>(2*(i%4)+1))&1));
+    if ((c->s[i/4]>>(2*(i%4)+1))&1) {
+      fprintf(stdout, "%u\t1", ((c->s[i/4]>>(2*(i%4)))&1));
+    } else {
+      fputs("NA\t0", stdout);
+    }
     break;
   }
   case '7': {
