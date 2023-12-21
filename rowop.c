@@ -5,19 +5,28 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out.cx>\n");
-  fprintf(stderr, "\n");
+  fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out>\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -o        operations: {binasum}\n");
-  fprintf(stderr, "                  binasum: sum binary data to M and U (format 3).\n");
-  fprintf(stderr, "                  musum: sum M and U separately (format 3).\n");
-  fprintf(stderr, "                  mean: mean beta and counts of data points (format 3).\n");
-  fprintf(stderr, "                  std: standard deviation (format 3).\n");
-  fprintf(stderr, "                  binstring: binarize data to a row-wise string (format 3).\n");
-  fprintf(stderr, "    -c        minimum sequencing depth for rowops (default 1).\n");
-  fprintf(stderr, "    -h        This help\n");
-  fprintf(stderr, "\n");
+  fprintf(stderr, "    -o        Operations (choose one):\n");
+  fprintf(stderr, "              binasum     Sum binary data to M and U (format 3).\n");
+  fprintf(stderr, "                          Output: new cx file.\n");
+  fprintf(stderr, "              musum       Sum M and U separately (format 3).\n");
+  fprintf(stderr, "                          Output: new cx file.\n");
+  fprintf(stderr, "              mean        Mean beta and counts of data points (format 3).\n");
+  fprintf(stderr, "                          Output: plain text (two columns).\n");
+  fprintf(stderr, "              std         Standard deviation. Requires format 3 cx.\n");
+  fprintf(stderr, "                          Output: plain text (std, counts).\n");
+  fprintf(stderr, "              binstring   Binarize data to row-wise string (format 3).\n");
+  fprintf(stderr, "                          Output: plain text file with binary strings.\n");
+  fprintf(stderr, "              cometh      Co-methylation of neighboring CGs.\n");
+  fprintf(stderr, "                          Output: plain text in format U0U1-U0M1-M0U1-M0M1,\n");
+  fprintf(stderr, "                          U0U2-U0M2-M0U2-M0M2, etc. '0' is target CG,\n");
+  fprintf(stderr, "                          followed by 1, 2, etc for neighboring CGs.\n");
+  fprintf(stderr, "                          Intermediate methylations (0.3-0.7) are excluded.\n");
+  fprintf(stderr, "    -w        Number of neighboring CGs for cometh (default: 5).\n");
+  fprintf(stderr, "    -c        Minimum sequencing depth for rowops (default 1).\n");
+  fprintf(stderr, "    -v        Verbose mode\n");
+  fprintf(stderr, "    -h        Display this help message\n\n");
 
   return 1;
 }
@@ -307,16 +316,65 @@ static void rowop_binstring(cfile_t cf, char *fname_out) {
   if (fname_out) fclose(out);
 }
 
+void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_window) {
+
+  uint64_t *cnts = NULL; uint64_t ncnts = 0;
+  for (uint64_t k=0; ;++k) {
+    cdata_t c0 = read_cdata1(&cf);
+    if (c0.n == 0) break;
+    cdata_t c = {0};
+    decompress(&c0, &c);
+    if (!k) {                   /* first data, initialize */
+      cnts = calloc(c.n*cometh_window, sizeof(uint64_t));
+      ncnts = c.n;
+    }
+    assert(c.fmt == '3');
+    for (uint64_t i=0; i<ncnts-cometh_window; ++i) {
+      for (uint64_t j=i+1; j<=min(ncnts-1, i+cometh_window); ++j) {
+        uint64_t mu = f3_get_mu(&c, i);
+        uint64_t M = mu>>32; uint64_t U = (mu<<32>>32);
+        uint64_t mu1 = f3_get_mu(&c, j);
+        uint64_t M1 = mu1>>32; uint64_t U1 = (mu1<<32>>32);
+        if (M+U >= mincov && M1+U1 >= mincov) {
+          // also skip intermediate values too close to 0.5
+          double b = M/(M+U); double b1 = M1/(M1+U1);
+          if (fabs(b - 0.5) >= 0.2 || fabs(b1 - 0.5) >= 0.2) {
+            int shift = (M<U?2:0) + (M1<U1?1:0);
+            cnts[i*cometh_window+(j-i-1)] += (1ul<<(shift*16));
+          }
+        }
+      }
+    }
+    free(c0.s); free(c.s);
+  }
+
+  FILE *out;
+  if (fname_out) out = fopen(fname_out, "w");
+  else out = stdout;
+  for (uint64_t i=0; i<ncnts; ++i) {
+    for (uint64_t j=0; j<(unsigned) cometh_window; ++j) {
+      uint64_t data = cnts[i*cometh_window+j];
+      if (j) fputc('\t', out);
+      fprintf(out, "%"PRIu64"-%"PRIu64"-%"PRIu64"-%"PRIu64,
+              data>>(16*3), data<<(16)>>(16*3), data<<(16*2)>>(16*3), data<<(16*3)>>(16*3));
+    }
+    fputc('\n', out);
+  }
+  if (ncnts) free(cnts);
+  if (fname_out) fclose(out);
+}
+
 int main_rowop(int argc, char *argv[]) {
 
   int c, verbose = 0;
   unsigned mincov = 1;
-  char *op = NULL;
+  char *op = NULL; int cometh_window = 5;
   while ((c = getopt(argc, argv, "vo:c:h"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
     case 'o': op = strdup(optarg); break;
     case 'c': mincov = atoi(optarg); break;
+    case 'w': cometh_window = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -348,6 +406,8 @@ int main_rowop(int argc, char *argv[]) {
     free(cout.s);
   } else if (strcmp(op, "binstring") == 0) {
     rowop_binstring(cf, fname_out);
+  } else if (strcmp(op, "cometh") == 0) {
+    rowop_cometh(cf, fname_out, mincov, cometh_window);
   } else {
     fprintf(stderr, "[%s:%d] Unsupported operation: %s\n", __func__, __LINE__, op);
     fflush(stderr);
@@ -355,6 +415,7 @@ int main_rowop(int argc, char *argv[]) {
   }
   bgzf_close(cf.fh);
   if (fname_out) free(fname_out);
+  free(op);
   
   return 0;
 }

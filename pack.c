@@ -5,34 +5,36 @@
 #include "cfile.h"
 
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
-  fprintf(stderr, "Please only supply one of -b, -s, -m, -n, -r, -f.\n");
-  fprintf(stderr, "The input text file must have the same dimension and order as your reference CpG bed file.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -f [char] Format spec takes the following option:\n\n");
-  fprintf(stderr, "              -- (b) Binary data (format to 0 or 1 depending on size).\n");
-  fprintf(stderr, "              (0) 1 byte for 8 binary cpgs\n"); 
-  fprintf(stderr, "              (1) value (1 byte) + runlen (2 bytes). Input is one ASCII\n\n");
-  fprintf(stderr, "              -- (s) State data (format to 2).\n");
-  fprintf(stderr, "              (2) state text + index RLE. Best for chromatin states. Use format 0 for sequence context.\n\n");
-  fprintf(stderr, "              -- (m) Sequencing MU data (format to 3).\n\n");
-  fprintf(stderr, "              (3) MU RLE + ladder byte. The input is a 2-column text file with M and U being the two integer columns.\n\n");
-  fprintf(stderr, "              -- (d) Differential meth data, format to 6.\n");
-  fprintf(stderr, "              (5) 2-bits + NA-RLE. Input has only 0, 1, 2.\n");
-  fprintf(stderr, "              (6) 2-bits boolean for S (set) and U (universe). The input is a 2-column text file with two integer columns S and U.\n\n");
-  fprintf(stderr, "              -- (n) Fraction data (format to 4).\n");
-  fprintf(stderr, "              (4) fraction / NA-RLE (32 bytes)\n\n");
-  fprintf(stderr, "              -- (r) Reference coordinates (format to 7). \n");
-  fprintf(stderr, "              (7) compressed BED format for CGs\n\n");
-  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number is more memory\n");
-  fprintf(stderr, "              efficient but could be lossier. Can only be 1-8.\n");
-  fprintf(stderr, "              0 means this will be inferred from data.\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -h        This help\n");
-  fprintf(stderr, "\n");
-  return 1;
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
+    fprintf(stderr, "The input text file must match the dimension and order of the reference CpG bed file.\n\n");
+
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "    -f [char] Format specification (choose one character or number):\n");
+    fprintf(stderr, "              (b) Binary data. Format default to 0 or 1 depending on size:\n");
+    fprintf(stderr, "                  0 - 1 byte for 8 binary CpGs\n");
+    fprintf(stderr, "                  1 - Value (1 byte) + Run-Length Encoding (RLE) (2 bytes)\n");
+    fprintf(stderr, "              (s) State data. Format default to 2:\n");
+    fprintf(stderr, "                  2 - State text + Index RLE (Best for chromatin states).\n");
+    fprintf(stderr, "                      Use format 0 for sequence context.\n");
+    fprintf(stderr, "              (m) Sequencing MU data. Format default to 3:\n");
+    fprintf(stderr, "                  3 - MU RLE + Ladder byte (Input: 2-column text, M and U).\n");
+    fprintf(stderr, "              (d) Differential meth data. Format default to 6:\n");
+    fprintf(stderr, "                  5 - 2-bits + NA-RLE (Input: only 0, 1, 2 values).\n");
+    fprintf(stderr, "                  6 - 2-bits boolean for S (set) and U (universe).\n");
+    fprintf(stderr, "                      (Input: 2-column text, S and U).\n");
+    fprintf(stderr, "              (n) Fraction data. Format default to 4:\n");
+    fprintf(stderr, "                  4 - Fraction / NA-RLE (32 bytes).\n");
+    fprintf(stderr, "              (r) Reference coordinates. Format default to 7:\n");
+    fprintf(stderr, "                  7 - Compressed BED format for CGs.\n");
+
+    fprintf(stderr, "    -u [int]  Number of bytes per unit data when inflated (1-8).\n");
+    fprintf(stderr, "              Lower values are more memory efficient but may be lossier.\n");
+    fprintf(stderr, "              0 - Inferred from data.\n");
+    fprintf(stderr, "    -v        Verbose mode\n");
+    fprintf(stderr, "    -h        Display this help message\n\n");
+
+    return 1;
 }
 
 cdata_t *fmt0_read_raw(char *fname, int verbose);
