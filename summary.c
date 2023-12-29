@@ -29,10 +29,8 @@ static int usage() {
   return 1;
 }
 
-#define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
-
 typedef struct stats_t {
-  double mean_beta;
+  uint64_t sum_depth;           // sum of depth
   double sum_beta;
   uint64_t n_u;                 // universe
   uint64_t n_q;                 // query
@@ -86,7 +84,6 @@ static stats_t* summarize1_queryfmt0(
     free(tmp.s);
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
-    st[0].mean_beta = -1;
 
   } else if (c_mask->fmt == '2') { // state mask
 
@@ -116,8 +113,6 @@ static stats_t* summarize1_queryfmt0(
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
       st[k].n_u = c->n;
-      st[k].sum_beta = -1;
-      st[k].mean_beta = -1;
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
@@ -153,8 +148,6 @@ static stats_t* summarize1_queryfmt2(
       st[k].n_q = cnts[k];
       st[k].n_m = 0;
       st[k].n_o = 0;
-      st[k].mean_beta = -1;
-      st[k].sum_beta = -1;
       st[k].sm = strdup(sm);
       if (config->section_name) {
         kstring_t tmp = {0};
@@ -187,8 +180,6 @@ static stats_t* summarize1_queryfmt2(
       st[k].n_q = cnts_q[k];
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
-      st[k].mean_beta = -1;
-      st[k].sum_beta = -1;
       st[k].sm = strdup(sm);
       kstring_t tmp = {0};
       ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
@@ -228,7 +219,6 @@ static stats_t* summarize1_queryfmt2(
         st1->n_u = c->n;
         st1->n_q = nq[iq];
         st1->n_m = nm[im];
-        st1->mean_beta = -1;
         if (config->section_name) {
           kstring_t tmp = {0};
           ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
@@ -266,12 +256,12 @@ static stats_t* summarize1_queryfmt3(
     st[0].n_u = c->n;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
+      st[0].sum_depth += MU2cov(mu);
       if (mu) {
         st[0].sum_beta += MU2beta(mu);
         st[0].n_o++;
         st[0].n_q++;
       }}
-    st[0].mean_beta = (double) st[0].sum_beta / st[0].n_o;
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
     
@@ -287,6 +277,7 @@ static stats_t* summarize1_queryfmt3(
     }
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
+      st[0].sum_depth += MU2cov(mu);
       if (mu) st[0].n_q++;
       if (FMT0_IN_SET(*c_mask, i)) {
         st[0].n_m++;
@@ -294,7 +285,6 @@ static stats_t* summarize1_queryfmt3(
           st[0].sum_beta += MU2beta(mu);
           st[0].n_o++;
         }}}
-    st[0].mean_beta = (double) st[0].sum_beta / st[0].n_o;
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
     
@@ -318,6 +308,7 @@ static stats_t* summarize1_queryfmt3(
         fflush(stderr);
         exit(1);
       }
+      st[index].sum_depth += MU2cov(mu);
       if (mu) {
         st[index].sum_beta += MU2beta(mu);
         st[index].n_o++;
@@ -328,7 +319,6 @@ static stats_t* summarize1_queryfmt3(
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
       st[k].n_u = c->n;
-      st[k].mean_beta = st[k].sum_beta / st[k].n_o;
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
@@ -388,7 +378,6 @@ static stats_t* summarize1_queryfmt6(
     }
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
-    st[0].mean_beta = -1;
 
   } else if (c_mask->fmt == '2') { // state mask
 
@@ -421,8 +410,6 @@ static stats_t* summarize1_queryfmt6(
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
       st[k].n_u = nu;
-      st[k].sum_beta = -1;
-      st[k].mean_beta = -1;
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
@@ -479,12 +466,17 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
       fmask = "NA";
     }
     fprintf(stdout,
-            "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s\t",
+            "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s",
             fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
-    if (s.mean_beta < 0) {
-      fputs("NA", stdout);
+    if (s.sum_beta) {
+      fprintf(stdout, "\t%1.3f", s.sum_beta / s.n_o);
     } else {
-      fprintf(stdout, "%1.3f", s.mean_beta);
+      fputs("\tNA", stdout);
+    }
+    if (s.sum_depth) {
+      fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_u);
+    } else {
+      fputs("\tNA", stdout);
     }
     fputc('\n', stdout);
     free(odds_ratio);
@@ -543,7 +535,7 @@ int main_summary(int argc, char *argv[]) {
   }
 
   if (!config.no_header) {
-    fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\n", stdout);
+    fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\tDepth\n", stdout);
   }
 
   cdata_t *c_masks = NULL; uint64_t c_masks_n = 0;

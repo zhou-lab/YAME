@@ -117,6 +117,8 @@ void fmt3_compress(cdata_t *c);
 void fmt3_decompress(cdata_t *c, cdata_t *inflated);
 void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
 uint64_t f3_get_mu(cdata_t *c, uint64_t i);
+#define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
+#define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 
 void fmt4_compress(cdata_t *c);
 void fmt4_decompress(cdata_t *c, cdata_t *inflated);

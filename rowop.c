@@ -19,9 +19,10 @@ static int usage() {
   fprintf(stderr, "              binstring   Binarize data to row-wise string (format 3).\n");
   fprintf(stderr, "                          Output: plain text file with binary strings.\n");
   fprintf(stderr, "              cometh      Co-methylation of neighboring CGs.\n");
-  fprintf(stderr, "                          Output: plain text in format U0U1-U0M1-M0U1-M0M1,\n");
+  fprintf(stderr, "                          Output: plain text in uint64_t U0U1-U0M1-M0U1-M0M1,\n");
   fprintf(stderr, "                          U0U2-U0M2-M0U2-M0M2, etc. '0' is target CG,\n");
   fprintf(stderr, "                          followed by 1, 2, etc for neighboring CGs.\n");
+  fprintf(stderr, "                          Each pair occupies 16 bits. For visual, use -v.\n");
   fprintf(stderr, "                          Intermediate methylations (0.3-0.7) are excluded.\n");
   fprintf(stderr, "    -w        Number of neighboring CGs for cometh (default: 5).\n");
   fprintf(stderr, "    -c        Minimum sequencing depth for rowops (default 1).\n");
@@ -316,7 +317,7 @@ static void rowop_binstring(cfile_t cf, char *fname_out) {
   if (fname_out) fclose(out);
 }
 
-void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_window) {
+void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_window, int verbose) {
 
   uint64_t *cnts = NULL; uint64_t ncnts = 0;
   for (uint64_t k=0; ;++k) {
@@ -352,11 +353,16 @@ void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_windo
   if (fname_out) out = fopen(fname_out, "w");
   else out = stdout;
   for (uint64_t i=0; i<ncnts; ++i) {
+    fprintf(out, "%"PRIu64, i+1);
     for (uint64_t j=0; j<(unsigned) cometh_window; ++j) {
       uint64_t data = cnts[i*cometh_window+j];
-      if (j) fputc('\t', out);
-      fprintf(out, "%"PRIu64"-%"PRIu64"-%"PRIu64"-%"PRIu64,
-              data>>(16*3), data<<(16)>>(16*3), data<<(16*2)>>(16*3), data<<(16*3)>>(16*3));
+      fputc('\t', out);
+      if (verbose) {
+        fprintf(out, "%"PRIu64"-%"PRIu64"-%"PRIu64"-%"PRIu64,
+                data>>(16*3), data<<(16)>>(16*3), data<<(16*2)>>(16*3), data<<(16*3)>>(16*3));
+      } else {
+        fprintf(out, "%"PRIu64, data);
+      }
     }
     fputc('\n', out);
   }
@@ -369,7 +375,7 @@ int main_rowop(int argc, char *argv[]) {
   int c, verbose = 0;
   unsigned mincov = 1;
   char *op = NULL; int cometh_window = 5;
-  while ((c = getopt(argc, argv, "vo:c:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:c:w:h"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
     case 'o': op = strdup(optarg); break;
@@ -407,7 +413,7 @@ int main_rowop(int argc, char *argv[]) {
   } else if (strcmp(op, "binstring") == 0) {
     rowop_binstring(cf, fname_out);
   } else if (strcmp(op, "cometh") == 0) {
-    rowop_cometh(cf, fname_out, mincov, cometh_window);
+    rowop_cometh(cf, fname_out, mincov, cometh_window, verbose);
   } else {
     fprintf(stderr, "[%s:%d] Unsupported operation: %s\n", __func__, __LINE__, op);
     fflush(stderr);
