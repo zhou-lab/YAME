@@ -474,7 +474,11 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
       fputs("\tNA", stdout);
     }
     if (s.sum_depth) {
-      fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_u);
+      if (s.n_m) {
+        fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_m);
+      } else {
+        fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_u);
+      }
     } else {
       fputs("\tNA", stdout);
     }
@@ -522,33 +526,29 @@ int main_summary(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  cfile_t cf_mask; int unseekable = 0; cdata_t c_mask = {0};
+  cfile_t cf_mask; int unseekable = 0;
   snames_t snames_mask = {0};
+  cdata_t *c_masks = NULL; uint64_t c_masks_n = 0;
   if (config.fname_mask) {
     cf_mask = open_cfile(config.fname_mask);
     unseekable = bgzf_seek(cf_mask.fh, 0, SEEK_SET);
-    if (unseekable) {             /* only the first c */
-      c_mask = read_cdata1(&cf_mask);
-      prepare_mask(&c_mask);
-    }
     snames_mask = loadSampleNamesFromIndex(config.fname_mask);
   }
-
-  if (!config.no_header) {
-    fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\tDepth\n", stdout);
-  }
-
-  cdata_t *c_masks = NULL; uint64_t c_masks_n = 0;
-  if (config.in_memory) {              /* load in-memory masks */
+  
+  if (config.in_memory || unseekable) { /* load in-memory masks */
     c_masks = calloc(1, sizeof(cdata_t));
     c_masks_n = 0;
     for (;;++c_masks_n) {
-      c_mask = read_cdata1(&cf_mask);
+      cdata_t c_mask = read_cdata1(&cf_mask);
       if (c_mask.n == 0) break;
       prepare_mask(&c_mask);
       c_masks = realloc(c_masks, (c_masks_n+1)*sizeof(cdata_t));
       c_masks[c_masks_n] = c_mask;
     }
+  }
+  
+  if (!config.no_header) {
+    fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\tDepth\n", stdout);
   }
 
   for (int j = optind; j < argc; ++j) {
@@ -578,11 +578,11 @@ int main_summary(int argc, char *argv[]) {
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
       prepare_mask(&c_qry);
-      
-      if (config.fname_mask) {           /* apply any mask? */
-        if (config.in_memory || unseekable) { /* in memory mask if unseekable */
+
+      if (config.fname_mask) {   /* apply any mask? */
+        if (c_masks_n) {        /* in memory or unseekable */
           for (uint64_t km=0;km<c_masks_n;++km) {
-            c_mask = c_masks[km];
+            cdata_t c_mask = c_masks[km];
             kstring_t sm = {0};
             if (snames_mask.n) kputs(snames_mask.s[km], &sm);
             else ksprintf(&sm, "%"PRIu64"", km+1);
@@ -591,14 +591,14 @@ int main_summary(int argc, char *argv[]) {
             format_stats_and_clean(st, n_st, fname_qry, &config);
             free(sm.s);
           }
-        } else {                  /* mask is seekable */
+        } else {                /* mask is seekable */
           if (bgzf_seek(cf_mask.fh, 0, SEEK_SET)!=0) {
             fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
             fflush(stderr);
             exit(1);
           }
           for (uint64_t km=0;;++km) {
-            c_mask = read_cdata1(&cf_mask);
+            cdata_t c_mask = read_cdata1(&cf_mask);
             if (c_mask.n == 0) break;
             prepare_mask(&c_mask);
 
@@ -612,8 +612,8 @@ int main_summary(int argc, char *argv[]) {
             free_cdata(&c_mask);
           }
         }
-      } else {                    /* whole dataset summary if missing mask */
-        kstring_t sm = {0};
+      } else {                  /* whole dataset summary if missing mask */
+        kstring_t sm = {0}; cdata_t c_mask = {0};
         kputs("global", &sm);
         uint64_t n_st = 0;
         stats_t *st = summarize1(&c_qry, &c_mask, &n_st, sm.s, sq.s, &config);
@@ -623,10 +623,10 @@ int main_summary(int argc, char *argv[]) {
       free(sq.s);
       free_cdata(&c_qry); c_qry.s = NULL;
     }
-    if (config.in_memory) {
+    if (c_masks_n) {
       for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
       free(c_masks);
-    } else if (c_mask.s) free_cdata(&c_mask);
+    }
     bgzf_close(cf_qry.fh);
     cleanSampleNames2(snames_qry);
   }

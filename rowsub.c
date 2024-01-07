@@ -285,14 +285,13 @@ int main_rowsub(int argc, char *argv[]) {
     if (!row_indices && fname_rnindex) {
       row_indices = load_row_indices_by_names(fname_rnindex, &cr, &n_indices);
     }
-    
-    cdata_t cr2;
-    if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices);
-    else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask);
-    else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end);
-    cdata_write1(fp_out, &cr2);
+    /* cdata_t cr2; */
+    /* if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices); */
+    /* else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask); */
+    /* else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end); */
+    /* cdata_write1(fp_out, &cr2); */
+    /* free_cdata(&cr2); */
     free_cdata(&cr);
-    free_cdata(&cr2);
     bgzf_close(cf_row.fh);
   }
   

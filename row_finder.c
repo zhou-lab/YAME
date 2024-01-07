@@ -68,7 +68,7 @@ uint64_t row_finder_search(char *chrm, uint64_t beg1, row_finder_t *fdr, cdata_t
     } else if (rdr.value > beg1) {
       return 0;
     }
-  } while (row_reader_next_loc(&rdr, cr) && cr->s[rdr.loc] != 0xff);
+  } while (cr->s[rdr.loc] != 0xff && row_reader_next_loc(&rdr, cr));
   return 0;
 }
 
