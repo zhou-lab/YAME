@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <string.h>
 #include "cfile.h"
 
 typedef struct config_t {
@@ -14,18 +15,18 @@ static int usage(config_t *config) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: yame rowsub [options] <in.cx>\n");
   fprintf(stderr, "This function outputs to stdout.\n");
+  fprintf(stderr, "The 0 in [beg0] below means 0-based. Similarly, [beg1], [end1], [index1], etc.\n");
+  fprintf(stderr, "The number in (), e.g., [blockIndex0]_(blockSize), is optional with a default.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -l [PATH] rows in 1-based indices. If given, other index formats are ignored.\n");
-  fprintf(stderr, "    -L [PATH] rows in the format of chrm_beg1. This option requires -R.\n");
-  fprintf(stderr, "    -R [PATH] co-subset row coordinates.\n");
-  fprintf(stderr, "              The subset row coordinate is appended in output as the first file.\n");
-  fprintf(stderr, "    -m [PATH] rows specified as a mask file (format 1 or 2).\n");
-  fprintf(stderr, "    -b        rows as a range (begin-end format): begin index, 0-base.\n");
-  fprintf(stderr, "    -e        rows as a range (begin-end format): end index 1-base.\n");
-  fprintf(stderr, "    -i        rows as a range (index-block-size format): index (0-base).\n");
-  fprintf(stderr, "    -s        rows as a range (index-block-size format): size (N=%"PRIu64").\n", config->isize);
+  fprintf(stderr, "    -l [PATH] rows in a plain text of [index1] on each row. index1: 1-based. No sorting requirement.\n");
+  fprintf(stderr, "    -L [PATH] rows in a plain text of [chrm]_[beg1] on each row. Requires -R. No sorting requirement.\n");
+  fprintf(stderr, "    -R [PATH] row coordinates to use. Required by -L.\n");
+  fprintf(stderr, "    -1        The row coordinate (from -R) will be added to output as the first dataset.\n");
+  fprintf(stderr, "    -m [PATH] rows in a mask file (format 1 or 2).\n");
+  fprintf(stderr, "    -B [STR]  a row index range [rowIndexBeg0]_(rowIndexEnd1). By default, rowIndexEnd1=rowIndexBeg0+1.\n");
+  fprintf(stderr, "    -I [STR]  a row index range [blockIndex0]_(blockSize). By default, blockSize=%"PRIu64".\n", config->isize);
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -219,27 +220,49 @@ int main_rowsub(int argc, char *argv[]) {
     .fname_rindex = NULL,
     .index = -1, .isize = 1000000, .beg = 0, .end = 1};
   int c; char *fname_row = NULL; char *fname_mask = NULL;
-  char *fname_rnindex = NULL;
-  while ((c = getopt(argc, argv, "R:m:l:L:b:e:i:s:vh"))>=0) {
+  char *fname_rnindex = NULL; int add_row_coordinates = 0;
+  char *B_option = NULL, *I_option = NULL;
+  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:vh"))>=0) {
     switch (c) {
+    case '1': add_row_coordinates = 1; break;
     case 'R': fname_row = strdup(optarg); break;
     case 'm': fname_mask = strdup(optarg); break;
     case 'l': config.fname_rindex = strdup(optarg); break;
     case 'L': fname_rnindex = strdup(optarg); break;
-    case 'b': config.beg = atoi(optarg); break;   /* assume 0-index */
-    case 'e': config.end = atoi(optarg)-1; break; /* convert to 0-index */
-    case 'i': config.index = atoi(optarg); break; /* 0-index */
-    case 's': config.isize = atoi(optarg); break;
+    case 'B': B_option = strdup(optarg); break;
+    case 'I': I_option = strdup(optarg); break;
     case 'h': return usage(&config); break;
     default: usage(&config); wzfatal("Unrecognized option: %c.\n", c);
     }
   }
 
-  if (config.index >= 0) {
-    config.beg = config.index*config.isize;
-    config.end = (config.index+1)*config.isize-1;
+  if (B_option) {               // [rowIndexBeg0]_(rowIndexEnd1)
+    char *token = strtok(B_option, "_");
+    if (token != NULL) {
+      config.beg = atoi(token);
+      token = strtok(NULL, "_");
+      if (token != NULL) {
+        config.end = atoi(token) - 1; // convert to 0-base
+      } else {
+        config.end = config.beg;
+      }
+    }
   }
 
+  if (I_option) {               // [blockIndex0]_(blockSize)
+    char *token = strtok(I_option, "_");
+    if (token != NULL) {
+      int64_t blockIndex0 = atoi(token);
+      int64_t blockSize = config.isize;
+      token = strtok(NULL, "_");
+      if (token != NULL) {
+        blockSize = atoi(token);
+      }
+      config.beg = blockIndex0 * blockSize;
+      config.end = (blockIndex0+1) * blockSize - 1;
+    }
+  }
+  
   if (optind + 1 > argc) {
     usage(&config); 
     wzfatal("Please supply input files.\n");
@@ -285,12 +308,14 @@ int main_rowsub(int argc, char *argv[]) {
     if (!row_indices && fname_rnindex) {
       row_indices = load_row_indices_by_names(fname_rnindex, &cr, &n_indices);
     }
-    /* cdata_t cr2; */
-    /* if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices); */
-    /* else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask); */
-    /* else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end); */
-    /* cdata_write1(fp_out, &cr2); */
-    /* free_cdata(&cr2); */
+    if (add_row_coordinates) {
+      cdata_t cr2;
+      if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices);
+      else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask);
+      else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end);
+      cdata_write1(fp_out, &cr2);
+      free_cdata(&cr2);
+    }
     free_cdata(&cr);
     bgzf_close(cf_row.fh);
   }

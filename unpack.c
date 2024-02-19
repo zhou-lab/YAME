@@ -16,7 +16,7 @@ static int usage() {
   fprintf(stderr, "    -R [PATH] Row coordinate .cr file name.\n");
   fprintf(stderr, "    -r        0: Row coordinate output in chrm-beg0-end1 (default, for cg).\n");
   fprintf(stderr, "              1: Row coordinate output in chrm-beg0-end0 (for allc).\n");
-  fprintf(stderr, "              other: Row coordinate output in chrm_beg1.\n");
+  fprintf(stderr, "              2 and other: Row coordinate output in chrm_beg1.\n");
   fprintf(stderr, "    -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line.\n");
   fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the\n");
   fprintf(stderr, "              total number of samples.\n");
