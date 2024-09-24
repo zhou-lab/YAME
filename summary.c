@@ -468,7 +468,7 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
     fprintf(stdout,
             "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s",
             fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
-    if (s.sum_beta) {
+    if (s.n_o) {
       fprintf(stdout, "\t%1.3f", s.sum_beta / s.n_o);
     } else {
       fputs("\tNA", stdout);
