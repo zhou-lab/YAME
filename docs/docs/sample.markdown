@@ -10,7 +10,7 @@ nav_order: 7
 `yame split` splitx the samples when provided with `-s` sample name list.
 
 For more help with `split`, run `yame split` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_split.markdown %}).
+[split help page]({% link docs/subcommands/YAME_split.markdown %}).
 
 `yame chunk` and `yame chunkchar` breakdown `.cx` file into smaller and more manageable parts.
 

@@ -92,7 +92,7 @@
   },"13": {
     "doc": "Methylation Data Downsampling",
     "title": "Downsampling of methylation sites",
-    "content": "Sometimes, we want to test computational methods across different sparisity levels, this can be achieved with yame dsample function. Below shows an example where we only want to keep 10,000 CG sites under a fixed seed. yame dsample -s 1 -N 10000 yourfile.cg &gt; output.cg . For more help with dsample, run yame dsample in the terminal or check out the pack help page. ",
+    "content": "Sometimes, we want to test computational methods across different sparisity levels, this can be achieved with yame dsample function. Below shows an example where we only want to keep 10,000 CG sites under a fixed seed. yame dsample -s 1 -N 10000 yourfile.cg &gt; output.cg . For more help with dsample, run yame dsample in the terminal or check out the dsample help page. ",
     "url": "/YAME/docs/dsample.html#downsampling-of-methylation-sites",
     
     "relUrl": "/docs/dsample.html#downsampling-of-methylation-sites"
@@ -211,7 +211,7 @@
   },"30": {
     "doc": "Methylation Data Storage",
     "title": "yame unpack",
-    "content": "yame unpack provides the decoding functionality from yame pack. Example usage: . yame unpack -a -f 1 yourfile.cg . This command will unpack the .cg files for all the samples it contains, and output the fraction of methylation/coverage with coverage &gt;= 1. For more help with unpack, run yame unpack in the terminal or check out the pack help page. ",
+    "content": "yame unpack provides the decoding functionality from yame pack. Example usage: . yame unpack -a -f 1 yourfile.cg . This command will unpack the .cg files for all the samples it contains, and output the fraction of methylation/coverage with coverage &gt;= 1. For more help with unpack, run yame unpack in the terminal or check out the unpack help page. ",
     "url": "/YAME/docs/pack_unpack.html#yame-unpack",
     
     "relUrl": "/docs/pack_unpack.html#yame-unpack"
@@ -225,7 +225,7 @@
   },"32": {
     "doc": "Methylation Data Row Operations",
     "title": "Row operations of the methylation sites",
-    "content": "yame rowop provides a fast and convenient way to perform some frequently used row operations such as obtaining the mean and standard deviation statistics from yame rowop -o mean and yame rowop -o std. The most common use of yame rowop might be taking the sum of binary data to merge the pseudobulks. For example, we have a single cell methylation .cg file, and we want to merge cluster #1 to obatin the cluster #1 pseudobulks, we can combine this with yame subset by . yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum &gt; single_cell_pseudobulk1.cg . yame rowop also allows . | Binarization of the .cg file with the output of binary strings using yame rowop -o binstring | Co-methylation patterns of neighboring CGs using yame rowop -o cometh. | . For more help with rowop, run yame rowop in the terminal or check out the pack help page. ",
+    "content": "yame rowop provides a fast and convenient way to perform some frequently used row operations such as obtaining the mean and standard deviation statistics from yame rowop -o mean and yame rowop -o std. The most common use of yame rowop might be taking the sum of binary data to merge the pseudobulks. For example, we have a single cell methylation .cg file, and we want to merge cluster #1 to obatin the cluster #1 pseudobulks, we can combine this with yame subset by . yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum &gt; single_cell_pseudobulk1.cg . yame rowop also allows . | Binarization of the .cg file with the output of binary strings using yame rowop -o binstring | Co-methylation patterns of neighboring CGs using yame rowop -o cometh. | . For more help with rowop, run yame rowop in the terminal or check out the rowop help page. ",
     "url": "/YAME/docs/rowop.html#row-operations-of-the-methylation-sites",
     
     "relUrl": "/docs/rowop.html#row-operations-of-the-methylation-sites"
@@ -239,7 +239,7 @@
   },"34": {
     "doc": "Methylation Data Sample Operations",
     "title": "Sample operations",
-    "content": "yame index generates the index file for the .cx input. This is helpful when .cx contains multiple samples. yame split splitx the samples when provided with -s sample name list. For more help with split, run yame split in the terminal or check out the pack help page. yame chunk and yame chunkchar breakdown .cx file into smaller and more manageable parts. For more help with chunk, run yame chunk in the terminal or check out the pack help page. ",
+    "content": "yame index generates the index file for the .cx input. This is helpful when .cx contains multiple samples. yame split splitx the samples when provided with -s sample name list. For more help with split, run yame split in the terminal or check out the pack help page. yame chunk and yame chunkchar breakdown .cx file into smaller and more manageable parts. For more help with chunk, run yame chunk in the terminal or check out the chunk help page. ",
     "url": "/YAME/docs/sample.html#sample-operations",
     
     "relUrl": "/docs/sample.html#sample-operations"
@@ -267,14 +267,14 @@
   },"38": {
     "doc": "Methylation Data Subset",
     "title": "Subset samples",
-    "content": "yame subset will subset the samples from the multi sample .cx file. We can store the samples we want to keep with a text file or simply providing them in the command line. Make sure the sample names provided is in the sample names of .cx file. yame subset -l sample.txt yourfile.cg . For more help with subset, run yame subset in the terminal or check out the pack help page. ",
+    "content": "yame subset will subset the samples from the multi sample .cx file. We can store the samples we want to keep with a text file or simply providing them in the command line. Make sure the sample names provided is in the sample names of .cx file. yame subset -l sample.txt yourfile.cg . For more help with subset, run yame subset in the terminal or check out the subset help page. ",
     "url": "/YAME/docs/subset.html#subset-samples",
     
     "relUrl": "/docs/subset.html#subset-samples"
   },"39": {
     "doc": "Methylation Data Subset",
     "title": "Subset cx sites",
-    "content": "If we want to obtain methylation sites from specific regions, we can use this yame rowsub function. If we have a list of CpG sites we want to subset, for example . chr16_18300002 chr16_18300046 chr16_18300140 chr16_18300162 chr16_18300172 . We can use -L with -R together (we provided two row coordiante .cr files mm10/hg38). yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cg &gt; subset.cg . For more help with rowsub, run yame rowsub in the terminal or check out the pack help page. ",
+    "content": "If we want to obtain methylation sites from specific regions, we can use this yame rowsub function. If we have a list of CpG sites we want to subset, for example . chr16_18300002 chr16_18300046 chr16_18300140 chr16_18300162 chr16_18300172 . We can use -L with -R together (we provided two row coordiante .cr files mm10/hg38). yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cg &gt; subset.cg . For more help with rowsub, run yame rowsub in the terminal or check out the rowsub help page. ",
     "url": "/YAME/docs/subset.html#subset-cx-sites",
     
     "relUrl": "/docs/subset.html#subset-cx-sites"
@@ -295,7 +295,7 @@
   },"42": {
     "doc": "Methylation Data Summarization",
     "title": "An example of yame summary with mask feature file",
-    "content": "For example, in single cell DNA methylome analysis, a typical approach is to merge the CG sites into a fixed window size bin because of high sparsity levels of the data. To do that, we can download the Win100k.20220228.cm file from KYCG_mm10, and then run the following . yame summary -m Win100k.20220228.cm single_cell.cg . The ouput will look something like this . QFile Query MFile Mask N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth single_cell.cg Sample1 Win100k.20220228.cm chr1:30 21867837 1861715 589 48 -0.07 0.688 0.1 single_cell.cg Sample1 Win100k.20220228.cm chr1:31 21867837 1861715 574 36 -0.48 0.917 0.1 . The output columns are: . | The file name of the query .cx | The sample name in the query.cx | The file name of the feature file | The name of each mask in the feature file | The number of CG sites covered in the universe | The number of CG sites covered in the query file | The number of CG sites covered in each mask | The number of CG sites covered both in the query file and the mask | Log2 of the odds ratio for the enrichment overlap | Average methylation levels of the query file in the mask | An approximation of the depth of coverage in the mask | . For a full guideline on how to test feature enrichment using yame summary, check out enrichment help. For more help with summary, run yame summary in the terminal or check out the pack help page. ",
+    "content": "For example, in single cell DNA methylome analysis, a typical approach is to merge the CG sites into a fixed window size bin because of high sparsity levels of the data. To do that, we can download the Win100k.20220228.cm file from KYCG_mm10, and then run the following . yame summary -m Win100k.20220228.cm single_cell.cg . The ouput will look something like this . QFile Query MFile Mask N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth single_cell.cg Sample1 Win100k.20220228.cm chr1:30 21867837 1861715 589 48 -0.07 0.688 0.1 single_cell.cg Sample1 Win100k.20220228.cm chr1:31 21867837 1861715 574 36 -0.48 0.917 0.1 . The output columns are: . | The file name of the query .cx | The sample name in the query.cx | The file name of the feature file | The name of each mask in the feature file | The number of CG sites covered in the universe | The number of CG sites covered in the query file | The number of CG sites covered in each mask | The number of CG sites covered both in the query file and the mask | Log2 of the odds ratio for the enrichment overlap | Average methylation levels of the query file in the mask | An approximation of the depth of coverage in the mask | . For a full guideline on how to test feature enrichment using yame summary, check out enrichment help. For more help with summary, run yame summary in the terminal or check out the summary help page. ",
     "url": "/YAME/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file",
     
     "relUrl": "/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file"
