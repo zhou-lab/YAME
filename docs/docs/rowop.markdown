@@ -18,4 +18,4 @@ yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum > singl
 2. Co-methylation patterns of neighboring CGs using `yame rowop -o  cometh`. 
 
 For more help with `rowop`, run `yame rowop` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_rowop.markdown %}).
+[rowop help page]({% link docs/subcommands/YAME_rowop.markdown %}).

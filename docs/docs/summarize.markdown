@@ -49,4 +49,4 @@ The output columns are:
 For a full guideline on how to test feature enrichment using yame summary, check out [enrichment help]({% link docs/enrichment.markdown %}).
 
 For more help with `summary`, run `yame summary` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_summary.markdown %}).
+[summary help page]({% link docs/subcommands/YAME_summary.markdown %}).

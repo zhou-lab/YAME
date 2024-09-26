@@ -15,5 +15,5 @@ For more help with `split`, run `yame split` in the terminal or check out the
 `yame chunk` and `yame chunkchar` breakdown `.cx` file into smaller and more manageable parts.
 
 For more help with `chunk`, run `yame chunk` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_split.markdown %}).
+[chunk help page]({% link docs/subcommands/YAME_split.markdown %}).
 

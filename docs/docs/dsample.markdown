@@ -14,4 +14,4 @@ yame dsample -s 1 -N 10000 yourfile.cg > output.cg
 ``` 
 
 For more help with `dsample`, run `yame dsample` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_dsample.markdown %}).
+[dsample help page]({% link docs/subcommands/YAME_dsample.markdown %}).

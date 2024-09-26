@@ -14,7 +14,7 @@ yame subset -l sample.txt yourfile.cg
 ```
 
 For more help with `subset`, run `yame subset` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_subset.markdown %}).
+[subset help page]({% link docs/subcommands/YAME_subset.markdown %}).
 
 ## Subset cx sites
 
@@ -35,4 +35,4 @@ yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cg > subset.cg
 ```
 
 For more help with `rowsub`, run `yame rowsub` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_rowsub.markdown %}).
+[rowsub help page]({% link docs/subcommands/YAME_rowsub.markdown %}).

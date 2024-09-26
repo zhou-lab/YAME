@@ -48,4 +48,4 @@ yame unpack -a -f 1 yourfile.cg
 This command will unpack the .cg files for all the samples it contains, and output the fraction of methylation/coverage with coverage >= 1.
 
 For more help with `unpack`, run `yame unpack` in the terminal or check out the
-[pack help page]({% link docs/subcommands/YAME_unpack.markdown %}).
+[unpack help page]({% link docs/subcommands/YAME_unpack.markdown %}).
