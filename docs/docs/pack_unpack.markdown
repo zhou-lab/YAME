@@ -58,7 +58,7 @@ yame unpack cpg_nocontig.cr | gzip > cpg_nocontig.bed.gz
 zcat hg38_genome_100_segments.bed.gz | sortbed | bedtools intersect -a cpg_nocontig.bed.gz -b - -loj -sorted | bedtools groupby -g 1-3 -c 7 -o first -i - | cut -f4 | yame pack -f s - ChromHMMfullStack.cm
 ```
 
-The output .cm feature file can be used to run enrichment and obtain aggregated methylation levels over different features, see [`enrichment`]({% link docs/enrichment.markdown %}). 
+The output .cm feature file can be used to run enrichment and obtain aggregated methylation levels over different features, see [`enrichment`]({% link docs/enrichment.markdown %}). For merging multiple .cm files, see [`yame index`]({% link docs/sample.markdown %}). 
 
 For more help with `pack`, run `yame pack` in the terminal or check out the
 [pack help page]({% link docs/subcommands/YAME_pack.markdown %}).
