@@ -41,6 +41,7 @@ NU = N_universe
 ```
 
 ## Enrichment testing with background
+
 Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). 
 
 ```bash
