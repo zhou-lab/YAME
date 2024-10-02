@@ -30,12 +30,16 @@ The source can be retrieved by:
 git clone https://github.com/zhou-lab/YAME.git
 cd YAME
 ```
-After retrieving the source code, building YAME proceeds as follows:
+After retrieving the source code, building YAME simply proceeds as follows:
 
 ```bash
-mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=../ ../
-make && make install
+make
+```
+
+If you want to run yame from anywhere without specifying the path, move it to a directory that is already in your PATH, such as ~/bin
+
+```bash
+mv ./yame ~/bin/yame
 ```
 
 ## Overview of Functionalities
