@@ -1,6 +1,6 @@
 ---
 title: Methylation Data Enrichment
-nav_order: 5
+nav_order: 1
 ---
 
 # Tutorial: Enrichment Testing with YAME
