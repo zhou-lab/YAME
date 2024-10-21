@@ -75,7 +75,7 @@ void convertToFmt0(cdata_t *c) {
       l = *((uint16_t*) (c->s+i*3+1));
       if (c->s[i*3] > '0') {
         for(size_t j=sum; j<sum+l; ++j) {
-          c_out.s[j>>3] |= (1<<(j&0x7));
+          FMT0_SET(c_out, j);
         }
       }
     }

@@ -3,6 +3,7 @@
 #include <string.h>
 #include "cdata.h"
 
+// from position index to term index
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
   if (!c->aux) fmt2_set_aux(c);
   f2_aux_t *aux = (f2_aux_t*) c->aux;

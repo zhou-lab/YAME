@@ -62,6 +62,7 @@ index_t* loadIndex(char* fname_index);
  * @return void
  */
 static inline void cleanIndex(index_t *idx) {
+  if (idx == NULL) return;
   khiter_t k;
   for (k = kh_begin(idx); k != kh_end(idx); ++k) {
     if (kh_exist(idx, k)) {

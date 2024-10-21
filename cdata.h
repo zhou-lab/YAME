@@ -35,7 +35,7 @@ typedef struct cdata_t {
   uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length */
   int compressed;
   char fmt;
-  uint8_t unit; // how many bytes is needed for each decompressed data unit
+  uint8_t unit; // how many bytes is needed for each decompressed data unit, use 0 for format 0,1,6
   void *aux;
 } cdata_t;
 
@@ -92,7 +92,8 @@ static inline uint64_t cdata_n(cdata_t *c) {
 
 void fmt0_decompress(cdata_t *c, cdata_t *inflated);
 void convertToFmt0(cdata_t *c);
-#define FMT0_IN_SET(c, i) ((c).s[i>>3] & (1<<(i&0x7)))
+#define FMT0_IN_SET(c, i) ((c).s[(i)>>3] & (1<<((i)&0x7)))
+#define FMT0_SET(c, i) (c.s[(i)>>3] |= (1<<((i)&0x7)))
 
 void fmt1_compress(cdata_t *c);
 void fmt1_decompress(cdata_t *c, cdata_t *inflated);
@@ -130,6 +131,8 @@ void fmt6_compress(cdata_t *c);
 void fmt6_decompress(cdata_t *c, cdata_t *inflated);
 #define FMT6_IN_SET(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2)))
 #define FMT6_IN_UNI(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2+1)))
+#define FMT6_SET0(c, i) ((c).s[i>>2] |= (2<<((i&0x3)*2)))
+#define FMT6_SET1(c, i) ((c).s[i>>2] |= (3<<((i&0x3)*2)))
 
 int fmt7_next_bed(cdata_t *c);
 uint64_t fmt7_data_length(cdata_t *c);

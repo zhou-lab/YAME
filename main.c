@@ -64,7 +64,7 @@ static int usage()
   fprintf(stderr, "Available commands:\n");
   fprintf(stderr, "     pack         - Pack data into a cx file.\n");
   fprintf(stderr, "     unpack       - Unpack data from a cx file.\n");
-  fprintf(stderr, "     subset       - Subset samples from a cx file.\n");
+  fprintf(stderr, "     subset       - Subset samples or terms from a cx file.\n");
   fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
   fprintf(stderr, "     info         - Display basic parameter of the cx file.\n");
   fprintf(stderr, "     summary      - calculate summary, with or without masks.\n");
