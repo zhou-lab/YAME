@@ -2,8 +2,9 @@
 
 static int usage() {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pairwise [options] <MU1.cx> <MU2.cx>\n");
-  fprintf(stderr, "Return a format 6 set that represent differential methylation between sample 1 and 2.\n");
+  fprintf(stderr, "Usage: yame pairwise [options] <MU1.cx> (<MU2.cx>)\n");
+  fprintf(stderr, "Return a format 6 set that represent differential methylation between MU1 and MU2.\n");
+  fprintf(stderr, "If MU2 is not given, use the top 2 samples in MU1.cx.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
@@ -32,21 +33,27 @@ int main_pairwise(int argc, char *argv[]) {
   }
   if (min_coverage < 1) min_coverage = 1;
 
-  if (optind + 2 > argc) { 
+  if (optind + 1 > argc) { 
     usage(); 
     wzfatal("Please supply input file.\n");
   }
 
   cfile_t cf1 = open_cfile(argv[optind++]);
-  cfile_t cf2 = open_cfile(argv[optind++]);
-
   cdata_t c1 = read_cdata1(&cf1);
-  cdata_t c2 = read_cdata1(&cf2);
+  cdata_t c2 = {0};
+  if (optind >= argc) {
+    c2 = read_cdata1(&cf1);
+  } else {
+    cfile_t cf2 = open_cfile(argv[optind++]);
+    c2 = read_cdata1(&cf2);
+    bgzf_close(cf2.fh);
+  }
+  bgzf_close(cf1.fh);
 
   decompress2(&c1);
   decompress2(&c2);
 
-  if (c1.n != c2.n) wzfatal("Two inputs don't have the same dimension: %"PRIu64" vs %"PRIu64"\n", c1.n, c2.n);
+  if (c1.n != c2.n) wzfatal("Two inputs have different dimensions: %"PRIu64" vs %"PRIu64"\n", c1.n, c2.n);
 
   cdata_t c_out = {.fmt = '6', .n = c1.n };
   c_out.s = calloc((c_out.n+3)/4, sizeof(uint8_t));
@@ -69,8 +76,6 @@ int main_pairwise(int argc, char *argv[]) {
   }
   free_cdata(&c1);
   free_cdata(&c2);
-  bgzf_close(cf1.fh);
-  bgzf_close(cf2.fh);
   
   cdata_compress(&c_out);
   BGZF *fp_out;
