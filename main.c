@@ -43,6 +43,7 @@ int main_subset(int argc, char *argv[]);
 int main_rowsub(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
+int main_pairwise(int argc, char *argv[]);
 int main_info(int argc, char *argv[]);
 int main_summary(int argc, char *argv[]);
 int main_chunk(int argc, char *argv[]);
@@ -70,6 +71,7 @@ static int usage()
   fprintf(stderr, "     summary      - calculate summary, with or without masks.\n");
   fprintf(stderr, "     index        - Index samples in a cx file.\n");
   fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
+  fprintf(stderr, "     pairwise     - Pairwise differential methylation calling.\n");
   fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
   fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
   fprintf(stderr, "     rowop        - Perform operations on rows, e.g., sum binary values.\n");
@@ -88,6 +90,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "subset") == 0) ret = main_subset(argc-1, argv+1);
   else if (strcmp(argv[1], "rowsub") == 0) ret = main_rowsub(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
+  else if (strcmp(argv[1], "pairwise") == 0) ret = main_pairwise(argc-1, argv+1);
   else if (strcmp(argv[1], "info") == 0) ret = main_info(argc-1, argv+1);
   else if (strcmp(argv[1], "summary") == 0) ret = main_summary(argc-1, argv+1);
   else if (strcmp(argv[1], "index") == 0) ret = main_index(argc-1, argv+1);

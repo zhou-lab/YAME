@@ -14,6 +14,7 @@ void decompress(cdata_t *c, cdata_t *expanded) {
   /* shouldn't reach here */
 }
 
+/* decompress in situ */
 void decompress2(cdata_t *c) {
   cdata_t expanded = *c;
   expanded.s = NULL;

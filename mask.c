@@ -36,7 +36,7 @@ void mask_fmt0(cdata_t c, cdata_t c_mask, BGZF *fp_out) {
 }
 
 void fmt0ContextualizeFmt6(cdata_t c, cdata_t c_mask, BGZF *fp_out) {
-  cdata_t c6 = {.fmt = '6', .n = c.n, .unit = 0};
+  cdata_t c6 = {.fmt = '6', .n = c.n};
   c6.s = calloc((c6.n+3)/4, sizeof(uint8_t));
   for (uint64_t i=0; i<c6.n; ++i) {
     if (FMT0_IN_SET(c_mask,i)) { // mask is used as universe, use -v to invert
