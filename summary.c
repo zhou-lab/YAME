@@ -256,8 +256,8 @@ static stats_t* summarize1_queryfmt3(
     st[0].n_u = c->n;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
-      st[0].sum_depth += MU2cov(mu);
       if (mu) {
+        st[0].sum_depth += MU2cov(mu);
         st[0].sum_beta += MU2beta(mu);
         st[0].n_o++;
         st[0].n_q++;
@@ -277,11 +277,11 @@ static stats_t* summarize1_queryfmt3(
     }
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
-      st[0].sum_depth += MU2cov(mu);
       if (mu) st[0].n_q++;
       if (FMT0_IN_SET(*c_mask, i)) {
         st[0].n_m++;
         if (mu) {
+          st[0].sum_depth += MU2cov(mu);
           st[0].sum_beta += MU2beta(mu);
           st[0].n_o++;
         }}}
@@ -308,8 +308,8 @@ static stats_t* summarize1_queryfmt3(
         fflush(stderr);
         exit(1);
       }
-      st[index].sum_depth += MU2cov(mu);
       if (mu) {
+        st[index].sum_depth += MU2cov(mu);
         st[index].sum_beta += MU2beta(mu);
         st[index].n_o++;
         nq++;

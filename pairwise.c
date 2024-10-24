@@ -12,6 +12,7 @@ static int usage() {
   fprintf(stderr, "              2: higher meth level in sample 2 than 1.\n");
   fprintf(stderr, "              others: diff levels, i.e., 1 and 2 combined.\n");
   fprintf(stderr, "    -c        minimum coverage (default: 1)\n");
+  fprintf(stderr, "    -d        minimum delta meth level/effect size (default: 0)\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
 
@@ -20,12 +21,13 @@ static int usage() {
 
 int main_pairwise(int argc, char *argv[]) {
 
-  int c; int direc = 1;
+  int c; int direc = 1; double min_effect = -1.0;
   int64_t min_coverage = 1; char *fname_out = NULL;
-  while ((c = getopt(argc, argv, "o:c:H:h"))>=0) {
+  while ((c = getopt(argc, argv, "o:c:d:H:h"))>=0) {
     switch (c) {
     case 'o': fname_out = strdup(optarg); break;
     case 'c': min_coverage = atoi(optarg); break;
+    case 'd': min_effect = atof(optarg); break;
     case 'H': direc = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -33,7 +35,7 @@ int main_pairwise(int argc, char *argv[]) {
   }
   if (min_coverage < 1) min_coverage = 1;
 
-  if (optind + 1 > argc) { 
+  if (optind + 1 > argc) {
     usage(); 
     wzfatal("Please supply input file.\n");
   }
@@ -63,13 +65,18 @@ int main_pairwise(int argc, char *argv[]) {
     if (MU2cov(mu1) >= (uint64_t) min_coverage &&
         MU2cov(mu2) >= (uint64_t) min_coverage) {
       if (direc == 1) {
-        if (MU2beta(mu1) > MU2beta(mu2)) FMT6_SET1(c_out, i);
+        if (MU2beta(mu1) > MU2beta(mu2) &&
+            MU2beta(mu1) - MU2beta(mu2) > min_effect) FMT6_SET1(c_out, i);
         else FMT6_SET0(c_out, i);
       } else if (direc == 2) {
-        if (MU2beta(mu1) < MU2beta(mu2)) FMT6_SET1(c_out, i);
+        if (MU2beta(mu1) < MU2beta(mu2) &&
+            MU2beta(mu2) - MU2beta(mu1) > min_effect) FMT6_SET1(c_out, i);
         else FMT6_SET0(c_out, i);
       } else {
-        if (MU2beta(mu1) != MU2beta(mu2)) FMT6_SET1(c_out, i);
+        if ((min_effect <= 0 && MU2beta(mu1) != MU2beta(mu2)) ||
+            (min_effect > 0 &&
+             (MU2beta(mu1) - MU2beta(mu2) > min_effect ||
+              MU2beta(mu2) - MU2beta(mu1) > min_effect))) FMT6_SET1(c_out, i);
         else FMT6_SET0(c_out, i);
       }
     }

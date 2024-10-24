@@ -16,31 +16,30 @@ static int usage() {
   return 1;
 }
 
-void mask_fmt3(cdata_t c, cdata_t c_mask, BGZF *fp_out) {
-  decompress2(&c);
-  for (uint64_t i=0; i<c.n; ++i) {
+void mask_fmt3(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
+  for (uint64_t i=0; i<c->n; ++i) {
     if (FMT0_IN_SET(c_mask, i)) {
-      f3_set_mu(&c, i, 0, 0);
+      f3_set_mu(c, i, 0, 0);
     }
   }
-  cdata_compress(&c);
-  cdata_write1(fp_out, &c);
+  cdata_compress(c);
+  cdata_write1(fp_out, c);
 }
 
-void mask_fmt0(cdata_t c, cdata_t c_mask, BGZF *fp_out) {
-  for (uint64_t i=0; i<cdata_nbytes(&c); ++i) {
-    c.s[i] &= ~c_mask.s[i];
+void mask_fmt0(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
+  for (uint64_t i=0; i<cdata_nbytes(c); ++i) {
+    c->s[i] &= ~c_mask.s[i];
   }
   /* cdata_compress(&c); */
-  cdata_write1(fp_out, &c);
+  cdata_write1(fp_out, c);
 }
 
-void fmt0ContextualizeFmt6(cdata_t c, cdata_t c_mask, BGZF *fp_out) {
-  cdata_t c6 = {.fmt = '6', .n = c.n};
+void fmt0ContextualizeFmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
+  cdata_t c6 = {.fmt = '6', .n = c->n};
   c6.s = calloc((c6.n+3)/4, sizeof(uint8_t));
   for (uint64_t i=0; i<c6.n; ++i) {
     if (FMT0_IN_SET(c_mask,i)) { // mask is used as universe, use -v to invert
-      if (FMT0_IN_SET(c, i)) FMT6_SET1(c6, i);
+      if (FMT0_IN_SET(*c, i)) FMT6_SET1(c6, i);
       else FMT6_SET0(c6, i);
     }
   }
@@ -93,6 +92,7 @@ int main_mask(int argc, char *argv[]) {
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
+    decompress2(&c);
     if (c.n != c_mask.n) {
       fprintf(stderr, "[%s:%d] mask (n=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
       fflush(stderr);
@@ -101,12 +101,12 @@ int main_mask(int argc, char *argv[]) {
 
     if (c.fmt == '1') convertToFmt0(&c);
     if (c.fmt == '3') {
-      mask_fmt3(c, c_mask, fp_out);
+      mask_fmt3(&c, c_mask, fp_out);
     } else if (c.fmt == '0') {
       if (contextualize_to_fmt6) {
-        fmt0ContextualizeFmt6(c, c_mask, fp_out);
+        fmt0ContextualizeFmt6(&c, c_mask, fp_out);
       } else {
-        mask_fmt0(c, c_mask, fp_out);
+        mask_fmt0(&c, c_mask, fp_out);
       }
     } else {
       fprintf(stderr, "[%s:%d] Only format %d files are supported.\n", __func__, __LINE__, c.fmt);
