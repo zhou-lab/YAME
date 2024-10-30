@@ -13,6 +13,8 @@ nav_order: 3
 yame subset -l sample.txt yourfile.cg
 ```
 
+To extract one term of format 2 to format 0, you can use the `yame subset -s` function.
+
 For more help with `subset`, run `yame subset` in the terminal or check out the
 [subset help page]({% link docs/subcommands/YAME_subset.markdown %}).
 

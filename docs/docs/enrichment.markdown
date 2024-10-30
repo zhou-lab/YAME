@@ -40,9 +40,24 @@ NDQ = N_overlap
 NU = N_universe
 ```
 
-## Enrichment testing with background
+## built in differential calling function
 
-Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). 
+```bash
+yame pairwise -H 1 -c 10 <(yame subset sample1.cg sample1) <(yame subset sample2.cg sample2) -o output.cg
+```
+-H controls directionality and -c controls minimum coverage. 
+
+## Enrichment testing with background (new)
+
+Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. 
+
+```bash
+yame mask -c query.cg universe.cg | yame summary -m feature.cm - > yourfile.txt
+```
+
+## Enrichment testing with background (old)
+
+To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). 
 
 ```bash
 bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | cut -f4 > query_intersect.bed
