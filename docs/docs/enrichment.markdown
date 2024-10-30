@@ -40,7 +40,7 @@ NDQ = N_overlap
 NU = N_universe
 ```
 
-## built in differential calling function
+## Built in differential calling function
 
 ```bash
 yame pairwise -H 1 -c 10 <(yame subset sample1.cg sample1) <(yame subset sample2.cg sample2) -o output.cg
