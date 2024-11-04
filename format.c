@@ -61,7 +61,7 @@ void convertToFmt0(cdata_t *c) {
   cdata_t c_out = {0};
   switch (c->fmt) {
   case '0': return;
-  case '1': {
+  case '1': { // assume it's compressed.
     c_out.fmt = '0';
     c_out.compressed = 1;
     c_out.n=0;
