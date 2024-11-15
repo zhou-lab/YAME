@@ -1,0 +1,310 @@
+{"0": {
+    "doc": "yame chunk",
+    "title": "yame chunk",
+    "content": "Usage: yame chunk [options] &lt;in.cx&gt; &lt;outdir&gt; Options: -v verbose -s chunk size -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_chunk.html",
+    
+    "relUrl": "/docs/subcommands/YAME_chunk.html"
+  },"1": {
+    "doc": "yame chunkchar",
+    "title": "yame chunkchar",
+    "content": "Usage: yame chunkchar [options] &lt;in.txt&gt; Options: -v verbose -s chunk size -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_chunkchar.html",
+    
+    "relUrl": "/docs/subcommands/YAME_chunkchar.html"
+  },"2": {
+    "doc": "yame dsample",
+    "title": "yame dsample",
+    "content": "Usage: yame dsample [options] &lt;in.cx&gt; &lt;out.cx&gt; Options: -s [N] seed for sampling. -N [N] number of records to sample. (default: 100). When higher than available, capped to available. -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_dsample.html",
+    
+    "relUrl": "/docs/subcommands/YAME_dsample.html"
+  },"3": {
+    "doc": "yame index",
+    "title": "yame index",
+    "content": "Usage: yame index [options] &lt;in.cx&gt; The index file name default to &lt;in.cx&gt;.idx Options: -s [file path] tab-delimited sample name list (use first column) -1 [sample name] add one sample to the end of the index -c output index to console -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_index.html",
+    
+    "relUrl": "/docs/subcommands/YAME_index.html"
+  },"4": {
+    "doc": "yame info",
+    "title": "yame info",
+    "content": "Usage: yame info [options] &lt;in.cx&gt; Options: -1 Report one record per file. -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_info.html",
+    
+    "relUrl": "/docs/subcommands/YAME_info.html"
+  },"5": {
+    "doc": "yame mask",
+    "title": "yame mask",
+    "content": "Usage: yame mask [options] &lt;in.cg&gt; &lt;mask.cx&gt; Options: -v verbose -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_mask.html",
+    
+    "relUrl": "/docs/subcommands/YAME_mask.html"
+  },"6": {
+    "doc": "yame pack",
+    "title": "yame pack",
+    "content": "Usage: yame pack [options] &lt;in.txt&gt; &lt;out.cx&gt; The input text file must match the dimension and order of the reference CpG bed file. Options: -f [char] Format specification (choose one character or number): (b) Binary data. Format default to 0 or 1 depending on size: 0 - 1 byte for 8 binary CpGs 1 - Value (1 byte) + Run-Length Encoding (RLE) (2 bytes) (s) State data. Format default to 2: 2 - State text + Index RLE (Best for chromatin states). Use format 0 for sequence context. (m) Sequencing MU data. Format default to 3: 3 - MU RLE + Ladder byte (Input: 2-column text, M and U). (d) Differential meth data. Format default to 6: 5 - 2-bits + NA-RLE (Input: only 0, 1, 2 values). 6 - 2-bits boolean for S (set) and U (universe). (Input: 2-column text, S and U). (n) Fraction data. Format default to 4: 4 - Fraction / NA-RLE (32 bytes). (r) Reference coordinates. Format default to 7: 7 - Compressed BED format for CGs. -u [int] Number of bytes per unit data when inflated (1-8). Lower values are more memory efficient but may be lossier. 0 - Inferred from data. -v Verbose mode -h Display this help message . ",
+    "url": "/YAME/docs/subcommands/YAME_pack.html",
+    
+    "relUrl": "/docs/subcommands/YAME_pack.html"
+  },"7": {
+    "doc": "yame rowop",
+    "title": "yame rowop",
+    "content": "Usage: yame rowop [options] &lt;in.cx&gt; &lt;out&gt; Options: -o Operations (choose one): binasum Sum binary data to M and U (format 3). Output: new cx file. musum Sum M and U separately (format 3). Output: new cx file. mean Mean beta and counts of data points (format 3). Output: plain text (two columns). std Standard deviation. Requires format 3 cx. Output: plain text (std, counts). binstring Binarize data to row-wise string (format 3). Output: plain text file with binary strings. cometh Co-methylation of neighboring CGs. Output: plain text in uint64_t U0U1-U0M1-M0U1-M0M1, U0U2-U0M2-M0U2-M0M2, etc. '0' is target CG, followed by 1, 2, etc for neighboring CGs. Each pair occupies 16 bits. For visual, use -v. Intermediate methylations (0.3-0.7) are excluded. -w Number of neighboring CGs for cometh (default: 5). -c Minimum sequencing depth for rowops (default 1). -v Verbose mode -h Display this help message . ",
+    "url": "/YAME/docs/subcommands/YAME_rowop.html",
+    
+    "relUrl": "/docs/subcommands/YAME_rowop.html"
+  },"8": {
+    "doc": "yame rowsub",
+    "title": "yame rowsub",
+    "content": "Usage: yame rowsub [options] &lt;in.cx&gt; This function outputs to stdout. The 0 in [beg0] below means 0-based. Similarly, [beg1], [end1], [index1], etc. The number in (), e.g., [blockIndex0]_(blockSize), is optional with a default. Options: -v verbose -l [PATH] rows in a plain text of [index1] on each row. index1: 1-based. No sorting requirement. -L [PATH] rows in a plain text of [chrm]_[beg1] on each row. Requires -R. No sorting requirement. -R [PATH] row coordinates to use. Required by -L. -1 The row coordinate (from -R) will be added to output as the first dataset. -m [PATH] rows in a mask file (format 1 or 2). -B [STR] a row index range [rowIndexBeg0]_(rowIndexEnd1). By default, rowIndexEnd1=rowIndexBeg0+1. -I [STR] a row index range [blockIndex0]_(blockSize). By default, blockSize=1000000. -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_rowsub.html",
+    
+    "relUrl": "/docs/subcommands/YAME_rowsub.html"
+  },"9": {
+    "doc": "yame split",
+    "title": "yame split",
+    "content": "Usage: yame split [options] &lt;in.cx&gt; out_prefix Options: -v verbose -s sample name list -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_split.html",
+    
+    "relUrl": "/docs/subcommands/YAME_split.html"
+  },"10": {
+    "doc": "yame subset",
+    "title": "yame subset",
+    "content": "Usage: yame subset [options] &lt;in.cx&gt; [&lt;sample1&gt;, ...] If -o &lt;out.cx&gt;, an index will also be generated. Otherwise, output .cx to stdout without index. Options: -v verbose -o output cx file name. if missing, output to stdout without index. -l Path to the sample list. Ignored if sample names are provided on the command line. -H [N] Process N samples from the start of the list, where N is less than or equal to the total number of samples. -T [N] Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index. -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_subset.html",
+    
+    "relUrl": "/docs/subcommands/YAME_subset.html"
+  },"11": {
+    "doc": "yame summary",
+    "title": "yame summary",
+    "content": "Usage: yame summary [options] &lt;query.cm&gt; Query should be of format 0,1,2,3, can be a multi-sample set. Options: -m Mask feature (.cx) file, can be multi-sample. If '-', the whole sample will bed kept in memory, same as -M. -M All masks will be loaded to memory. This save disk IO. -u Optional universe set as a .cx file. If given, the masks and queries are both subset. -H Suppress header printing. -q The backup query file name if the query file name is '-'. -F Use full feature/query file name instead of base name. -T State features always show section names. -s Sample list provided to override the query index file. Only applies to the first query. -h This help. ",
+    "url": "/YAME/docs/subcommands/YAME_summary.html",
+    
+    "relUrl": "/docs/subcommands/YAME_summary.html"
+  },"12": {
+    "doc": "yame unpack",
+    "title": "yame unpack",
+    "content": "Usage: yame unpack [options] &lt;in.cx&gt; [[sample 1], [sample 2], ...] Options: -a Process all samples -C Output column names -R [PATH] Row coordinate .cr file name. -r 0: Row coordinate output in chrm-beg0-end1 (default, for cg). 1: Row coordinate output in chrm-beg0-end0 (for allc). other: Row coordinate output in chrm_beg1. -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line. -H [N] Process N samples from the start of the list, where N is less than or equal to the total number of samples. -T [N] Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index. -f [N] Display format for data format 3. Options are: N == 0: Compound MU N &lt; 0: M&lt;tab&gt;U N &gt; 0: Fraction (with number for the min coverage) -c Enable chunk process -s Chunk size (default is 1M) -u [int] number of bytes for each unit data while inflated. Lower number needs less memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data. -h Display this help message. ",
+    "url": "/YAME/docs/subcommands/YAME_unpack.html",
+    
+    "relUrl": "/docs/subcommands/YAME_unpack.html"
+  },"13": {
+    "doc": "Methylation Data Downsampling",
+    "title": "Downsampling of methylation sites",
+    "content": "Sometimes, we want to test computational methods across different sparisity levels, this can be achieved with yame dsample function. Below shows an example where we only want to keep 10,000 CG sites under a fixed seed. yame dsample -s 1 -N 10000 yourfile.cg &gt; output.cg . For more help with dsample, run yame dsample in the terminal or check out the dsample help page. ",
+    "url": "/YAME/docs/dsample.html#downsampling-of-methylation-sites",
+    
+    "relUrl": "/docs/dsample.html#downsampling-of-methylation-sites"
+  },"14": {
+    "doc": "Methylation Data Downsampling",
+    "title": "Methylation Data Downsampling",
+    "content": " ",
+    "url": "/YAME/docs/dsample.html",
+    
+    "relUrl": "/docs/dsample.html"
+  },"15": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Tutorial: Enrichment Testing with YAME",
+    "content": " ",
+    "url": "/YAME/docs/enrichment.html#tutorial-enrichment-testing-with-yame",
+    
+    "relUrl": "/docs/enrichment.html#tutorial-enrichment-testing-with-yame"
+  },"16": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Prerequisites",
+    "content": ". | A bed file containing the output significant coordinates from differential analysis | Installed bedtools on your system | A reference coordinate bed file (We have provided hg38 and mm10 CpG reference coordinate annotations .cr on KYCG github) mm10/hg38. | . yame unpack cpg_nocontig.cr | gzip &gt; cpg_nocontig.bed.gz . ",
+    "url": "/YAME/docs/enrichment.html#prerequisites",
+    
+    "relUrl": "/docs/enrichment.html#prerequisites"
+  },"17": {
+    "doc": "Methylation Data Enrichment",
+    "title": "File preparation",
+    "content": "First, we will pack the bedfile into a .cx format. If the input bedfile is already sorted, you can start with the intersect step. Check out the bedtools instersect help page if you encounter any problems at this step. bedtools sort -i yourfile.bed | bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | cut -f4 | yame pack -fb - &gt; yourfile.cg . ",
+    "url": "/YAME/docs/enrichment.html#file-preparation",
+    
+    "relUrl": "/docs/enrichment.html#file-preparation"
+  },"18": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Enrichment testing",
+    "content": "Then we simply run yame summary with -m feature file for enrichment testing. We have provided comprehensive enrichment feature files, and you can download them from th KYCG github page mm10/hg38. You can also create your own feature file with yame pack. yame summary -m feature.cm yourfile.cg &gt; yourfile.txt . ",
+    "url": "/YAME/docs/enrichment.html#enrichment-testing",
+    
+    "relUrl": "/docs/enrichment.html#enrichment-testing"
+  },"19": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Output interpretations",
+    "content": "Detailed information of the output columns can be found on the yame summary page. Basically, a higher log2oddsratio indicates a stronger association between the feature being tested and the query set. Generally, a large log2 odds ratio is typically considered to be around 2 or greater, with values between 1 and 2 often being viewed as potentially important and worthy of further investigation, while values around 0.5 might be considered a small effect size. For significance testing, seasame R package provided the testEnrichmentFisherN function, which is also provided in the yame github R page. The four input parameters correspond to the four columns from yame summary output. ND = N_mask NQ = N_query NDQ = N_overlap NU = N_universe . ",
+    "url": "/YAME/docs/enrichment.html#output-interpretations",
+    
+    "relUrl": "/docs/enrichment.html#output-interpretations"
+  },"20": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Enrichment testing with background",
+    "content": "Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | cut -f4 &gt; query_intersect.bed bedtools intersect -a cpg_nocontig.bed.gz -b background.bed -sorted -c | cut -f4 &gt; background_intersect.bed . And then we put them together where the first column is the query and the second column is the background set. paste query_intersect.bed background_intersect.bed | yame pack -f6 - &gt; query_background.cg . Conducting enrichment testing with background using yame summary is the same procedure as shown above. ",
+    "url": "/YAME/docs/enrichment.html#enrichment-testing-with-background",
+    
+    "relUrl": "/docs/enrichment.html#enrichment-testing-with-background"
+  },"21": {
+    "doc": "Methylation Data Enrichment",
+    "title": "Methylation Data Enrichment",
+    "content": " ",
+    "url": "/YAME/docs/enrichment.html",
+    
+    "relUrl": "/docs/enrichment.html"
+  },"22": {
+    "doc": "Home",
+    "title": "YAME - Understand Sequencing Level Methylation Data",
+    "content": "View it on GitHub . YAME (Yet Another MEthylation tool) is a methylation toolset designed for sequence-level DNA methylation data management. It is a command-line C program capable of performing sequence-level enrichment testing, row operations (such as merging pseudobulks), downsampling, and other related tasks with ultra fast speed. ",
+    "url": "/YAME/#yame---understand-sequencing-level-methylation-data",
+    
+    "relUrl": "/#yame---understand-sequencing-level-methylation-data"
+  },"23": {
+    "doc": "Home",
+    "title": "Reference",
+    "content": "David Goldberg, Hongxiang Fu, et al., KnowYourCG: supervised learning of sparse DNA methylomes, Manuscript in submission . ",
+    "url": "/YAME/#reference",
+    
+    "relUrl": "/#reference"
+  },"24": {
+    "doc": "Home",
+    "title": "Installation Guide",
+    "content": "The source can be retrieved by: . # git git clone https://github.com/zhou-lab/YAME.git cd YAME . After retrieving the source code, building YAME proceeds as follows: . mkdir build &amp;&amp; cd build cmake -DCMAKE_INSTALL_PREFIX=../ ../ make &amp;&amp; make install . ",
+    "url": "/YAME/#installation-guide",
+    
+    "relUrl": "/#installation-guide"
+  },"25": {
+    "doc": "Home",
+    "title": "Overview of Functionalities",
+    "content": "The following list provides an overview of the various functionalities provided by YAME. You can also find much of this by typing YAME in the terminal after installation. | pack Pack data into a cx file. | unpack Unpack data from a cx file. | subset Subset samples from a cx file. | rowsub Subset rows a cx file using an index list file. | info Display basic parameter of the cx file. | summary calculate summary, with or without masks. | index Index samples in a cx file. | split Split multi-sample data into single-sample data. | chunk Chunk data into smaller fragments. | chunkchar Chunk text data into smaller fragments. | rowop Perform operations on rows, e.g., sum binary values. | mask Mask methylation data by setting masked record to M=U=0. | dsample Downsample methylation data by setting unsampled records to M=U=0. | . ",
+    "url": "/YAME/#overview-of-functionalities",
+    
+    "relUrl": "/#overview-of-functionalities"
+  },"26": {
+    "doc": "Home",
+    "title": "Acknowledgement",
+    "content": ". | This work is supported by NIH/NIGMS 5R35GM146978. | . ",
+    "url": "/YAME/#acknowledgement",
+    
+    "relUrl": "/#acknowledgement"
+  },"27": {
+    "doc": "Home",
+    "title": "Home",
+    "content": " ",
+    "url": "/YAME/",
+    
+    "relUrl": "/"
+  },"28": {
+    "doc": "Methylation Data Storage",
+    "title": "Methylation data pack and unpack",
+    "content": " ",
+    "url": "/YAME/docs/pack_unpack.html#methylation-data-pack-and-unpack",
+    
+    "relUrl": "/docs/pack_unpack.html#methylation-data-pack-and-unpack"
+  },"29": {
+    "doc": "Methylation Data Storage",
+    "title": "yame pack",
+    "content": "yame papck provides the functionality of packaging different inputs into .cx file for easier downstream analysis. Note: please make sure that the input file match the dimension and order of the reference bed file. You can use bedtools intersect to match with the reference bed file. yame pack has the following format specification -f . For binary data: 0. 1 byte for 8 binary CpGs 1. Value (1 byte) + Run-Length Encoding (RLE) (2 bytes) . For state data: 2. State text + Index RLE (Best for chromatin states) . For sequencing data: 3. MU RLE + Ladder byte (Input: 2-column text, M and U) . For fraction data: 4. Fraction / NA-RLE (32 bytes) . For differential meth data: 5. 2-bits + NA-RLE (Input: only 0, 1, 2 values) 6. 2-bits boolean for S (set) and U (universe) . For referene coordinates: 7. Compressed BED format for CGs . For more help with pack, run yame pack in the terminal or check out the pack help page. ",
+    "url": "/YAME/docs/pack_unpack.html#yame-pack",
+    
+    "relUrl": "/docs/pack_unpack.html#yame-pack"
+  },"30": {
+    "doc": "Methylation Data Storage",
+    "title": "yame unpack",
+    "content": "yame unpack provides the decoding functionality from yame pack. Example usage: . yame unpack -a -f 1 yourfile.cg . This command will unpack the .cg files for all the samples it contains, and output the fraction of methylation/coverage with coverage &gt;= 1. For more help with unpack, run yame unpack in the terminal or check out the unpack help page. ",
+    "url": "/YAME/docs/pack_unpack.html#yame-unpack",
+    
+    "relUrl": "/docs/pack_unpack.html#yame-unpack"
+  },"31": {
+    "doc": "Methylation Data Storage",
+    "title": "Methylation Data Storage",
+    "content": " ",
+    "url": "/YAME/docs/pack_unpack.html",
+    
+    "relUrl": "/docs/pack_unpack.html"
+  },"32": {
+    "doc": "Methylation Data Row Operations",
+    "title": "Row operations of the methylation sites",
+    "content": "yame rowop provides a fast and convenient way to perform some frequently used row operations such as obtaining the mean and standard deviation statistics from yame rowop -o mean and yame rowop -o std. The most common use of yame rowop might be taking the sum of binary data to merge the pseudobulks. For example, we have a single cell methylation .cg file, and we want to merge cluster #1 to obatin the cluster #1 pseudobulks, we can combine this with yame subset by . yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum &gt; single_cell_pseudobulk1.cg . yame rowop also allows . | Binarization of the .cg file with the output of binary strings using yame rowop -o binstring | Co-methylation patterns of neighboring CGs using yame rowop -o cometh. | . For more help with rowop, run yame rowop in the terminal or check out the rowop help page. ",
+    "url": "/YAME/docs/rowop.html#row-operations-of-the-methylation-sites",
+    
+    "relUrl": "/docs/rowop.html#row-operations-of-the-methylation-sites"
+  },"33": {
+    "doc": "Methylation Data Row Operations",
+    "title": "Methylation Data Row Operations",
+    "content": " ",
+    "url": "/YAME/docs/rowop.html",
+    
+    "relUrl": "/docs/rowop.html"
+  },"34": {
+    "doc": "Methylation Data Sample Operations",
+    "title": "Sample operations",
+    "content": "yame index generates the index file for the .cx input. This is helpful when .cx contains multiple samples. yame split splitx the samples when provided with -s sample name list. For more help with split, run yame split in the terminal or check out the pack help page. yame chunk and yame chunkchar breakdown .cx file into smaller and more manageable parts. For more help with chunk, run yame chunk in the terminal or check out the chunk help page. ",
+    "url": "/YAME/docs/sample.html#sample-operations",
+    
+    "relUrl": "/docs/sample.html#sample-operations"
+  },"35": {
+    "doc": "Methylation Data Sample Operations",
+    "title": "Methylation Data Sample Operations",
+    "content": " ",
+    "url": "/YAME/docs/sample.html",
+    
+    "relUrl": "/docs/sample.html"
+  },"36": {
+    "doc": "YAME Subcommands",
+    "title": "YAME Subcommands",
+    "content": "Usage for all YAME subcommands (printed with YAME). Program: yame (Yet Another Methylation tool) - whole genome DNA methylation data management. Version: 0.3.20230904 Contact: Wanding Zhou&lt;wanding.zhou@pennmedicine.upenn.edu&gt; Usage: yame &lt;command&gt; [options] Available commands: pack - Pack data into a cx file. unpack - Unpack data from a cx file. subset - Subset samples from a cx file. rowsub - Subset rows a cx file using an index list file. info - Display basic parameter of the cx file. summary - calculate summary, with or without masks. index - Index samples in a cx file. split - Split multi-sample data into single-sample data. chunk - Chunk data into smaller fragments. chunkchar - Chunk text data into smaller fragments. rowop - Perform operations on rows, e.g., sum binary values. mask - Mask methylation data by setting masked record to M=U=0. dsample - Downsample methylation data by setting unsampled records to M=U=0. ",
+    "url": "/YAME/docs/subcommands",
+    
+    "relUrl": "/docs/subcommands"
+  },"37": {
+    "doc": "Methylation Data Subset",
+    "title": "Subset of the packed .cx file",
+    "content": " ",
+    "url": "/YAME/docs/subset.html#subset-of-the-packed-cx-file",
+    
+    "relUrl": "/docs/subset.html#subset-of-the-packed-cx-file"
+  },"38": {
+    "doc": "Methylation Data Subset",
+    "title": "Subset samples",
+    "content": "yame subset will subset the samples from the multi sample .cx file. We can store the samples we want to keep with a text file or simply providing them in the command line. Make sure the sample names provided is in the sample names of .cx file. yame subset -l sample.txt yourfile.cg . For more help with subset, run yame subset in the terminal or check out the subset help page. ",
+    "url": "/YAME/docs/subset.html#subset-samples",
+    
+    "relUrl": "/docs/subset.html#subset-samples"
+  },"39": {
+    "doc": "Methylation Data Subset",
+    "title": "Subset cx sites",
+    "content": "If we want to obtain methylation sites from specific regions, we can use this yame rowsub function. If we have a list of CpG sites we want to subset, for example . chr16_18300002 chr16_18300046 chr16_18300140 chr16_18300162 chr16_18300172 . We can use -L with -R together (we provided two row coordiante .cr files mm10/hg38). yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cg &gt; subset.cg . For more help with rowsub, run yame rowsub in the terminal or check out the rowsub help page. ",
+    "url": "/YAME/docs/subset.html#subset-cx-sites",
+    
+    "relUrl": "/docs/subset.html#subset-cx-sites"
+  },"40": {
+    "doc": "Methylation Data Subset",
+    "title": "Methylation Data Subset",
+    "content": " ",
+    "url": "/YAME/docs/subset.html",
+    
+    "relUrl": "/docs/subset.html"
+  },"41": {
+    "doc": "Methylation Data Summarization",
+    "title": "Summarization of the packed .cx file",
+    "content": "yame summary and yame info provide a brief summarization and basic parameters of the input .cx file. Assume you have a .cg file from yame pack, then you simply need to run the following to obtain the information. yame info yourfile.cg . yame summary yourfile.cg . yame summary also allows user to input a -m feature file, this is particularly useful if you want to aggregate methylation sites information over certain features and conduct enrichment testings. ",
+    "url": "/YAME/docs/summarize.html#summarization-of-the-packed-cx-file",
+    
+    "relUrl": "/docs/summarize.html#summarization-of-the-packed-cx-file"
+  },"42": {
+    "doc": "Methylation Data Summarization",
+    "title": "An example of yame summary with mask feature file",
+    "content": "For example, in single cell DNA methylome analysis, a typical approach is to merge the CG sites into a fixed window size bin because of high sparsity levels of the data. To do that, we can download the Win100k.20220228.cm file from KYCG_mm10, and then run the following . yame summary -m Win100k.20220228.cm single_cell.cg . The ouput will look something like this . QFile Query MFile Mask N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth single_cell.cg Sample1 Win100k.20220228.cm chr1:30 21867837 1861715 589 48 -0.07 0.688 0.1 single_cell.cg Sample1 Win100k.20220228.cm chr1:31 21867837 1861715 574 36 -0.48 0.917 0.1 . The output columns are: . | The file name of the query .cx | The sample name in the query.cx | The file name of the feature file | The name of each mask in the feature file | The number of CG sites covered in the universe | The number of CG sites covered in the query file | The number of CG sites covered in each mask | The number of CG sites covered both in the query file and the mask | Log2 of the odds ratio for the enrichment overlap | Average methylation levels of the query file in the mask | An approximation of the depth of coverage in the mask | . For a full guideline on how to test feature enrichment using yame summary, check out enrichment help. For more help with summary, run yame summary in the terminal or check out the summary help page. ",
+    "url": "/YAME/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file",
+    
+    "relUrl": "/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file"
+  },"43": {
+    "doc": "Methylation Data Summarization",
+    "title": "Methylation Data Summarization",
+    "content": " ",
+    "url": "/YAME/docs/summarize.html",
+    
+    "relUrl": "/docs/summarize.html"
+  }
+}
