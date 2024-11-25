@@ -9,6 +9,7 @@ static int usage() {
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
   fprintf(stderr, "    -c        contextualize to format 6 using '1's in mask.\n");
+  fprintf(stderr, "              if format 3 is used as mask, then use M+U>0 (coverage).\n");
   fprintf(stderr, "    -v        reverse the mask (default is to mask '1's, if -v will mask '0's).\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -73,6 +74,7 @@ int main_mask(int argc, char *argv[]) {
   cfile_t cf_mask = open_cfile(fname_mask);
   cdata_t c_mask = read_cdata1(&cf_mask);
   if (c_mask.fmt == '1') convertToFmt0(&c_mask);
+  if (c_mask.fmt == '3') convertToFmt0(&c_mask);
   if (c_mask.fmt != '0') wzfatal("Mask format not supported.");
   if (reverse) {
     for (uint64_t i=0; i<cdata_nbytes(&c_mask); ++i) {

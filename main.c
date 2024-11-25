@@ -52,6 +52,7 @@ int main_rowop(int argc, char *argv[]);
 int main_index(int argc, char *argv[]);
 int main_mask(int argc, char *argv[]);
 int main_dsample(int argc, char *argv[]);
+int main_binarize(int argc, char *argv[]);
 
 #define PACKAGE_VERSION "0.3.20230904"
 
@@ -76,6 +77,7 @@ static int usage()
   fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
   fprintf(stderr, "     rowop        - Perform operations on rows, e.g., sum binary values.\n");
   fprintf(stderr, "     mask         - Mask methylation data by setting masked record to M=U=0.\n");
+  fprintf(stderr, "     binarize     - Binarize methylation data by methylation level (beta).\n");
   fprintf(stderr, "     dsample      - Downsample methylation data by setting unsampled records to M=U=0.\n");
   fprintf(stderr, "\n");
 
@@ -98,6 +100,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "chunkchar") == 0) ret = main_chunkchar(argc-1, argv+1);
   else if (strcmp(argv[1], "rowop") == 0) ret = main_rowop(argc-1, argv+1);
   else if (strcmp(argv[1], "mask") == 0) ret = main_mask(argc-1, argv+1);
+  else if (strcmp(argv[1], "binarize") == 0) ret = main_binarize(argc-1, argv+1);
   else if (strcmp(argv[1], "dsample") == 0) ret = main_dsample(argc-1, argv+1);
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);

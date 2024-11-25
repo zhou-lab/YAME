@@ -85,6 +85,31 @@ static stats_t* summarize1_queryfmt0(
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
 
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    
+    *n_st = 1;
+    stats_t st1 = {0};
+    for (uint64_t i=0; i<c->n; ++i) {
+      if (FMT6_IN_UNI(*c_mask, i)) {
+        st1.n_u++;
+        int in_q = FMT0_IN_SET(*c, i);
+        int in_m = FMT6_IN_SET(*c_mask, i);
+        if (in_q) st1.n_q++;
+        if (in_m) st1.n_m++;
+        if (in_q && in_m) st1.n_o++;
+      }
+    }
+    st = calloc(1, sizeof(stats_t));
+    st[0] = st1;
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+
   } else if (c_mask->fmt == '2') { // state mask
 
     if (c_mask->n != c->n) {
@@ -168,7 +193,35 @@ static stats_t* summarize1_queryfmt2(
     uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
     uint64_t n_m = 0;
     for (uint64_t i=0; i<c->n; ++i) {
-      if (c_mask->s[i>>3]&(1<<(i&0x7))) {
+      if (FMT0_IN_SET(*c_mask, i)) {
+        n_m++;
+        cnts[f2_get_uint64(c, i)]++;
+      }
+      cnts_q[f2_get_uint64(c, i)]++;
+    }
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c->n;
+      st[k].n_q = cnts_q[k];
+      st[k].n_o = cnts[k];
+      st[k].n_m = n_m;
+      st[k].sm = strdup(sm);
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+      st[k].sq = tmp.s;
+    }
+    free(cnts);
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+
+    if (!c->aux) fmt2_set_aux(c);
+    f2_aux_t *aux = (f2_aux_t*) c->aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t n_m = 0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      if (FMT6_IN_UNI(*c_mask,i) && FMT6_IN_SET(*c_mask, i)) {
         n_m++;
         cnts[f2_get_uint64(c, i)]++;
       }
@@ -287,6 +340,29 @@ static stats_t* summarize1_queryfmt3(
         }}}
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t mu = f3_get_mu(c, i);
+      if (mu) st[0].n_q++;
+      if (FMT6_IN_UNI(*c_mask, i) && FMT6_IN_SET(*c_mask, i)) {
+        st[0].n_m++;
+        if (mu) {
+          st[0].sum_depth += MU2cov(mu);
+          st[0].sum_beta += MU2beta(mu);
+          st[0].n_o++;
+        }}}
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
     
   } else if (c_mask->fmt == '2') { // state mask
     
@@ -371,6 +447,29 @@ static stats_t* summarize1_queryfmt6(
         st[0].n_u++;
         int in_q = FMT6_IN_SET(*c,i);
         int in_m = FMT0_IN_SET(*c_mask,i);
+        if (in_q) st[0].n_q++;
+        if (in_m) st[0].n_m++;
+        if (in_q && in_m) st[0].n_o++;
+      }
+    }
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    for (size_t i=0; i<c->n; ++i) {
+      if (FMT6_IN_UNI(*c,i) && FMT6_IN_UNI(*c_mask, i)) {
+        st[0].n_u++;
+        int in_q = FMT6_IN_SET(*c,i);
+        int in_m = FMT6_IN_SET(*c_mask,i);
         if (in_q) st[0].n_q++;
         if (in_m) st[0].n_m++;
         if (in_q && in_m) st[0].n_o++;
