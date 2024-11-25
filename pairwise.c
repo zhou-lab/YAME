@@ -8,9 +8,9 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
-  fprintf(stderr, "    -H        1: higher meth level in sample 1 than 2 (default).\n");
-  fprintf(stderr, "              2: higher meth level in sample 2 than 1.\n");
-  fprintf(stderr, "              others: diff levels, i.e., 1 and 2 combined.\n");
+  fprintf(stderr, "    -H        1: B1>B2 (default).\n");
+  fprintf(stderr, "              2: B1<B2.\n");
+  fprintf(stderr, "              3: B1!=B2, i.e., 1 and 2 combined.\n");
   fprintf(stderr, "    -c        minimum coverage (default: 1)\n");
   fprintf(stderr, "    -d        minimum delta meth level/effect size (default: 0)\n");
   fprintf(stderr, "    -h        This help\n");
@@ -72,12 +72,16 @@ int main_pairwise(int argc, char *argv[]) {
         if (MU2beta(mu1) < MU2beta(mu2) &&
             MU2beta(mu2) - MU2beta(mu1) > min_effect) FMT6_SET1(c_out, i);
         else FMT6_SET0(c_out, i);
-      } else {
+      } else if (direc == 3) {
         if ((min_effect <= 0 && MU2beta(mu1) != MU2beta(mu2)) ||
             (min_effect > 0 &&
              (MU2beta(mu1) - MU2beta(mu2) > min_effect ||
               MU2beta(mu2) - MU2beta(mu1) > min_effect))) FMT6_SET1(c_out, i);
         else FMT6_SET0(c_out, i);
+      } else {
+        fprintf(stderr, "[%s:%d] -H argument: %d unsupported.\n", __func__, __LINE__, direc);
+        fflush(stderr);
+        exit(1);
       }
     }
   }
