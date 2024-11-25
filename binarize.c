@@ -9,6 +9,7 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -t [T]    1 if Beta>T else 0. (default: 0.5).\n");
+  fprintf(stderr, "    -c        Minimum depth (M+U) (default: 1).\n");
   fprintf(stderr, "    -o        output cx file name (format 6). if missing, output to stdout.\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -18,12 +19,13 @@ static int usage() {
 
 int main_binarize(int argc, char *argv[]) {
 
-  int c; double T = 0.5;
+  int c; double T = 0.5; uint64_t min_cov = 1;
   char *fname_out = NULL;
-  while ((c = getopt(argc, argv, "o:t:h"))>=0) {
+  while ((c = getopt(argc, argv, "o:t:c:h"))>=0) {
     switch (c) {
     case 'o': fname_out = strdup(optarg); break;
     case 't': T = atof(optarg); break;
+    case 'c': min_cov = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -59,7 +61,7 @@ int main_binarize(int argc, char *argv[]) {
     c6.s = calloc((c6.n+3)/4, sizeof(uint8_t));
     for (uint64_t i=0; i<c6.n; ++i) {
       uint64_t mu = f3_get_mu(&c, i);
-      if (mu>0) {
+      if (MU2cov(mu) >= min_cov) {
         if (MU2beta(mu)>T) FMT6_SET1(c6, i);
         else FMT6_SET0(c6, i);
       }
