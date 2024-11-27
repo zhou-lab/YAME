@@ -8,7 +8,8 @@ static int usage() {
   fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out>\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -o        Operations (choose one):\n");
-  fprintf(stderr, "              binasum     Sum binary data to M and U (format 3).\n");
+  fprintf(stderr, "              binasum     Sum binarized data to M and U (format 3).\n");
+  fprintf(stderr, "                          Can also take format 0 or 1 binary data.\n");
   fprintf(stderr, "                          Output: new cx file.\n");
   fprintf(stderr, "              musum       Sum M and U separately (format 3).\n");
   fprintf(stderr, "                          Output: new cx file.\n");
@@ -35,7 +36,18 @@ static int usage() {
 static void binasumFmt0(cdata_t *cout, cdata_t *c) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu = f3_get_mu(cout, i);
-    if (c->s[i]) {
+    if (FMT0_IN_SET(*c, i)) {
+      f3_set_mu(cout, i, ((mu>>32)+1), (mu<<32>>32));
+    } else {
+      f3_set_mu(cout, i, (mu>>32), ((mu<<32>>32)+1));
+    }
+  }
+}
+
+static void binasumFmt1(cdata_t *cout, cdata_t *c) {
+  for (uint64_t i=0; i<c->n; ++i) {
+    uint64_t mu = f3_get_mu(cout, i);
+    if (c->s[i]-'0') {
       f3_set_mu(cout, i, ((mu>>32)+1), (mu<<32>>32));
     } else {
       f3_set_mu(cout, i, (mu>>32), ((mu<<32>>32)+1));
@@ -86,7 +98,7 @@ static cdata_t rowop_binasum(cfile_t cf, unsigned mincov) {
     
     switch (fmt) {
     case '0': binasumFmt0(&cout, &c2); break;
-    case '1': binasumFmt0(&cout, &c2); break;
+    case '1': binasumFmt1(&cout, &c2); break;
     case '3': binasumFmt3(&cout, &c2, mincov); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
