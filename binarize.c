@@ -9,6 +9,7 @@ static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    -t [T]    1 if Beta>T else 0. (default: 0.5).\n");
+  fprintf(stderr, "    -m [T]    1 if M>=T else 0. (default: 0, if >0 will override -t.).\n");
   fprintf(stderr, "    -c        Minimum depth (M+U) (default: 1).\n");
   fprintf(stderr, "    -o        output cx file name (format 6). if missing, output to stdout.\n");
   fprintf(stderr, "    -h        This help\n");
@@ -20,11 +21,13 @@ static int usage() {
 int main_binarize(int argc, char *argv[]) {
 
   int c; double T = 0.5; uint64_t min_cov = 1;
+  uint64_t Mmin = 0;
   char *fname_out = NULL;
-  while ((c = getopt(argc, argv, "o:t:c:h"))>=0) {
+  while ((c = getopt(argc, argv, "o:t:m:c:h"))>=0) {
     switch (c) {
     case 'o': fname_out = strdup(optarg); break;
     case 't': T = atof(optarg); break;
+    case 'm': Mmin = atoi(optarg); break;
     case 'c': min_cov = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -47,6 +50,10 @@ int main_binarize(int argc, char *argv[]) {
   }
 
   cfile_t cf = open_cfile(fname);
+  char *fname_index = get_fname_index(fname);
+  index_t *idx = loadIndex(fname_index);
+  free(fname_index);
+
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
@@ -62,8 +69,13 @@ int main_binarize(int argc, char *argv[]) {
     for (uint64_t i=0; i<c6.n; ++i) {
       uint64_t mu = f3_get_mu(&c, i);
       if (MU2cov(mu) >= min_cov) {
-        if (MU2beta(mu)>T) FMT6_SET1(c6, i);
-        else FMT6_SET0(c6, i);
+        if (Mmin>0) {           /* binarize by just M */
+          if ((mu>>32) >= Mmin) FMT6_SET1(c6, i);
+          else FMT6_SET0(c6, i);
+        } else {                /* binarize by Beta */
+          if (MU2beta(mu)>T) FMT6_SET1(c6, i);
+          else FMT6_SET0(c6, i);
+        }
       }
     }
     cdata_compress(&c6);
@@ -72,8 +84,39 @@ int main_binarize(int argc, char *argv[]) {
     free_cdata(&c);
   }
 
+  if (idx && fname_out) {              // output index
+    int npairs = 0;
+    index_pair_t *pairs = index_pairs(idx, &npairs);
+    
+    cfile_t cf2 = open_cfile(fname_out);
+    index_t *idx2 = kh_init(index);
+    int64_t addr = bgzf_tell(cf2.fh);
+    cdata_t c_tmp = {0};
+    for (int i=0; i< npairs; ++i) {
+      if (!read_cdata2(&cf2, &c_tmp)) {
+        fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
+        fflush(stderr);
+        exit(1);
+      }
+      insert_index(idx2, pairs[i].key, addr);
+      addr = bgzf_tell(cf2.fh);
+    }
+    free_cdata(&c_tmp);
+
+    char *fname_index2 = get_fname_index(fname_out);
+    FILE *out = fopen(fname_index2, "w");
+    writeIndex(out, idx2);
+    fclose(out);
+    free(fname_index2);
+    bgzf_close(cf2.fh);
+    freeIndex(idx2);
+    free(pairs);
+    cleanIndex(idx);
+  }
+
   if (fname_out) free(fname_out);
   bgzf_close(fp_out);
   bgzf_close(cf.fh);
+
   return 0;
 }
