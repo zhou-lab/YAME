@@ -49,7 +49,7 @@ OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
 LIBS=$(OBJECTS) $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
 
 yame: $(LIBS)
-	gcc $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
+	$(CC) $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
 
 
 ## clean just src
