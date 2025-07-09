@@ -1,14 +1,13 @@
 CC ?= gcc
 CFLAGS = -W -Wall -finline-functions -fPIC -std=gnu99 -Wno-unused-result -O3
+CLIB = -ltinfo -lpthread -lz -lm
 CF_OPTIMIZE = 1
 
 OS := $(shell uname)
-
-ifeq ($(OS), Darwin)
+ifeq ($(OS),  Darwin)
 	CFLAGS += -Wno-unused-function
-	CLIB = -lncurses -lpthread -lz -lm
 else
-	CLIB = -ltinfo -lpthread -lz -lm -lrt
+	CLIB += -lrt
 endif
 
 INCLUDE = include
