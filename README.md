@@ -8,6 +8,12 @@
 
 A methylation toolset designed for sequence-level DNA methylation data management. It is a command-line C program capable of performing sequence-level enrichment testing, row operations (such as merging pseudobulks), downsampling, and other related tasks with ultra fast speed.
 
+## INSTALL
+
+```
+conda install yame -c bioconda
+```
+
 ### Citing YAME (coming soon)
 
 ```
