@@ -111,6 +111,7 @@ void fmt2_decompress(cdata_t *c, cdata_t *inflated);
 void fmt2_set_aux(cdata_t *c);
 uint8_t* fmt2_get_data(cdata_t *c);
 uint64_t fmt2_get_keys_n(cdata_t *c);
+uint64_t fmt2_get_keys_nbytes(cdata_t *c);
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
 char* f2_get_string(cdata_t *c, uint64_t i);
 

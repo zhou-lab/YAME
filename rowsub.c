@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include "cfile.h"
+#include "cdata.h"
 
 typedef struct config_t {
   char *fname_rindex;
@@ -175,11 +176,22 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
 
   cdata_t c2 = {0};
   c2.unit = c->unit;
-  c2.s = realloc(c2.s, (end-beg+1)*c2.unit);
   c2.fmt = c->fmt;
-  memcpy(c2.s, c->s+c->unit*beg, c->unit*(end-beg+1));
-  c2.n = end-beg+1;
+  if (c2.fmt == '2') {
+    uint64_t keys_nb = fmt2_get_keys_nbytes(c);
+    /* uint64_t nk = fmt2_get_keys_n(c); */
+    c2.s = calloc(1, (end-beg+1)*c2.unit + keys_nb + 1);
+    memcpy(c2.s, c->s, keys_nb + 1);
+    memcpy(c2.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
+    c2.n = end-beg+1;
+  } else {
+    c2.s = realloc(c2.s, (end-beg+1)*c2.unit);
+    memcpy(c2.s, c->s+c->unit*beg, c->unit*(end-beg+1));
+    c2.n = end-beg+1;
+  }
   c2.compressed = 0;
+  /* c2.aux = c->aux; */
+  
   return c2;
 }
 

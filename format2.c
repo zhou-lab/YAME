@@ -29,11 +29,11 @@ char* f2_get_string(cdata_t *c, uint64_t i) {
 // not efficient to encode sequence contexts like dinucleotide context
 // for dinucleotide contexts, we should use format 0 or 1
 // TODO: we should have a bit-packed, non-RLE format for this
-static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
-  // Calculate the maximum value
+static uint8_t* compressDataToRLE(cdata_t *c, uint64_t *rle_n) {
+  // Calculate the maximum value from data
   uint64_t max_value = 0;
-  for (uint64_t i = 0; i < n; ++i) {
-    uint64_t value = data[i];
+  for (uint64_t i = 0; i < c->n; ++i) {
+    uint64_t value = f2_get_uint64(c, i);
     if (value > max_value) {
       max_value = value;
     }}
@@ -49,16 +49,16 @@ static uint8_t* compressDataToRLE(uint64_t *data, uint64_t n, uint64_t *rle_n) {
   // value_bytes for the value and 2 bytes for the count
   uint8_t *rle = NULL; *rle_n = 0;
 
-  // Write the number of bytes for each value into the RLE data
+  // 1 byte: the number of bytes for each value into the RLE data
   rle = realloc(rle, ((*rle_n)+1));
   rle[(*rle_n)++] = value_bytes;
 
   // Encode the array into the RLE format
-  for (uint64_t i = 0; i < n;) {
+  for (uint64_t i = 0; i < c->n;) {
     // Get the current value and count
-    uint64_t value = data[i];
+    uint64_t value = f2_get_uint64(c, i);
     uint64_t count = 1;
-    while (i + count < n && data[i + count] == value && count < ((1<<16)-1)) {
+    while (i + count < c->n && f2_get_uint64(c, i + count) == value && count < ((1<<16)-1)) {
       ++count;
     }
 
@@ -129,6 +129,7 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   // Write the keys to the data
   f2_aux_t *aux = (f2_aux_t*) c->aux;
   aux->nk = keys_n;
+  aux->data = c->s + keys_n_bytes + 1;
   aux->keys = calloc(keys_n, sizeof(char*));
   uint64_t pos = 0;
   for (uint64_t i = 0; i < keys_n; ++i) {
@@ -143,7 +144,12 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   c->s[pos++] = '\0';
 
   // Write the data after the keys
-  memcpy(c->s + pos, data, data_n*sizeof(uint64_t));
+  c->unit = 8;
+  for (uint64_t i=0; i<data_n; ++i) {
+    uint8_t *d1 = c->s+pos+i*c->unit;
+    for (uint8_t j=0; j<c->unit; ++j) d1[j] = (0xff & (data[i] >> (8*j)));
+  }
+  /* memcpy(c->s + pos, data, data_n*sizeof(uint64_t)); */
 
   if (verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, data_n);
@@ -177,7 +183,7 @@ uint64_t fmt2_get_keys_n(cdata_t *c) {
   return keys_n;
 }
 
-static uint64_t fmt2_get_keys_nbytes(cdata_t *c) {
+uint64_t fmt2_get_keys_nbytes(cdata_t *c) {
   uint64_t i;
   for (i = 0; ; ++i) {
     if (c->s[i] == '\0' && c->s[i+1] == '\0') {
@@ -241,9 +247,8 @@ uint8_t* fmt2_get_data(cdata_t *c) {
 
 void fmt2_compress(cdata_t *c) {
   uint64_t keys_nb = fmt2_get_keys_nbytes(c);
-  uint8_t *data = fmt2_get_data(c);
   uint64_t rle_n;
-  uint8_t *rle_data = compressDataToRLE((uint64_t*) data, c->n, &rle_n);
+  uint8_t *rle_data = compressDataToRLE(c, &rle_n);
   uint8_t *s_out = calloc(keys_nb + rle_n + 1, sizeof(uint8_t));
   memcpy(s_out, c->s, keys_nb + 1);
   memcpy(s_out + keys_nb + 1, rle_data, rle_n);
