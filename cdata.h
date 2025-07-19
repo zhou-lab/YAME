@@ -10,7 +10,6 @@
 #include <libgen.h>
 #include <limits.h>
 #include <inttypes.h>
-#include <wordexp.h>
 #include "khash.h"
 #include "wzmisc.h"
 #include "wzmisc.h"

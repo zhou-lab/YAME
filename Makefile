@@ -1,13 +1,13 @@
-CC = gcc
+CC ?= gcc
 CFLAGS = -W -Wall -finline-functions -fPIC -std=gnu99 -Wno-unused-result -O3
-CLIB = -lncurses -lpthread -lz -lm
+CLIB = -ltinfo -lpthread -lz -lm
 CF_OPTIMIZE = 1
 
 OS := $(shell uname)
 ifeq ($(OS),  Darwin)
 	CFLAGS += -Wno-unused-function
 else
-	CLIB += -lrt -ltinfo
+	CLIB += -lrt
 endif
 
 INCLUDE = include
@@ -49,7 +49,7 @@ OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
 LIBS=$(OBJECTS) $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
 
 yame: $(LIBS)
-	gcc $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
+	$(CC) $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
 
 
 ## clean just src
