@@ -7,7 +7,7 @@ nav_order: 2
 
 ## yame pack
 
-`yame papck` provides the functionality of packaging different inputs into `.cx` file for easier downstream analysis.  
+`yame pack` provides the functionality of packaging different inputs into `.cx` file for easier downstream analysis.  
 Note: please make sure that the input file match the dimension and order of the reference bed file. You can use [bedtools intersect](https://bedtools.readthedocs.io/en/latest/content/tools/intersect.html) to match with the reference bed file.
 
 `yame pack` has the following format specification `-f`
