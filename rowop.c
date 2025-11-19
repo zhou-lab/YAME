@@ -27,6 +27,7 @@ static int usage() {
   fprintf(stderr, "                          Intermediate methylations (0.3-0.7) are excluded.\n");
   fprintf(stderr, "    -w        Number of neighboring CGs for cometh (default: 5).\n");
   fprintf(stderr, "    -c        Minimum sequencing depth for rowops (default 1).\n");
+  fprintf(stderr, "    -b        beta value threshold used in binstring (default 0.5).\n");
   fprintf(stderr, "    -v        Verbose mode\n");
   fprintf(stderr, "    -h        Display this help message\n\n");
 
@@ -278,7 +279,7 @@ static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
   if (fname_out) fclose(out);
 }
 
-static void rowop_binstring(cfile_t cf, char *fname_out) {
+static void rowop_binstring(cfile_t cf, char *fname_out, double beta_threshold) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return;    // nothing in cfile
   uint64_t n = cdata_n(&c);
@@ -301,7 +302,8 @@ static void rowop_binstring(cfile_t cf, char *fname_out) {
     case '3': {
       for (uint64_t i=0; i<c2.n; ++i) {
         uint64_t mu = f3_get_mu(&c2, i);
-        if ((mu>>32) > (mu<<32>>32)) {
+        /* if ((mu>>32) > (mu<<32>>32)) { */
+        if (mu && ((double) (mu>>32) / ((mu>>32)+(mu<<32>>32)) > beta_threshold)) {
           binstring[(k>>3)*n+i] |= (1<<(k&0x7));
         }
       }
@@ -386,12 +388,14 @@ int main_rowop(int argc, char *argv[]) {
 
   int c, verbose = 0;
   unsigned mincov = 1;
+  double beta_threshold = 0.5;   // default to 0.5
   char *op = NULL; int cometh_window = 5;
-  while ((c = getopt(argc, argv, "vo:c:w:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:c:b:w:h"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
     case 'o': op = strdup(optarg); break;
     case 'c': mincov = atoi(optarg); break;
+    case 'b': beta_threshold = atof(optarg); break;
     case 'w': cometh_window = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -423,7 +427,7 @@ int main_rowop(int argc, char *argv[]) {
     cdata_write(fname_out, &cout, "wb", verbose);
     free(cout.s);
   } else if (strcmp(op, "binstring") == 0) {
-    rowop_binstring(cf, fname_out);
+    rowop_binstring(cf, fname_out, beta_threshold);
   } else if (strcmp(op, "cometh") == 0) {
     rowop_cometh(cf, fname_out, mincov, cometh_window, verbose);
   } else {
