@@ -16,9 +16,7 @@ conda install yame -c bioconda
 
 ### Citing YAME (coming soon)
 
-```
-David Goldberg, Hongxiang Fu, Daniel Atkins, Ethan Moyer, Wanding Zhou, KnowYourCG: supervised learning of sparse DNA methylomes.
-```
+Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† ["KnowYourCG: Facilitating Base-level Sparse Methylome Interpretation"](https://www.science.org/doi/10.1126/sciadv.adw3027) Science Advances (2025)
 
 ## Usage and Documentation
 
