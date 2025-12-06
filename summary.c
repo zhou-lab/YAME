@@ -574,9 +574,9 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
     }
     if (s.sum_depth) {
       if (s.n_m) {
-        fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_m);
+        fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_m);
       } else {
-        fprintf(stdout, "\t%1.1f", (double) s.sum_depth / s.n_u);
+        fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_u);
       }
     } else {
       fputs("\tNA", stdout);

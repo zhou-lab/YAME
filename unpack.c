@@ -22,6 +22,8 @@ static int usage() {
   fprintf(stderr, "              total number of samples.\n");
   fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the\n");
   fprintf(stderr, "              total number of samples. Requires index.\n");
+  fprintf(stderr, "    -m [int]  0: [NA/0/1]\t[0/1]. 2nd column indicates universe.\n");
+  fprintf(stderr, "              1: [2/0/1]. NA is coded by 2.\n");
   fprintf(stderr, "    -f [N]    Display format for data format 3. Options are:\n");
   fprintf(stderr, "                   N == 0: Compound MU\n");
   fprintf(stderr, "                   N <  0: M<tab>U\n");
@@ -38,6 +40,7 @@ static int usage() {
 
 typedef struct cdata_pfmt_t {
   int f3;
+  int f6;
   int f7;
 } cdata_pfmt_t;
 
@@ -86,10 +89,18 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
     break;
   }
   case '6': {
-    if ((c->s[i/4]>>(2*(i%4)+1))&1) {
-      fprintf(stdout, "%u\t1", ((c->s[i/4]>>(2*(i%4)))&1));
-    } else {
-      fputs("NA\t0", stdout);
+    if (pfmt.f6 == 0) {
+      if ((c->s[i/4]>>(2*(i%4)+1))&1) {
+        fprintf(stdout, "%u\t1", ((c->s[i/4]>>(2*(i%4)))&1));
+      } else {
+        fputs("NA\t0", stdout);
+      }
+    } else if (pfmt.f6 == 1) {
+      if ((c->s[i/4]>>(2*(i%4)+1))&1) {
+        fputc('0'+((c->s[i/4]>>(2*(i%4)))&1), stdout);
+      } else {
+        fputc('2', stdout);
+      }
     }
     break;
   }
@@ -198,7 +209,7 @@ int main_unpack(int argc, char *argv[]) {
   uint8_t unit = 0; // default: auto-inferred
   int print_column_names = 0;
   char *fname_row = NULL;
-  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:r:ah"))>=0) {
+  while ((c = getopt(argc, argv, "cs:l:H:T:m:f:u:CR:r:ah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -209,6 +220,7 @@ int main_unpack(int argc, char *argv[]) {
     case 'C': print_column_names = 1; break;
     case 'R': fname_row = strdup(optarg); break;
     case 'r': pfmt.f7 = atoi(optarg); break;
+    case 'm': pfmt.f6 = atoi(optarg); break;
     case 'a': read_all = 1; break;
     case 'f': pfmt.f3 = atoi(optarg); break;
     case 'h': return usage(); break;
