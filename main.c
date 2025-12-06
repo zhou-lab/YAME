@@ -39,9 +39,10 @@ const int unit_base[40] = {
 };
 
 int main_pack(int argc, char *argv[]);
+int main_unpack(int argc, char *argv[]);
+int main_hprint(int argc, char *argv[]);
 int main_subset(int argc, char *argv[]);
 int main_rowsub(int argc, char *argv[]);
-int main_unpack(int argc, char *argv[]);
 int main_split(int argc, char *argv[]);
 int main_pairwise(int argc, char *argv[]);
 int main_info(int argc, char *argv[]);
@@ -67,6 +68,7 @@ static int usage()
   fprintf(stderr, "Available commands:\n");
   fprintf(stderr, "     pack         - Pack data into a cx file.\n");
   fprintf(stderr, "     unpack       - Unpack data from a cx file.\n");
+  fprintf(stderr, "     hprint       - Print data horizontally (format 6).\n");
   fprintf(stderr, "     subset       - Subset samples or terms from a cx file.\n");
   fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
   fprintf(stderr, "     info         - Display basic parameter of the cx file.\n");
@@ -91,6 +93,7 @@ int main(int argc, char *argv[]) {
   if (argc < 2) return usage();
   if (strcmp(argv[1], "pack") == 0) ret = main_pack(argc-1, argv+1);
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
+  else if (strcmp(argv[1], "hprint") == 0) ret = main_hprint(argc-1, argv+1);
   else if (strcmp(argv[1], "subset") == 0) ret = main_subset(argc-1, argv+1);
   else if (strcmp(argv[1], "rowsub") == 0) ret = main_rowsub(argc-1, argv+1);
   else if (strcmp(argv[1], "split") == 0) ret = main_split(argc-1, argv+1);
