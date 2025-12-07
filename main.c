@@ -56,7 +56,7 @@ int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
 int main_sparsify(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "0.3.20230904"
+#define PACKAGE_VERSION "0.4.20251206"
 
 static int usage()
 {
