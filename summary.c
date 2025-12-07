@@ -32,6 +32,7 @@ static int usage() {
 typedef struct stats_t {
   uint64_t sum_depth;           // sum of depth
   double sum_beta;
+  double beta;
   uint64_t n_u;                 // universe
   uint64_t n_q;                 // query
   uint64_t n_m;                 // mask
@@ -307,16 +308,18 @@ static stats_t* summarize1_queryfmt3(
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
+    double sum_beta = 0.0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
       if (mu) {
         st[0].sum_depth += MU2cov(mu);
-        st[0].sum_beta += MU2beta(mu);
+        sum_beta += MU2beta(mu);
         st[0].n_o++;
         st[0].n_q++;
       }}
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf
     
   } else if (c_mask->fmt <= '1') { // binary mask
     
@@ -328,6 +331,7 @@ static stats_t* summarize1_queryfmt3(
       fflush(stderr);
       exit(1);
     }
+    double sum_beta = 0.0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
       if (mu) st[0].n_q++;
@@ -340,6 +344,7 @@ static stats_t* summarize1_queryfmt3(
         }}}
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
     
@@ -351,6 +356,7 @@ static stats_t* summarize1_queryfmt3(
       fflush(stderr);
       exit(1);
     }
+    double sum_beta = 0.0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
       if (mu) st[0].n_q++;
@@ -358,11 +364,12 @@ static stats_t* summarize1_queryfmt3(
         st[0].n_m++;
         if (mu) {
           st[0].sum_depth += MU2cov(mu);
-          st[0].sum_beta += MU2beta(mu);
+          sum_beta += MU2beta(mu);
           st[0].n_o++;
         }}}
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
     
   } else if (c_mask->fmt == '2') { // state mask
     
@@ -395,6 +402,7 @@ static stats_t* summarize1_queryfmt3(
     for (uint64_t k=0; k < (*n_st); ++k) {
       st[k].n_q = nq;
       st[k].n_u = c->n;
+      st[k].beta = st[k].sum_beta / st[k].n_o;
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
@@ -424,13 +432,12 @@ static stats_t* summarize1_queryfmt6(
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c,i)) {
         st[0].n_u++;
-        if (FMT6_IN_SET(*c,i)) {
-          st[0].n_q++;
-        }
+        if (FMT6_IN_SET(*c,i)) st[0].n_q++;
       }
     }
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = (double) st[0].n_q / st[0].n_u;
     
   } else if (c_mask->fmt <= '1') { // binary mask
 
@@ -454,6 +461,7 @@ static stats_t* summarize1_queryfmt6(
     }
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = (double) st[0].n_o / st[0].n_m;
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
 
@@ -477,6 +485,7 @@ static stats_t* summarize1_queryfmt6(
     }
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
+    st[0].beta = (double) st[0].n_o / st[0].n_m;
 
   } else if (c_mask->fmt == '2') { // state mask
 
@@ -517,6 +526,7 @@ static stats_t* summarize1_queryfmt6(
         st[k].sm = strdup(aux->keys[k]);
       }
       st[k].sq = strdup(sq);
+      st[k].beta = (double) st[k].n_o / st[k].n_m;
     }
     
   } else {                      // other masks
@@ -567,8 +577,8 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
     fprintf(stdout,
             "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s",
             fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
-    if (s.n_o) {
-      fprintf(stdout, "\t%1.3f", s.sum_beta / s.n_o);
+    if (s.beta >=0) {
+      fprintf(stdout, "\t%1.3f", s.beta);
     } else {
       fputs("\tNA", stdout);
     }

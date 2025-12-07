@@ -14,6 +14,7 @@ static int usage() {
   fprintf(stderr, "Print data transposed / horizontally.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    -c         Coloring the output using ASCII-escape code.\n");
   fprintf(stderr, "    -h         This help\n");
   fprintf(stderr, "\n");
 
@@ -22,9 +23,10 @@ static int usage() {
 
 int main_hprint(int argc, char *argv[]) {
 
-  int c;
-  while ((c = getopt(argc, argv, "h"))>=0) {
+  int c; int color = 0;
+  while ((c = getopt(argc, argv, "ch"))>=0) {
     switch (c) {
+    case 'c': color = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -50,12 +52,15 @@ int main_hprint(int argc, char *argv[]) {
     for (uint64_t i=0; i<c.n; ++i) {
       if (FMT6_IN_UNI(c,i)) {
         if (FMT6_IN_SET(c,i)) {
-          fprintf(stdout, ANSI_COLOR_YELLOW "1" ANSI_COLOR_RESET);
+          if (color) fprintf(stdout, ANSI_COLOR_YELLOW "1" ANSI_COLOR_RESET);
+          else fputc('1', stdout);
         } else {
-          fprintf(stdout, ANSI_COLOR_BLUE "0" ANSI_COLOR_RESET);
+          if (color) fprintf(stdout, ANSI_COLOR_BLUE "0" ANSI_COLOR_RESET);
+          else fputc('0', stdout);
         }
       } else {
-        fprintf(stdout, ANSI_COLOR_GREY "2" ANSI_COLOR_RESET);
+        if (color) fprintf(stdout, ANSI_COLOR_GREY "2" ANSI_COLOR_RESET);
+        else fputc('2', stdout);
       }
     }
     fputc('\n', stdout);
