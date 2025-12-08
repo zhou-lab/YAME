@@ -1,72 +1,291 @@
 ---
-title: Methylation Data Enrichment
+title: Enrichment Testing
 nav_order: 1
 ---
 
-# Tutorial: Enrichment Testing with YAME
+# Enrichment Testing with YAME
+{: .no_toc }
+
+Test methylation enrichment across genomic features to identify biological associations.
+{: .fs-6 .fw-300 }
+
+## Table of Contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
+
+## Overview
+
+Enrichment testing identifies whether methylation patterns are statistically associated with specific genomic features (e.g., chromatin states, histone modifications, transcription factor binding sites, regulatory elements). YAME's `summary` command performs rapid enrichment testing by comparing observed overlaps with expected overlaps based on background frequencies.
+
+### What You'll Learn
+
+- Prepare differential methylation results for enrichment testing
+- Convert BED files to CX format
+- Perform enrichment testing with and without custom backgrounds
+- Interpret enrichment results and statistical significance
+- Use built-in differential calling functionality
+
+---
 
 ## Prerequisites
 
-1. A bed file containing the output significant coordinates from differential analysis
-2. Installed [bedtools](https://bedtools.readthedocs.io/en/latest/content/installation.html) on your system
-3. A reference coordinate bed file (We have provided hg38 and mm10 CpG reference coordinate annotations .cr on KYCG github) [mm10](https://github.com/zhou-lab/KYCGKB_mm10)/[hg38](https://github.com/zhou-lab/KYCGKB_hg38). 
+Before starting, ensure you have:
+
+1. **Differential methylation results** - A BED file containing significant CpG coordinates
+2. **bedtools** - Install from [bedtools.readthedocs.io](https://bedtools.readthedocs.io/en/latest/content/installation.html)
+3. **Reference CpG coordinates** - Download `.cr` files from KYCG:
+   - [hg38 reference](https://github.com/zhou-lab/KYCGKB_hg38)
+   - [mm10 reference](https://github.com/zhou-lab/KYCGKB_mm10)
+4. **Feature annotations** - Download `.cm` feature files from KYCG (chromatin states, histone marks, etc.)
+
+### Unpack Reference Coordinates
+
+First, convert the reference `.cr` file to a BED format:
 
 ```bash
-yame unpack cpg_nocontig.cr | gzip > cpg_nocontig.bed.gz
+yame unpack cpg_nocontig.cr | gzip -c > cpg_nocontig.bed.gz
 ```
 
-## File preparation
+---
 
-First, we will pack the bedfile into a .cx format. If the input bedfile is already sorted, you can start with the intersect step. Check out the [bedtools instersect help page](https://bedtools.readthedocs.io/en/latest/content/tools/intersect.html) if you encounter any problems at this step.
+## Basic Workflow
+
+### Step 1: Prepare Your Query Set
+
+Convert your BED file of differential methylation sites to CX format. This involves:
+1. Sorting your BED file
+2. Intersecting with reference CpG coordinates
+3. Packing into binary format
 
 ```bash
-bedtools sort -i yourfile.bed | bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | cut -f4 | yame pack -fb - > yourfile.cg   
+bedtools sort -i yourfile.bed | \
+  bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | \
+  cut -f4 | \
+  yame pack -fb - > yourfile.cg
 ```
-## Enrichment testing
 
-Then we simply run [`yame summary`]({% link docs/summarize.markdown %}) with `-m` feature file for enrichment testing. We have provided comprehensive enrichment feature files, and you can download them from th KYCG github page [mm10](https://github.com/zhou-lab/KYCGKB_mm10)/[hg38](https://github.com/zhou-lab/KYCGKB_hg38). You can also create your own feature file with [`yame pack`]({% link docs/pack_unpack.markdown %}).
+**Explanation:**
+- `bedtools sort` - Ensures BED file is sorted for efficient intersection
+- `bedtools intersect -c` - Counts overlaps with each reference CpG
+- `cut -f4` - Extracts the CpG identifier column
+- `yame pack -fb` - Packs binary data (format b) into CX format
+
+**Note:** If your BED file is already sorted, you can skip the `bedtools sort` step.
+
+### Step 2: Run Enrichment Testing
+
+Test enrichment against genomic features using the `-m` option:
 
 ```bash
-yame summary -m feature.cm yourfile.cg > yourfile.txt
+yame summary -m feature.cm yourfile.cg > enrichment_results.txt
 ```
 
-## Output interpretations
+**Feature files** (`.cm` format) are available from KYCG and include:
+- Chromatin states (ChromHMM, Roadmap Epigenomics)
+- Histone modifications (ChIP-seq peaks)
+- Transcription factor binding sites
+- Gene annotations (promoters, exons, introns, UTRs)
+- Regulatory elements (enhancers, insulators)
+- CpG islands and shores
+- Repetitive elements
 
-Detailed information of the output columns can be found on the [`yame summary`]({% link docs/summarize.markdown %}) page. Basically, a higher log2oddsratio indicates a stronger association between the feature being tested and the query set. Generally, a large log2 odds ratio is typically considered to be around 2 or greater, with values between 1 and 2 often being viewed as potentially important and worthy of further investigation, while values around 0.5 might be considered a small effect size. For significance testing, [seasame](https://www.bioconductor.org/packages/release/bioc/html/sesame.html) R package provided the testEnrichmentFisherN function, which is also provided in the yame github R page. The four input parameters correspond to the four columns from yame summary output.
-```
-ND = N_mask
-NQ = N_query
-NDQ = N_overlap
-NU = N_universe
+You can also create custom feature files using [`yame pack`]({% link docs/pack_unpack.markdown %}).
+
+---
+
+## Understanding Output
+
+The enrichment results contain the following columns:
+
+| Column | Description |
+|--------|-------------|
+| **QFile** | Query file name |
+| **Query** | Sample name in query file |
+| **MFile** | Feature/mask file name |
+| **Mask** | Feature name being tested |
+| **N_univ** | Total CpGs in universe (reference) |
+| **N_query** | CpGs covered in query |
+| **N_mask** | CpGs in feature |
+| **N_overlap** | CpGs in both query and feature |
+| **Log2OddsRatio** | Enrichment strength (log₂ scale) |
+| **Beta** | Average methylation level in feature |
+| **Depth** | Approximate coverage depth in feature |
+
+### Interpreting Log2OddsRatio
+
+The log₂ odds ratio quantifies enrichment strength:
+
+- **≥ 2.0** - Strong enrichment (4-fold or greater)
+- **1.0 - 2.0** - Moderate enrichment (2-4 fold)
+- **0.5 - 1.0** - Weak enrichment (1.4-2 fold)
+- **≈ 0** - No enrichment (random overlap)
+- **< 0** - Depletion (under-representation)
+
+Higher positive values indicate stronger association between your query set and the feature being tested.
+
+### Statistical Significance
+
+For formal significance testing, use the Fisher's exact test implementation from the [sesame R package](https://www.bioconductor.org/packages/release/bioc/html/sesame.html):
+
+```r
+# In R using sesame package
+library(sesame)
+
+# Map YAME output columns to Fisher's test parameters
+ND <- N_mask      # Feature size
+NQ <- N_query     # Query size  
+NDQ <- N_overlap  # Overlap count
+NU <- N_univ      # Universe size
+
+# Perform Fisher's exact test
+testEnrichmentFisherN(ND, NQ, NDQ, NU)
 ```
 
-## Built in differential calling function
+An alternative R implementation is also available in the YAME GitHub repository under the `R/` folder.
+
+---
+
+## Built-in Differential Calling
+
+YAME includes a built-in pairwise differential methylation caller:
 
 ```bash
-yame pairwise -H 1 -c 10 <(yame subset sample1.cg sample1) <(yame subset sample2.cg sample2) -o output.cg
+yame pairwise -H 1 -c 10 \
+  <(yame subset sample1.cg sample1) \
+  <(yame subset sample2.cg sample2) \
+  -o differential_output.cg
 ```
--H controls directionality and -c controls minimum coverage. 
 
-## Enrichment testing with background (new)
+**Parameters:**
+- `-H 1` - Controls directionality (1 = hypermethylation in first sample)
+- `-c 10` - Minimum coverage threshold (default: 10)
+- `-o` - Output file name
 
-Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. 
+**Directionality options for `-H`:**
+- `1` - Hypermethylated in first sample
+- `-1` - Hypomethylated in first sample  
+- `0` - Either direction
+
+The output `.cg` file can be directly used for enrichment testing as described above.
+
+---
+
+## Enrichment with Custom Background
+
+### Why Use a Custom Background?
+
+The choice of background is crucial for accurate enrichment testing:
+
+- **Default behavior**: Compares against all CpGs in the reference
+- **Custom background**: Compares against CpGs measured in your specific experiment
+
+Using a custom background (e.g., all CpGs covered by your assay) provides more accurate enrichment estimates by accounting for technical biases like:
+- Array probe coverage
+- Sequencing accessibility
+- Coverage variation across genomic regions
+
+### Method 1: Using Mask (Recommended)
+
+The simplest approach uses the `mask` command to restrict analysis to your universe of interest:
 
 ```bash
-yame mask -c query.cg universe.cg | yame summary -m feature.cm - > yourfile.txt
+yame mask -c query.cg universe.cg | \
+  yame summary -m feature.cm - > enrichment_results.txt
 ```
 
-## Enrichment testing with background (old)
+**How it works:**
+- `query.cg` - Your differential methylation sites
+- `universe.cg` - All CpGs measured in your experiment
+- The mask operation restricts enrichment testing to only those CpGs in your universe
 
-To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). 
+### Method 2: Two-Column Format (Legacy)
+
+For more complex scenarios, you can create a two-column CX file:
+
+**Step 1: Intersect both query and background with reference**
 
 ```bash
-bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | cut -f4 > query_intersect.bed
-bedtools intersect -a cpg_nocontig.bed.gz -b background.bed -sorted -c | cut -f4 > background_intersect.bed
+# Query set intersection
+bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | \
+  cut -f4 > query_intersect.bed
+
+# Background set intersection  
+bedtools intersect -a cpg_nocontig.bed.gz -b background.bed -sorted -c | \
+  cut -f4 > background_intersect.bed
 ```
-And then we put them together where the first column is the query and the second column is the background set. 
+
+**Step 2: Combine into two-column format**
 
 ```bash
-paste query_intersect.bed background_intersect.bed | yame pack -f6 - > query_background.cg
+paste query_intersect.bed background_intersect.bed | \
+  yame pack -f6 - > query_background.cg
 ```
 
-Conducting enrichment testing with background using `yame summary` is the same procedure as shown above. 
+**Step 3: Run enrichment testing**
+
+```bash
+yame summary -m feature.cm query_background.cg > enrichment_results.txt
+```
+
+In this format:
+- **Column 1**: Query set (sites of interest)
+- **Column 2**: Background/universe (all measured sites)
+
+---
+
+## Creating Custom Feature Files
+
+You can create your own feature annotations using `yame pack`. See the detailed example in the [pack_unpack documentation]({% link docs/pack_unpack.markdown %}#example-generating-feature-files).
+
+Quick example for a custom BED file:
+
+```bash
+bedtools intersect -a cpg_nocontig.bed.gz -b custom_features.bed -loj -sorted | \
+  bedtools groupby -g 1-3 -c 7 -o first | \
+  cut -f4 | \
+  yame pack -f2 - > custom_features.cm
+```
+
+---
+
+## Best Practices
+
+1. **Always use sorted BED files** - Ensures efficient bedtools operations
+2. **Match reference coordinates** - Use the same genome build (hg38/mm10) throughout
+3. **Choose appropriate background** - Use experiment-specific backgrounds when possible
+4. **Consider multiple testing correction** - Apply FDR/Bonferroni when testing many features
+5. **Validate enrichments** - Cross-reference with biological literature and databases
+6. **Check coverage requirements** - Ensure sufficient coverage for meaningful statistics
+
+---
+
+## Troubleshooting
+
+**Problem**: "No overlaps found"
+- Ensure genome builds match (hg38 vs hg19, mm10 vs mm9)
+- Verify BED files are properly formatted (0-based coordinates)
+- Check that CpG identifiers match the reference format
+
+**Problem**: "All features show similar enrichment"
+- May indicate improper background selection
+- Consider using experiment-specific background
+
+**Problem**: "Very high log2 odds ratios (>10)"
+- May indicate low coverage or small sample sizes
+- Review N_overlap and N_mask values for adequacy
+
+---
+
+## Additional Resources
+
+- [KYCG hg38 features](https://github.com/zhou-lab/KYCGKB_hg38)
+- [KYCG mm10 features](https://github.com/zhou-lab/KYCGKB_mm10)
+- [bedtools documentation](https://bedtools.readthedocs.io/)
+- [sesame R package](https://bioconductor.org/packages/sesame/)
+
+---
+
