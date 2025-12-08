@@ -91,8 +91,11 @@ static inline uint64_t cdata_n(cdata_t *c) {
 
 void fmt0_decompress(cdata_t *c, cdata_t *inflated);
 void convertToFmt0(cdata_t *c);
-#define FMT0_IN_SET(c, i) ((c).s[(i)>>3] & (1<<((i)&0x7)))
-#define FMT0_SET(c, i) (c.s[(i)>>3] |= (1<<((i)&0x7)))
+#define FMT0_IN_SET(c, i) ((c).s[(i)>>3] & (1u<<((i)&0x7)))
+#define FMT0_SET(c, i) (c.s[(i)>>3] |= (1u<<((i)&0x7)))
+
+#define _FMT0_IN_SET(s, i) ((s)[(i)>>3] & (1u<<((i)&0x7)))
+#define _FMT0_SET(s, i) ((s)[(i)>>3] |= (1u<<((i)&0x7)))
 
 void fmt1_compress(cdata_t *c);
 void fmt1_decompress(cdata_t *c, cdata_t *inflated);
