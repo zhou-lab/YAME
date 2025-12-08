@@ -11,6 +11,8 @@
 
 A fast and lightweight toolkit for storing, manipulating, and analyzing large-scale DNA methylation data at the sequence level.
 
+For detailed documentation, tutorials, and usage examples, visit the [YAME User Guide](https://zhou-lab.github.io/YAME/).
+
 ## Overview
 
 YAME is designed for efficient sequence-level DNA methylation data management, capable of handling both bulk and single-cell DNA methylome workflows. It introduces a family of compact binary formats (**CX formats**) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure.
@@ -31,16 +33,6 @@ Install YAME using conda from the bioconda channel:
 ```bash
 conda install yame -c bioconda
 ```
-
-## Documentation
-
-For detailed documentation, tutorials, and usage examples, visit the [YAME User Guide](https://zhou-lab.github.io/YAME/).
-
-The guide includes:
-- Format specifications for CX file types
-- Comprehensive command references
-- Workflow examples for bulk and single-cell data
-- Best practices for large-scale methylation analysis
 
 ## Citation
 
