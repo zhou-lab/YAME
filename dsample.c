@@ -27,7 +27,8 @@ static int usage(void) {
 }
 
 /**
- * Select K unique indices from [0, N) using a partial Fisher–Yates shuffle.
+ * Select K unique indices (filled before the function) using a
+ * partial Fisher–Yates shuffle.
  *
  * We shuffle only the first K positions in-place; after this call,
  * array[0..K-1] contains K distinct indices in [0, N).
@@ -37,11 +38,6 @@ static int usage(void) {
 static void fisher_yates_shuffle_select(uint64_t *array, uint64_t N, uint64_t K) {
   if (N == 0 || K == 0) return;
   if (K > N) K = N;  // guard: cannot select more than N elements
-
-  // Initialize array with 0..N-1
-  for (uint64_t i = 0; i < N; ++i) {
-    array[i] = i;
-  }
 
   // Partial Fisher–Yates: randomize the first K elements
   for (uint64_t i = 0; i < K; ++i) {
@@ -256,7 +252,7 @@ static void write_index_with_rep(char *fname,
   fclose(out);
   free(fname_index2);
 
-  freeIndex(idx2);
+  cleanIndex(idx2); // free the keys too
   if (pairs) free(pairs);
   if (idx)   cleanIndex(idx);   // or freeIndex(idx) if needed
 }
@@ -264,14 +260,12 @@ static void write_index_with_rep(char *fname,
 int main_dsample(int argc, char *argv[]) {
 
   int c;
-  char *fname_out = NULL;
   unsigned seed = (unsigned) time(NULL);
   uint64_t N = 100;
   int n_rep = 1;
   
-  while ((c = getopt(argc, argv, "o:r:s:N:h"))>=0) {
+  while ((c = getopt(argc, argv, "r:s:N:h"))>=0) {
     switch (c) {
-    case 'o': fname_out = strdup(optarg); break;
     case 'r': n_rep = atoi(optarg); break;
     case 's': seed = (unsigned) strtoul(optarg, NULL, 10); break;
     case 'N': N = strtoul(optarg, NULL, 10); break;
@@ -291,6 +285,7 @@ int main_dsample(int argc, char *argv[]) {
 
   /* If a positional out.cx is given and -o is not, honor it.
      This keeps behavior consistent with other yame subcommands. */
+  char *fname_out = NULL;
   if (!fname_out && (argc >= optind + 2)) {
     fname_out = strdup(argv[optind + 1]);
   }
