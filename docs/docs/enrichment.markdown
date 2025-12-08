@@ -1,6 +1,6 @@
 ---
 title: Enrichment Testing
-nav_order: 1
+nav_order: 2
 ---
 
 # Enrichment Testing with YAME

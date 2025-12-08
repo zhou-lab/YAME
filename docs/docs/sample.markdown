@@ -1,5 +1,5 @@
 ---
-title: Methylation Data Sample Operations
+title: Sample Combination/Indexing
 nav_order: 7
 ---
 
@@ -43,8 +43,5 @@ awk '$1!~/QFile/ && $6>5000' qc.txt | awk 'NR==FNR{a[$1]=1;}NR!=FNR&&($1".cm" in
 For more help with `split`, run `yame split` in the terminal or check out the
 [split help page]({% link docs/subcommands/YAME_split.markdown %}).
 
-`yame chunk` and `yame chunkchar` breakdown `.cx` file into smaller and more manageable parts.
 
-For more help with `chunk`, run `yame chunk` in the terminal or check out the
-[chunk help page]({% link docs/subcommands/YAME_split.markdown %}).
 

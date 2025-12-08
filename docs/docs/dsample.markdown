@@ -1,5 +1,5 @@
 ---
-title: Methylation Data Downsampling
+title: Downsampling
 nav_order: 8
 ---
 

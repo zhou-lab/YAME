@@ -48,260 +48,540 @@
     
     "relUrl": "/docs/subcommands/YAME_pack.html"
   },"7": {
+    "doc": "yame pairwise",
+    "title": "yame pairwise",
+    "content": "Usage: yame pairwise [options] &lt;MU1.cx&gt; (&lt;MU2.cx&gt;) Return a format 6 set that represent differential methylation between MU1 and MU2. If MU2 is not given, use the top 2 samples in MU1.cx. Options: -o output cx file name. if missing, output to stdout without index. -H 1: higher meth level in sample 1 than 2 (default). 2: higher meth level in sample 2 than 1. others: diff levels, i.e., 1 and 2 combined. -c minimum coverage (default: 1) -d minimum delta meth level/effect size (default: 0) -h This help . ",
+    "url": "/YAME/docs/subcommands/YAME_pairwise.html",
+    
+    "relUrl": "/docs/subcommands/YAME_pairwise.html"
+  },"8": {
     "doc": "yame rowop",
     "title": "yame rowop",
     "content": "Usage: yame rowop [options] &lt;in.cx&gt; &lt;out&gt; Options: -o Operations (choose one): binasum Sum binary data to M and U (format 3). Output: new cx file. musum Sum M and U separately (format 3). Output: new cx file. mean Mean beta and counts of data points (format 3). Output: plain text (two columns). std Standard deviation. Requires format 3 cx. Output: plain text (std, counts). binstring Binarize data to row-wise string (format 3). Output: plain text file with binary strings. cometh Co-methylation of neighboring CGs. Output: plain text in uint64_t U0U1-U0M1-M0U1-M0M1, U0U2-U0M2-M0U2-M0M2, etc. '0' is target CG, followed by 1, 2, etc for neighboring CGs. Each pair occupies 16 bits. For visual, use -v. Intermediate methylations (0.3-0.7) are excluded. -w Number of neighboring CGs for cometh (default: 5). -c Minimum sequencing depth for rowops (default 1). -v Verbose mode -h Display this help message . ",
     "url": "/YAME/docs/subcommands/YAME_rowop.html",
     
     "relUrl": "/docs/subcommands/YAME_rowop.html"
-  },"8": {
+  },"9": {
     "doc": "yame rowsub",
     "title": "yame rowsub",
     "content": "Usage: yame rowsub [options] &lt;in.cx&gt; This function outputs to stdout. The 0 in [beg0] below means 0-based. Similarly, [beg1], [end1], [index1], etc. The number in (), e.g., [blockIndex0]_(blockSize), is optional with a default. Options: -v verbose -l [PATH] rows in a plain text of [index1] on each row. index1: 1-based. No sorting requirement. -L [PATH] rows in a plain text of [chrm]_[beg1] on each row. Requires -R. No sorting requirement. -R [PATH] row coordinates to use. Required by -L. -1 The row coordinate (from -R) will be added to output as the first dataset. -m [PATH] rows in a mask file (format 1 or 2). -B [STR] a row index range [rowIndexBeg0]_(rowIndexEnd1). By default, rowIndexEnd1=rowIndexBeg0+1. -I [STR] a row index range [blockIndex0]_(blockSize). By default, blockSize=1000000. -h This help . ",
     "url": "/YAME/docs/subcommands/YAME_rowsub.html",
     
     "relUrl": "/docs/subcommands/YAME_rowsub.html"
-  },"9": {
+  },"10": {
     "doc": "yame split",
     "title": "yame split",
     "content": "Usage: yame split [options] &lt;in.cx&gt; out_prefix Options: -v verbose -s sample name list -h This help . ",
     "url": "/YAME/docs/subcommands/YAME_split.html",
     
     "relUrl": "/docs/subcommands/YAME_split.html"
-  },"10": {
+  },"11": {
     "doc": "yame subset",
     "title": "yame subset",
-    "content": "Usage: yame subset [options] &lt;in.cx&gt; [&lt;sample1&gt;, ...] If -o &lt;out.cx&gt;, an index will also be generated. Otherwise, output .cx to stdout without index. Options: -v verbose -o output cx file name. if missing, output to stdout without index. -l Path to the sample list. Ignored if sample names are provided on the command line. -H [N] Process N samples from the start of the list, where N is less than or equal to the total number of samples. -T [N] Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index. -h This help . ",
+    "content": "Usage: yame subset [options] &lt;in.cx&gt; [&lt;sample1&gt; &lt;sample2&gt; ...] If -o &lt;out.cx&gt;, an index will also be generated. Otherwise, output .cx to stdout without index. Options: -v verbose -o output cx file name. if missing, output to stdout without index. -l Path to the sample list. Ignored if sample names are provided on the command line. -s Filter format 2 &lt;in.cx&gt; instead of samples in files. Output format 0. -H [N] Process N samples from the start of the list, where N is less than or equal to the total number of samples. -T [N] Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index. -h This help . ",
     "url": "/YAME/docs/subcommands/YAME_subset.html",
     
     "relUrl": "/docs/subcommands/YAME_subset.html"
-  },"11": {
+  },"12": {
     "doc": "yame summary",
     "title": "yame summary",
     "content": "Usage: yame summary [options] &lt;query.cm&gt; Query should be of format 0,1,2,3, can be a multi-sample set. Options: -m Mask feature (.cx) file, can be multi-sample. If '-', the whole sample will bed kept in memory, same as -M. -M All masks will be loaded to memory. This save disk IO. -u Optional universe set as a .cx file. If given, the masks and queries are both subset. -H Suppress header printing. -q The backup query file name if the query file name is '-'. -F Use full feature/query file name instead of base name. -T State features always show section names. -s Sample list provided to override the query index file. Only applies to the first query. -h This help. ",
     "url": "/YAME/docs/subcommands/YAME_summary.html",
     
     "relUrl": "/docs/subcommands/YAME_summary.html"
-  },"12": {
+  },"13": {
     "doc": "yame unpack",
     "title": "yame unpack",
     "content": "Usage: yame unpack [options] &lt;in.cx&gt; [[sample 1], [sample 2], ...] Options: -a Process all samples -C Output column names -R [PATH] Row coordinate .cr file name. -r 0: Row coordinate output in chrm-beg0-end1 (default, for cg). 1: Row coordinate output in chrm-beg0-end0 (for allc). other: Row coordinate output in chrm_beg1. -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line. -H [N] Process N samples from the start of the list, where N is less than or equal to the total number of samples. -T [N] Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index. -f [N] Display format for data format 3. Options are: N == 0: Compound MU N &lt; 0: M&lt;tab&gt;U N &gt; 0: Fraction (with number for the min coverage) -c Enable chunk process -s Chunk size (default is 1M) -u [int] number of bytes for each unit data while inflated. Lower number needs less memory efficient but could be lossier. Can only be 1-8. 0 means this will be inferred from data. -h Display this help message. ",
     "url": "/YAME/docs/subcommands/YAME_unpack.html",
     
     "relUrl": "/docs/subcommands/YAME_unpack.html"
-  },"13": {
-    "doc": "Methylation Data Downsampling",
+  },"14": {
+    "doc": "Downsampling",
     "title": "Downsampling of methylation sites",
     "content": "Sometimes, we want to test computational methods across different sparisity levels, this can be achieved with yame dsample function. Below shows an example where we only want to keep 10,000 CG sites under a fixed seed. yame dsample -s 1 -N 10000 yourfile.cg &gt; output.cg . For more help with dsample, run yame dsample in the terminal or check out the dsample help page. ",
     "url": "/YAME/docs/dsample.html#downsampling-of-methylation-sites",
     
     "relUrl": "/docs/dsample.html#downsampling-of-methylation-sites"
-  },"14": {
-    "doc": "Methylation Data Downsampling",
-    "title": "Methylation Data Downsampling",
+  },"15": {
+    "doc": "Downsampling",
+    "title": "Downsampling",
     "content": " ",
     "url": "/YAME/docs/dsample.html",
     
     "relUrl": "/docs/dsample.html"
-  },"15": {
-    "doc": "Methylation Data Enrichment",
-    "title": "Tutorial: Enrichment Testing with YAME",
-    "content": " ",
-    "url": "/YAME/docs/enrichment.html#tutorial-enrichment-testing-with-yame",
-    
-    "relUrl": "/docs/enrichment.html#tutorial-enrichment-testing-with-yame"
   },"16": {
-    "doc": "Methylation Data Enrichment",
+    "doc": "Enrichment Testing",
+    "title": "Enrichment Testing with YAME",
+    "content": "Test methylation enrichment across genomic features to identify biological associations. ",
+    "url": "/YAME/docs/enrichment.html#enrichment-testing-with-yame",
+    
+    "relUrl": "/docs/enrichment.html#enrichment-testing-with-yame"
+  },"17": {
+    "doc": "Enrichment Testing",
+    "title": "Table of Contents",
+    "content": ". | Overview . | What You’ll Learn | . | Prerequisites . | Unpack Reference Coordinates | . | Basic Workflow . | Step 1: Prepare Your Query Set | Step 2: Run Enrichment Testing | . | Understanding Output . | Interpreting Log2OddsRatio | Statistical Significance | . | Built-in Differential Calling | Enrichment with Custom Background . | Why Use a Custom Background? | Method 1: Using Mask (Recommended) | Method 2: Two-Column Format (Legacy) | . | Creating Custom Feature Files | Best Practices | Troubleshooting | Additional Resources | . ",
+    "url": "/YAME/docs/enrichment.html#table-of-contents",
+    
+    "relUrl": "/docs/enrichment.html#table-of-contents"
+  },"18": {
+    "doc": "Enrichment Testing",
+    "title": "Overview",
+    "content": "Enrichment testing identifies whether methylation patterns are statistically associated with specific genomic features (e.g., chromatin states, histone modifications, transcription factor binding sites, regulatory elements). YAME’s summary command performs rapid enrichment testing by comparing observed overlaps with expected overlaps based on background frequencies. What You’ll Learn . | Prepare differential methylation results for enrichment testing | Convert BED files to CX format | Perform enrichment testing with and without custom backgrounds | Interpret enrichment results and statistical significance | Use built-in differential calling functionality | . ",
+    "url": "/YAME/docs/enrichment.html#overview",
+    
+    "relUrl": "/docs/enrichment.html#overview"
+  },"19": {
+    "doc": "Enrichment Testing",
     "title": "Prerequisites",
-    "content": ". | A bed file containing the output significant coordinates from differential analysis | Installed bedtools on your system | A reference coordinate bed file (We have provided hg38 and mm10 CpG reference coordinate annotations .cr on KYCG github) mm10/hg38. | . yame unpack cpg_nocontig.cr | gzip &gt; cpg_nocontig.bed.gz . ",
+    "content": "Before starting, ensure you have: . | Differential methylation results - A BED file containing significant CpG coordinates | bedtools - Install from bedtools.readthedocs.io | Reference CpG coordinates - Download .cr files from KYCG: . | hg38 reference | mm10 reference | . | Feature annotations - Download .cm feature files from KYCG (chromatin states, histone marks, etc.) | . Unpack Reference Coordinates . First, convert the reference .cr file to a BED format: . yame unpack cpg_nocontig.cr | gzip -c &gt; cpg_nocontig.bed.gz . ",
     "url": "/YAME/docs/enrichment.html#prerequisites",
     
     "relUrl": "/docs/enrichment.html#prerequisites"
-  },"17": {
-    "doc": "Methylation Data Enrichment",
-    "title": "File preparation",
-    "content": "First, we will pack the bedfile into a .cx format. If the input bedfile is already sorted, you can start with the intersect step. Check out the bedtools instersect help page if you encounter any problems at this step. bedtools sort -i yourfile.bed | bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | cut -f4 | yame pack -fb - &gt; yourfile.cg . ",
-    "url": "/YAME/docs/enrichment.html#file-preparation",
-    
-    "relUrl": "/docs/enrichment.html#file-preparation"
-  },"18": {
-    "doc": "Methylation Data Enrichment",
-    "title": "Enrichment testing",
-    "content": "Then we simply run yame summary with -m feature file for enrichment testing. We have provided comprehensive enrichment feature files, and you can download them from th KYCG github page mm10/hg38. You can also create your own feature file with yame pack. yame summary -m feature.cm yourfile.cg &gt; yourfile.txt . ",
-    "url": "/YAME/docs/enrichment.html#enrichment-testing",
-    
-    "relUrl": "/docs/enrichment.html#enrichment-testing"
-  },"19": {
-    "doc": "Methylation Data Enrichment",
-    "title": "Output interpretations",
-    "content": "Detailed information of the output columns can be found on the yame summary page. Basically, a higher log2oddsratio indicates a stronger association between the feature being tested and the query set. Generally, a large log2 odds ratio is typically considered to be around 2 or greater, with values between 1 and 2 often being viewed as potentially important and worthy of further investigation, while values around 0.5 might be considered a small effect size. For significance testing, seasame R package provided the testEnrichmentFisherN function, which is also provided in the yame github R page. The four input parameters correspond to the four columns from yame summary output. ND = N_mask NQ = N_query NDQ = N_overlap NU = N_universe . ",
-    "url": "/YAME/docs/enrichment.html#output-interpretations",
-    
-    "relUrl": "/docs/enrichment.html#output-interpretations"
   },"20": {
-    "doc": "Methylation Data Enrichment",
-    "title": "Enrichment testing with background",
-    "content": "Selecting the appropriate background for enrichment testing is crucial because it can significantly impact the interpretation of the results. Usually, we use the background set that is measured in the experiment under different conditions. To enable enrichment testing with background, we need to prepare the .cx file to include the two bed files (one is for the query set, one is for the background set). bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | cut -f4 &gt; query_intersect.bed bedtools intersect -a cpg_nocontig.bed.gz -b background.bed -sorted -c | cut -f4 &gt; background_intersect.bed . And then we put them together where the first column is the query and the second column is the background set. paste query_intersect.bed background_intersect.bed | yame pack -f6 - &gt; query_background.cg . Conducting enrichment testing with background using yame summary is the same procedure as shown above. ",
-    "url": "/YAME/docs/enrichment.html#enrichment-testing-with-background",
+    "doc": "Enrichment Testing",
+    "title": "Basic Workflow",
+    "content": "Step 1: Prepare Your Query Set . Convert your BED file of differential methylation sites to CX format. This involves: . | Sorting your BED file | Intersecting with reference CpG coordinates | Packing into binary format | . bedtools sort -i yourfile.bed | \\ bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; yourfile.cg . Explanation: . | bedtools sort - Ensures BED file is sorted for efficient intersection | bedtools intersect -c - Counts overlaps with each reference CpG | cut -f4 - Extracts the CpG identifier column | yame pack -fb - Packs binary data (format b) into CX format | . Note: If your BED file is already sorted, you can skip the bedtools sort step. Step 2: Run Enrichment Testing . Test enrichment against genomic features using the -m option: . yame summary -m feature.cm yourfile.cg &gt; enrichment_results.txt . Feature files (.cm format) are available from KYCG and include: . | Chromatin states (ChromHMM, Roadmap Epigenomics) | Histone modifications (ChIP-seq peaks) | Transcription factor binding sites | Gene annotations (promoters, exons, introns, UTRs) | Regulatory elements (enhancers, insulators) | CpG islands and shores | Repetitive elements | . You can also create custom feature files using yame pack. ",
+    "url": "/YAME/docs/enrichment.html#basic-workflow",
     
-    "relUrl": "/docs/enrichment.html#enrichment-testing-with-background"
+    "relUrl": "/docs/enrichment.html#basic-workflow"
   },"21": {
-    "doc": "Methylation Data Enrichment",
-    "title": "Methylation Data Enrichment",
+    "doc": "Enrichment Testing",
+    "title": "Understanding Output",
+    "content": "The enrichment results contain the following columns: . | Column | Description | . | QFile | Query file name | . | Query | Sample name in query file | . | MFile | Feature/mask file name | . | Mask | Feature name being tested | . | N_univ | Total CpGs in universe (reference) | . | N_query | CpGs covered in query | . | N_mask | CpGs in feature | . | N_overlap | CpGs in both query and feature | . | Log2OddsRatio | Enrichment strength (log₂ scale) | . | Beta | Average methylation level in feature | . | Depth | Approximate coverage depth in feature | . Interpreting Log2OddsRatio . The log₂ odds ratio quantifies enrichment strength: . | ≥ 2.0 - Strong enrichment (4-fold or greater) | 1.0 - 2.0 - Moderate enrichment (2-4 fold) | 0.5 - 1.0 - Weak enrichment (1.4-2 fold) | ≈ 0 - No enrichment (random overlap) | &lt; 0 - Depletion (under-representation) | . Higher positive values indicate stronger association between your query set and the feature being tested. Statistical Significance . For formal significance testing, use the Fisher’s exact test implementation from the sesame R package: . # In R using sesame package library(sesame) # Map YAME output columns to Fisher's test parameters ND &lt;- N_mask # Feature size NQ &lt;- N_query # Query size NDQ &lt;- N_overlap # Overlap count NU &lt;- N_univ # Universe size # Perform Fisher's exact test testEnrichmentFisherN(ND, NQ, NDQ, NU) . An alternative R implementation is also available in the YAME GitHub repository under the R/ folder. ",
+    "url": "/YAME/docs/enrichment.html#understanding-output",
+    
+    "relUrl": "/docs/enrichment.html#understanding-output"
+  },"22": {
+    "doc": "Enrichment Testing",
+    "title": "Built-in Differential Calling",
+    "content": "YAME includes a built-in pairwise differential methylation caller: . yame pairwise -H 1 -c 10 \\ &lt;(yame subset sample1.cg sample1) \\ &lt;(yame subset sample2.cg sample2) \\ -o differential_output.cg . Parameters: . | -H 1 - Controls directionality (1 = hypermethylation in first sample) | -c 10 - Minimum coverage threshold (default: 10) | -o - Output file name | . Directionality options for -H: . | 1 - Hypermethylated in first sample | -1 - Hypomethylated in first sample | 0 - Either direction | . The output .cg file can be directly used for enrichment testing as described above. ",
+    "url": "/YAME/docs/enrichment.html#built-in-differential-calling",
+    
+    "relUrl": "/docs/enrichment.html#built-in-differential-calling"
+  },"23": {
+    "doc": "Enrichment Testing",
+    "title": "Enrichment with Custom Background",
+    "content": "Why Use a Custom Background? . The choice of background is crucial for accurate enrichment testing: . | Default behavior: Compares against all CpGs in the reference | Custom background: Compares against CpGs measured in your specific experiment | . Using a custom background (e.g., all CpGs covered by your assay) provides more accurate enrichment estimates by accounting for technical biases like: . | Array probe coverage | Sequencing accessibility | Coverage variation across genomic regions | . Method 1: Using Mask (Recommended) . The simplest approach uses the mask command to restrict analysis to your universe of interest: . yame mask -c query.cg universe.cg | \\ yame summary -m feature.cm - &gt; enrichment_results.txt . How it works: . | query.cg - Your differential methylation sites | universe.cg - All CpGs measured in your experiment | The mask operation restricts enrichment testing to only those CpGs in your universe | . Method 2: Two-Column Format (Legacy) . For more complex scenarios, you can create a two-column CX file: . Step 1: Intersect both query and background with reference . # Query set intersection bedtools intersect -a cpg_nocontig.bed.gz -b query.bed -sorted -c | \\ cut -f4 &gt; query_intersect.bed # Background set intersection bedtools intersect -a cpg_nocontig.bed.gz -b background.bed -sorted -c | \\ cut -f4 &gt; background_intersect.bed . Step 2: Combine into two-column format . paste query_intersect.bed background_intersect.bed | \\ yame pack -f6 - &gt; query_background.cg . Step 3: Run enrichment testing . yame summary -m feature.cm query_background.cg &gt; enrichment_results.txt . In this format: . | Column 1: Query set (sites of interest) | Column 2: Background/universe (all measured sites) | . ",
+    "url": "/YAME/docs/enrichment.html#enrichment-with-custom-background",
+    
+    "relUrl": "/docs/enrichment.html#enrichment-with-custom-background"
+  },"24": {
+    "doc": "Enrichment Testing",
+    "title": "Creating Custom Feature Files",
+    "content": "You can create your own feature annotations using yame pack. See the detailed example in the pack_unpack documentation. Quick example for a custom BED file: . bedtools intersect -a cpg_nocontig.bed.gz -b custom_features.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; custom_features.cm . ",
+    "url": "/YAME/docs/enrichment.html#creating-custom-feature-files",
+    
+    "relUrl": "/docs/enrichment.html#creating-custom-feature-files"
+  },"25": {
+    "doc": "Enrichment Testing",
+    "title": "Best Practices",
+    "content": ". | Always use sorted BED files - Ensures efficient bedtools operations | Match reference coordinates - Use the same genome build (hg38/mm10) throughout | Choose appropriate background - Use experiment-specific backgrounds when possible | Consider multiple testing correction - Apply FDR/Bonferroni when testing many features | Validate enrichments - Cross-reference with biological literature and databases | Check coverage requirements - Ensure sufficient coverage for meaningful statistics | . ",
+    "url": "/YAME/docs/enrichment.html#best-practices",
+    
+    "relUrl": "/docs/enrichment.html#best-practices"
+  },"26": {
+    "doc": "Enrichment Testing",
+    "title": "Troubleshooting",
+    "content": "Problem: “No overlaps found” . | Ensure genome builds match (hg38 vs hg19, mm10 vs mm9) | Verify BED files are properly formatted (0-based coordinates) | Check that CpG identifiers match the reference format | . Problem: “All features show similar enrichment” . | May indicate improper background selection | Consider using experiment-specific background | . Problem: “Very high log2 odds ratios (&gt;10)” . | May indicate low coverage or small sample sizes | Review N_overlap and N_mask values for adequacy | . ",
+    "url": "/YAME/docs/enrichment.html#troubleshooting",
+    
+    "relUrl": "/docs/enrichment.html#troubleshooting"
+  },"27": {
+    "doc": "Enrichment Testing",
+    "title": "Additional Resources",
+    "content": ". | KYCG hg38 features | KYCG mm10 features | bedtools documentation | sesame R package | . ",
+    "url": "/YAME/docs/enrichment.html#additional-resources",
+    
+    "relUrl": "/docs/enrichment.html#additional-resources"
+  },"28": {
+    "doc": "Enrichment Testing",
+    "title": "Enrichment Testing",
     "content": " ",
     "url": "/YAME/docs/enrichment.html",
     
     "relUrl": "/docs/enrichment.html"
-  },"22": {
+  },"29": {
     "doc": "Home",
-    "title": "YAME - Understand Sequencing Level Methylation Data",
-    "content": "View it on GitHub . YAME (Yet Another MEthylation tool) is a methylation toolset designed for sequence-level DNA methylation data management. It is a command-line C program capable of performing sequence-level enrichment testing, row operations (such as merging pseudobulks), downsampling, and other related tasks with ultra fast speed. ",
-    "url": "/YAME/#yame---understand-sequencing-level-methylation-data",
+    "title": "YAME - Yet Another Methylation Encoder",
+    "content": "A fast and lightweight toolkit for sequence-level DNA methylation analysis . Get Started View on GitHub . ",
+    "url": "/YAME/#yame---yet-another-methylation-encoder",
     
-    "relUrl": "/#yame---understand-sequencing-level-methylation-data"
-  },"23": {
+    "relUrl": "/#yame---yet-another-methylation-encoder"
+  },"30": {
+    "doc": "Home",
+    "title": "Overview",
+    "content": "YAME (Yet Another Methylation Encoder) is designed for efficient sequence-level DNA methylation data management, capable of handling both bulk and single-cell DNA methylome workflows. It introduces a family of compact binary formats (CX formats) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure. Key Features . | 🚀 Ultra-fast performance - Efficient C implementation with BGZF compression | 💾 High compression ratios - Compact binary CX formats dramatically reduce storage requirements | 📈 Massive scalability - Handle hundreds of thousands of single cells | 🔧 Comprehensive toolkit - Pack, unpack, subset, downsample, merge, and analyze methylation data | 🧬 Versatile data support - MU counts, binary methylation, chromatin states, fractions, differential calls, and CpG coordinates | 🔗 Seamless integration - Works with bedtools, KYCG knowledge base, and standard methylation workflows | . Use Cases . | Single-cell methylome analysis - Efficiently store and analyze sparse single-cell data | Bulk methylome processing - Fast operations on large cohorts | Enrichment testing - Test methylation enrichment across genomic features | Feature aggregation - Summarize methylation over bins, chromatin states, or custom regions | Pseudobulk generation - Merge single cells into cluster-level pseudobulks | Differential methylation - Identify and test differentially methylated sites | . ",
+    "url": "/YAME/#overview",
+    
+    "relUrl": "/#overview"
+  },"31": {
+    "doc": "Home",
+    "title": "Quick Start",
+    "content": "Installation . Option 1: Install via Conda (Recommended) . conda install yame -c bioconda . Option 2: Build from Source . git clone https://github.com/zhou-lab/YAME.git cd YAME make . To run YAME from anywhere, move it to your PATH: . mv ./yame ~/bin/yame . Basic Usage Example . 1. Pack methylation data into CX format . # Pack binary methylation data yame pack -fb yourfile.bed &gt; yourfile.cg # Pack MU count data (M and U columns) yame pack -f3 methylation_counts.txt &gt; yourfile.cg . 2. Summarize methylation data . yame summary yourfile.cg . 3. Test enrichment over genomic features . yame summary -m ChromHMM_states.cm yourfile.cg &gt; enrichment_results.txt . 4. Subset samples from multi-sample data . yame subset -l sample_list.txt yourfile.cg &gt; subset.cg . 5. Merge single cells into pseudobulks . yame subset -l cluster1_cells.txt single_cell.cg | yame rowop - -o binasum &gt; pseudobulk.cg . ",
+    "url": "/YAME/#quick-start",
+    
+    "relUrl": "/#quick-start"
+  },"32": {
+    "doc": "Home",
+    "title": "CX Format Family",
+    "content": "YAME uses the CX format family to efficiently store different types of methylation-related data: . | Format | Extension | Data Type | Use Case | . | Format 0 | .cg | Binary (1 byte/8 CpGs) | Presence/absence of methylation | . | Format 1 | .cg | Value + RLE | Compressed methylation values | . | Format 2 | .cm | State text + Index RLE | Chromatin states, genomic features | . | Format 3 | .cg | MU RLE + Ladder byte | M and U sequencing counts | . | Format 4 | .cg | Fraction + NA-RLE | Methylation fractions | . | Format 5 | .cg | 2-bits + NA-RLE | Differential methylation (0,1,2) | . | Format 6 | .cg | 2-bits boolean | Set and universe indicators | . | Format 7 | .cr | Compressed BED | CpG reference coordinates | . All CX formats use BGZF compression and share a consistent internal structure (cdata_t blocks), enabling uniform handling across different data types. ",
+    "url": "/YAME/#cx-format-family",
+    
+    "relUrl": "/#cx-format-family"
+  },"33": {
+    "doc": "Home",
+    "title": "Command Reference",
+    "content": "The following commands provide the core functionality of YAME. Click on each command for detailed documentation. Data Storage &amp; Conversion . | pack - Pack data into CX format | unpack - Unpack CX files to text format | . Data Subsetting . | subset - Extract specific samples from multi-sample files | rowsub - Extract specific genomic regions or CpG sites | . Data Summarization &amp; Analysis . | info - Display basic parameters of CX files | summary - Calculate statistics and test enrichment over features | . Sample Operations . | index - Index samples in multi-sample files | split - Split multi-sample data into individual files | chunk - Divide data into smaller fragments | chunkchar - Chunk text data into fragments | . Row Operations . | rowop - Perform row-wise operations (mean, sum, std, binarization, co-methylation) | . Data Manipulation . | mask - Mask methylation data by setting masked records to M=U=0 | dsample - Downsample to a fixed number of sites | . Differential Analysis . | pairwise - Built-in differential methylation calling | . ",
+    "url": "/YAME/#command-reference",
+    
+    "relUrl": "/#command-reference"
+  },"34": {
+    "doc": "Home",
+    "title": "Tutorials &amp; Workflows",
+    "content": ". | Enrichment Testing - Test methylation enrichment across genomic features | Data Storage &amp; Format Conversion - Working with CX formats | Subsetting Data - Extract samples and regions | Summarization &amp; Analysis - Calculate statistics and aggregations | Row Operations - Merge pseudobulks and perform calculations | Sample Management - Handle multi-sample datasets | Downsampling - Test methods at different sparsity levels | . ",
+    "url": "/YAME/#tutorials--workflows",
+    
+    "relUrl": "/#tutorials--workflows"
+  },"35": {
     "doc": "Home",
     "title": "Reference",
-    "content": "David Goldberg, Hongxiang Fu, et al., KnowYourCG: supervised learning of sparse DNA methylomes, Manuscript in submission . ",
+    "content": "Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† (2025) KnowYourCG: Facilitating Base-level Sparse Methylome Interpretation. Science Advances DOI: 10.1126/sciadv.adw3027 . ",
     "url": "/YAME/#reference",
     
     "relUrl": "/#reference"
-  },"24": {
+  },"36": {
     "doc": "Home",
-    "title": "Installation Guide",
-    "content": "The source can be retrieved by: . # git git clone https://github.com/zhou-lab/YAME.git cd YAME . After retrieving the source code, building YAME proceeds as follows: . mkdir build &amp;&amp; cd build cmake -DCMAKE_INSTALL_PREFIX=../ ../ make &amp;&amp; make install . ",
-    "url": "/YAME/#installation-guide",
+    "title": "Acknowledgements",
+    "content": "This work is supported by NIH/NIGMS 5R35GM146978. YAME integrates with the KYCG knowledge base for comprehensive methylation feature analysis. ",
+    "url": "/YAME/#acknowledgements",
     
-    "relUrl": "/#installation-guide"
-  },"25": {
+    "relUrl": "/#acknowledgements"
+  },"37": {
     "doc": "Home",
-    "title": "Overview of Functionalities",
-    "content": "The following list provides an overview of the various functionalities provided by YAME. You can also find much of this by typing YAME in the terminal after installation. | pack Pack data into a cx file. | unpack Unpack data from a cx file. | subset Subset samples from a cx file. | rowsub Subset rows a cx file using an index list file. | info Display basic parameter of the cx file. | summary calculate summary, with or without masks. | index Index samples in a cx file. | split Split multi-sample data into single-sample data. | chunk Chunk data into smaller fragments. | chunkchar Chunk text data into smaller fragments. | rowop Perform operations on rows, e.g., sum binary values. | mask Mask methylation data by setting masked record to M=U=0. | dsample Downsample methylation data by setting unsampled records to M=U=0. | . ",
-    "url": "/YAME/#overview-of-functionalities",
+    "title": "Getting Help",
+    "content": ". | Documentation: Browse the menu for detailed guides | Command Help: Run yame or yame &lt;command&gt; for usage information | Issues: Report bugs on GitHub Issues | KYCG Resources: Download reference coordinates and feature files from KYCG hg38 or KYCG mm10 | . ",
+    "url": "/YAME/#getting-help",
     
-    "relUrl": "/#overview-of-functionalities"
-  },"26": {
-    "doc": "Home",
-    "title": "Acknowledgement",
-    "content": ". | This work is supported by NIH/NIGMS 5R35GM146978. | . ",
-    "url": "/YAME/#acknowledgement",
-    
-    "relUrl": "/#acknowledgement"
-  },"27": {
+    "relUrl": "/#getting-help"
+  },"38": {
     "doc": "Home",
     "title": "Home",
     "content": " ",
     "url": "/YAME/",
     
     "relUrl": "/"
-  },"28": {
-    "doc": "Methylation Data Storage",
-    "title": "Methylation data pack and unpack",
-    "content": " ",
-    "url": "/YAME/docs/pack_unpack.html#methylation-data-pack-and-unpack",
+  },"39": {
+    "doc": "Storage & Format",
+    "title": "Methylation Data Packing and Unpacking",
+    "content": "Convert between text and compressed CX binary formats for efficient storage and analysis. ",
+    "url": "/YAME/docs/pack_unpack.html#methylation-data-packing-and-unpacking",
     
-    "relUrl": "/docs/pack_unpack.html#methylation-data-pack-and-unpack"
-  },"29": {
-    "doc": "Methylation Data Storage",
+    "relUrl": "/docs/pack_unpack.html#methylation-data-packing-and-unpacking"
+  },"40": {
+    "doc": "Storage & Format",
+    "title": "Table of Contents",
+    "content": ". | Overview . | Why Use CX Formats? | Key Concepts | . | Understanding CX Formats . | The CX Format Family | Choosing the Right Format | . | yame pack . | Basic Syntax | Essential Options | Critical Input Requirement | . | Format-Specific Packing Examples . | Format 0/b - Binary Data | Format 2/s - Chromatin States | Format 3 - M/U Sequencing Counts | Format 4 - Methylation Fractions | Format 5 - Differential Methylation | Format 6 - Set and Universe | Format 7 - Reference Coordinates | . | Creating Feature Files - Complete Guide . | Example 1: ChromHMM Chromatin States . | Input Data Format | Step-by-Step Workflow | . | Example 2: Histone Modification Peaks | Example 3: Gene Annotations | Example 4: Genomic Bins/Windows | Example 5: Custom Region Sets | . | yame unpack . | Basic Syntax | Common Options | . | Unpacking Examples . | Format 3 - M/U Count Data | Format 0/b - Binary Data | Format 2/s - State Data | Format 7 - Reference Coordinates | Unpacking Specific Samples | . | Practical Workflows . | Workflow 1: Process Bisulfite Sequencing Data | Workflow 2: Create Multi-Feature Database | Workflow 3: Convert Array Data to CX Format | Workflow 4: Quality Control Pipeline | . | Best Practices . | For Packing | For Feature Files | For Unpacking | . | Format Selection Guide | Troubleshooting . | Common Issues | . | Performance Optimization . | Speed Tips | Storage Tips | . | Validation and Testing | . ",
+    "url": "/YAME/docs/pack_unpack.html#table-of-contents",
+    
+    "relUrl": "/docs/pack_unpack.html#table-of-contents"
+  },"41": {
+    "doc": "Storage & Format",
+    "title": "Overview",
+    "content": "YAME’s pack and unpack commands provide bidirectional conversion between human-readable text formats and the compressed CX binary format family. The CX formats dramatically reduce storage requirements (often 10-100x compression) while enabling rapid analysis operations. Why Use CX Formats? . | Massive compression - Reduce storage from gigabytes to megabytes | Fast I/O - BGZF compression enables rapid reading/writing | Uniform structure - All formats share consistent internal architecture | Optimized for methylation - Each format designed for specific data types | Seamless integration - Works with all YAME commands and external tools | . Key Concepts . | Packing - Convert text data (BED, TSV, CSV) to compressed binary CX format | Unpacking - Convert CX format back to human-readable text | Format specification - Different CX formats optimized for different data types | Reference coordinates - All data must align with reference CpG coordinate order | BGZF compression - Block-compressed format allowing random access | . ",
+    "url": "/YAME/docs/pack_unpack.html#overview",
+    
+    "relUrl": "/docs/pack_unpack.html#overview"
+  },"42": {
+    "doc": "Storage & Format",
+    "title": "Understanding CX Formats",
+    "content": "The CX Format Family . YAME supports 8 different CX formats, each optimized for specific data types: . | Format | Type Code | File Ext | Data Type | Compression Method | Best For | . | Format 0 | b or 0 | .cg | Binary | 1 byte per 8 CpGs | Presence/absence, DMR calls | . | Format 1 | 1 | .cg | Value + RLE | Value (1B) + RLE (2B) | Compressed integer counts | . | Format 2 | s or 2 | .cm | State + RLE | State labels + Index RLE | Chromatin states, genomic features | . | Format 3 | 3 | .cg | MU RLE | M/U counts + Ladder byte | Bisulfite sequencing (M,U) | . | Format 4 | 4 | .cg | Fraction + NA-RLE | Float fraction + NA encoding | Methylation beta values | . | Format 5 | 5 | .cg | 2-bit + NA-RLE | Ternary values {0,1,2} | Differential calls (hypo/unchanged/hyper) | . | Format 6 | 6 | .cg | 2-bit boolean | Set and universe flags | Query + background for enrichment | . | Format 7 | 7 | .cr | Compressed BED | Delta-encoded coordinates | CpG reference coordinates | . Choosing the Right Format . Quick Decision Tree: . What type of data do you have? ├─ Binary (yes/no, present/absent) │ └─&gt; Format 0 (b) │ ├─ Chromatin states or categorical features │ └─&gt; Format 2 (s) │ ├─ M and U count pairs from bisulfite sequencing │ └─&gt; Format 3 │ ├─ Beta values or methylation fractions (0.0-1.0) │ └─&gt; Format 4 │ ├─ Differential calls (hypomethylated/unchanged/hypermethylated) │ └─&gt; Format 5 │ ├─ Query + background for enrichment testing │ └─&gt; Format 6 │ └─ Reference genomic coordinates └─&gt; Format 7 . ",
+    "url": "/YAME/docs/pack_unpack.html#understanding-cx-formats",
+    
+    "relUrl": "/docs/pack_unpack.html#understanding-cx-formats"
+  },"43": {
+    "doc": "Storage & Format",
     "title": "yame pack",
-    "content": "yame papck provides the functionality of packaging different inputs into .cx file for easier downstream analysis. Note: please make sure that the input file match the dimension and order of the reference bed file. You can use bedtools intersect to match with the reference bed file. yame pack has the following format specification -f . For binary data: 0. 1 byte for 8 binary CpGs 1. Value (1 byte) + Run-Length Encoding (RLE) (2 bytes) . For state data: 2. State text + Index RLE (Best for chromatin states) . For sequencing data: 3. MU RLE + Ladder byte (Input: 2-column text, M and U) . For fraction data: 4. Fraction / NA-RLE (32 bytes) . For differential meth data: 5. 2-bits + NA-RLE (Input: only 0, 1, 2 values) 6. 2-bits boolean for S (set) and U (universe) . For referene coordinates: 7. Compressed BED format for CGs . For more help with pack, run yame pack in the terminal or check out the pack help page. ",
+    "content": "Basic Syntax . yame pack -f&lt;format&gt; [options] &lt;input_file&gt; [output_file] . Essential Options . | Option | Description | Example | . | -f&lt;format&gt; | Format specification (required) | -fb, -f2, -f3 | . | - | Read from stdin | cat data.txt \\| yame pack -fb - | . | output.cg | Output filename (optional) | yame pack -fb input.txt output.cg | . Critical Input Requirement . ⚠️ Your input MUST match reference CpG coordinates exactly: . | Same number of rows as reference CpGs | Same order as reference CpGs | One value per CpG in reference | . How to ensure alignment: . # Step 1: Get reference coordinates yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # Step 2: Intersect your BED file with reference bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; aligned_output.cg . ",
     "url": "/YAME/docs/pack_unpack.html#yame-pack",
     
     "relUrl": "/docs/pack_unpack.html#yame-pack"
-  },"30": {
-    "doc": "Methylation Data Storage",
+  },"44": {
+    "doc": "Storage & Format",
+    "title": "Format-Specific Packing Examples",
+    "content": "Format 0/b - Binary Data . Use case: Presence/absence, binary methylation calls, DMR indicators . Input: One line per CpG, values 0 or 1 . # Example input (binary_data.txt): # 1 # 0 # 1 # 1 # 0 # Pack from text file yame pack -fb binary_data.txt &gt; binary_output.cg # Pack from BED file via bedtools bedtools sort -i dmr_sites.bed | \\ bedtools intersect -a cpg_ref.bed.gz -b - -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; dmr_binary.cg . Compression: ~32x reduction (8 CpGs per byte) . Format 2/s - Chromatin States . Use case: Categorical annotations, chromatin states, genomic features . Input: One line per CpG, containing state label (text string) . # Example input (states.txt): # TssA # TssFlnk # TxFlnk # Tx # Tx # EnhG # Enh # Pack state data yame pack -f2 states.txt &gt; chromatin_states.cm # Or use 's' shorthand yame pack -fs states.txt &gt; chromatin_states.cm . Special property: Excellent for feature files with many categories . Format 3 - M/U Sequencing Counts . Use case: Bisulfite sequencing methylated (M) and unmethylated (U) read counts . Input: Two tab-separated columns per line (M count, U count) . # Example input (mu_counts.txt): # 12 3 # 8 8 # 0 15 # 20 2 # 0 0 # 5 10 # Pack M/U count data yame pack -f3 mu_counts.txt &gt; sequencing_data.cg . Compression: Highly efficient for typical sequencing coverage distributions . Note: M and U can be any non-negative integers . Format 4 - Methylation Fractions . Use case: Beta values, methylation fractions, continuous values 0.0-1.0 . Input: One line per CpG, float values between 0 and 1 (or NA) . # Example input (beta_values.txt): # 0.75 # 0.33 # 0.88 # NA # 0.50 # 0.92 # Pack fraction data yame pack -f4 beta_values.txt &gt; methylation_fractions.cg . Special handling: . | NA values are properly encoded | Preserves precision for methylation fractions | Efficient for array data | . Format 5 - Differential Methylation . Use case: Three-state differential calls . Input: One line per CpG, values {0, 1, 2} only . | 0 = Hypomethylated | 1 = Unchanged / Not significant | 2 = Hypermethylated | . # Example input (diff_calls.txt): # 0 # 1 # 2 # 1 # 0 # 2 # Pack differential calls yame pack -f5 diff_calls.txt &gt; differential.cg . Compression: 2 bits per CpG (4 CpGs per byte) . Format 6 - Set and Universe . Use case: Enrichment testing with query set and background/universe . Input: Two tab-separated columns . | Column 1: Query set (0 or 1) | Column 2: Universe/background (0 or 1) | . # Example input (query_universe.txt): # 1 1 (in query, in universe) # 0 1 (not in query, in universe) # 1 1 (in query, in universe) # 0 0 (not in query, not in universe) # Pack query + universe yame pack -f6 query_universe.txt &gt; query_bg.cg . Use case: More precise enrichment testing (see enrichment guide) . Format 7 - Reference Coordinates . Use case: CpG reference coordinate files . Input: BED format with CpG identifiers . # Example input (cpg_coords.bed): # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 # Pack reference coordinates yame pack -f7 cpg_coords.bed &gt; cpg_reference.cr . Output: .cr file (CpG reference) . Compression: Delta encoding of positions for maximum compression . ",
+    "url": "/YAME/docs/pack_unpack.html#format-specific-packing-examples",
+    
+    "relUrl": "/docs/pack_unpack.html#format-specific-packing-examples"
+  },"45": {
+    "doc": "Storage & Format",
+    "title": "Creating Feature Files - Complete Guide",
+    "content": "Feature files (format 2) are essential for enrichment testing and feature-based analysis. Here’s the complete workflow. Example 1: ChromHMM Chromatin States . This detailed example shows how to create a ChromHMM feature file from full-stack chromatin state annotations. Input Data Format . Your ChromHMM BED file (hg38_chromhmm_100_segments.bed.gz) should look like: . chr1 10000 10400 1_TssA chr1 10400 10600 2_TssFlnk chr1 10600 10800 8_EnhW1 chr1 10800 12800 15_Quies chr1 12800 13000 8_EnhW1 chr1 13000 13200 7_EnhG2 chr1 13200 14800 15_Quies . Column format: . | Chromosome | Start position | End position | Chromatin state label | . Step-by-Step Workflow . Step 1: Prepare reference CpG coordinates . # Unpack reference .cr file to BED format yame unpack cpg_nocontig.cr | gzip &gt; cpg_nocontig.bed.gz # Verify it worked zcat cpg_nocontig.bed.gz | head -3 # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 . Step 2: Intersect CpGs with chromatin states . zcat hg38_chromhmm_100_segments.bed.gz | \\ bedtools sort | \\ bedtools intersect -a cpg_nocontig.bed.gz -b - -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; ChromHMM_FullStack.cm . Command breakdown: . | zcat ... | bedtools sort - Ensure chromatin state BED is sorted | bedtools intersect -loj - Left outer join: keep ALL reference CpGs . | CpGs overlapping states get the state label | CpGs not overlapping any state get “.” (NA) | . | bedtools groupby -g 1-3 -c 7 -o first - For CpGs in multiple states, take first | cut -f4 - Extract the state label (4th column is state name) | yame pack -f2 - - Pack as format 2 (categorical state data) | . Step 3: Verify the output . # Check file info yame info ChromHMM_FullStack.cm # Preview state distribution yame unpack ChromHMM_FullStack.cm | sort | uniq -c | sort -rn | head . Step 4: Use for enrichment testing . yame summary -m ChromHMM_FullStack.cm query.cg &gt; enrichment_results.txt . Example 2: Histone Modification Peaks . Create feature file from ChIP-seq peaks: . # Single histone mark bedtools intersect -a cpg_ref.bed.gz -b H3K4me3_peaks.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; H3K4me3.cm # Multiple marks - see sample.markdown for merging multiple features . Example 3: Gene Annotations . Create features for different gene regions: . # Promoters (2kb upstream of TSS) bedtools intersect -a cpg_ref.bed.gz -b promoters.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; promoters.cm # Exons bedtools intersect -a cpg_ref.bed.gz -b exons.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; exons.cm # Gene bodies bedtools intersect -a cpg_ref.bed.gz -b gene_bodies.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; gene_bodies.cm . Example 4: Genomic Bins/Windows . Create fixed-size genomic windows: . # 1. Create 100kb windows bedtools makewindows -g hg38.genome -w 100000 | \\ awk '{print $0\"\\tchr\"$1\":\"$2/100000}' &gt; windows_100kb.bed # 2. Assign CpGs to windows yame unpack cpg_ref.cr | \\ bedtools intersect -a - -b windows_100kb.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; bins_100kb.cm # 3. Use for single-cell aggregation yame summary -m bins_100kb.cm single_cell.cg &gt; binned_methylation.txt . Example 5: Custom Region Sets . Create feature from any custom BED file: . # Your custom regions (e.g., enhancers, TADs, etc.) # custom_regions.bed format: # chr1 100000 102000 enhancer_1 # chr1 150000 153000 enhancer_2 bedtools intersect -a cpg_ref.bed.gz -b custom_regions.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; custom_features.cm . ",
+    "url": "/YAME/docs/pack_unpack.html#creating-feature-files---complete-guide",
+    
+    "relUrl": "/docs/pack_unpack.html#creating-feature-files---complete-guide"
+  },"46": {
+    "doc": "Storage & Format",
     "title": "yame unpack",
-    "content": "yame unpack provides the decoding functionality from yame pack. Example usage: . yame unpack -a -f 1 yourfile.cg . This command will unpack the .cg files for all the samples it contains, and output the fraction of methylation/coverage with coverage &gt;= 1. For more help with unpack, run yame unpack in the terminal or check out the unpack help page. ",
+    "content": "Convert CX binary format back to human-readable text. Basic Syntax . yame unpack [options] &lt;cx_file&gt; . Common Options . | Option | Description | Example | . | -a | Unpack all samples | yame unpack -a multi.cg | . | -f &lt;N&gt; | Filter by min coverage | yame unpack -f 5 data.cg | . | -s &lt;name&gt; | Unpack specific sample | yame unpack -s sample1 data.cg | . | -i &lt;index&gt; | Unpack by sample index | yame unpack -i 0 data.cg | . ",
     "url": "/YAME/docs/pack_unpack.html#yame-unpack",
     
     "relUrl": "/docs/pack_unpack.html#yame-unpack"
-  },"31": {
-    "doc": "Methylation Data Storage",
-    "title": "Methylation Data Storage",
+  },"47": {
+    "doc": "Storage & Format",
+    "title": "Unpacking Examples",
+    "content": "Format 3 - M/U Count Data . # Unpack all samples with coverage &gt;= 1 yame unpack -a -f 1 sequencing.cg # Output format (tab-separated): # beta coverage # 0.75 4 # 0.33 3 # 0.88 8 # NA 0 # 0.50 2 . Columns: . | Beta: Methylation fraction (M / (M+U)) | Coverage: Total reads (M + U) | . Format 0/b - Binary Data . # Unpack binary data yame unpack binary_data.cg # Output (one value per line): # 1 # 0 # 1 # 1 # 0 . Format 2/s - State Data . # Unpack chromatin states yame unpack ChromHMM.cm | head -10 # Output (state labels): # 1_TssA # 1_TssA # 3_TxFlnk # 4_Tx # 4_Tx # 7_Enh # 15_Quies . Format 7 - Reference Coordinates . # Unpack reference coordinates to BED yame unpack cpg_nocontig.cr &gt; cpg_coordinates.bed # Output (BED format): # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 . Unpacking Specific Samples . # Check available samples first yame info multi_sample.cg # Unpack specific sample yame unpack -s \"sample_A\" multi_sample.cg &gt; sample_A.txt # Unpack first sample (index 0) yame unpack -i 0 multi_sample.cg &gt; first_sample.txt . ",
+    "url": "/YAME/docs/pack_unpack.html#unpacking-examples",
+    
+    "relUrl": "/docs/pack_unpack.html#unpacking-examples"
+  },"48": {
+    "doc": "Storage & Format",
+    "title": "Practical Workflows",
+    "content": "Workflow 1: Process Bisulfite Sequencing Data . Complete pipeline from bisulfite sequencing output to analysis: . # Assuming you have M and U counts from your pipeline # Format: chr start end M U # 1. Extract M and U, align with reference bedtools intersect -a cpg_ref.bed.gz -b methylation_calls.bed -loj -sorted | \\ awk '{if ($8==\".\") print \"0\\t0\"; else print $8\"\\t\"$9}' | \\ yame pack -f3 - &gt; sample.cg # 2. Verify data quality yame info sample.cg yame summary sample.cg # 3. Perform enrichment analysis yame summary -m ChromHMM.cm sample.cg &gt; chromatin_enrichment.txt yame summary -m genes.cm sample.cg &gt; gene_enrichment.txt # 4. If needed, unpack for external tools yame unpack -f 5 sample.cg &gt; sample_cov5.txt . Workflow 2: Create Multi-Feature Database . Build comprehensive feature database: . #!/bin/bash # Create comprehensive feature database for hg38 # 1. Prepare reference yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Download and process multiple features declare -A features=( [\"ChromHMM_15\"]=\"ChromHMM_15state.bed.gz\" [\"CpG_Islands\"]=\"cpgIslandExt.bed.gz\" [\"Promoters\"]=\"promoters_2kb.bed.gz\" [\"Enhancers\"]=\"enhancers_merged.bed.gz\" [\"TFBS\"]=\"tfbs_combined.bed.gz\" ) # 3. Create individual feature files for name in \"${!features[@]}\"; do file=\"${features[$name]}\" echo \"Processing $name...\" zcat \"$file\" | bedtools sort | \\ bedtools intersect -a cpg_ref.bed.gz -b - -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; \"${name}.cm\" done echo \"Feature files created:\" ls -lh *.cm . Workflow 3: Convert Array Data to CX Format . Convert Illumina array data: . #!/bin/bash # Convert 450k/EPIC array data to CX format # Assuming you have: array_data.txt with columns: ProbeID, Beta # 1. Get array manifest with probe coordinates # manifest.bed format: chr start end ProbeID # 2. Intersect with reference CpGs bedtools intersect -a cpg_ref.bed.gz -b manifest.bed -loj -sorted &gt; probe_cpg_map.bed # 3. Map betas to CpG positions join -1 4 -2 1 -t$'\\t' \\ &lt;(sort -k4,4 probe_cpg_map.bed) \\ &lt;(sort -k1,1 array_data.txt) | \\ sort -k2,2 -k3,3n | \\ cut -f7 | \\ awk '{if ($1==\"\") print \"NA\"; else print $1}' | \\ yame pack -f4 - &gt; array_sample.cg echo \"Array data converted to CX format\" yame info array_sample.cg . Workflow 4: Quality Control Pipeline . Systematic QC for methylation data: . #!/bin/bash # QC pipeline for CX files CX_FILE=$1 echo \"=== Quality Control Report for $CX_FILE ===\" echo # 1. Basic file info echo \"File Information:\" yame info $CX_FILE echo # 2. Coverage statistics echo \"Coverage Statistics:\" yame summary $CX_FILE echo # 3. CpG island enrichment (should be enriched) echo \"CpG Island Enrichment:\" yame summary -m CpG_islands.cm $CX_FILE | awk 'NR&gt;1 {print \"Log2OR:\", $9}' echo # 4. Check coverage distribution echo \"Coverage Distribution:\" yame unpack -a $CX_FILE | \\ awk '{cov=$2} cov&gt;0 {if(cov&lt;5) low++; else if(cov&lt;10) med++; else high++} END{print \"Low(&lt;5):\", low, \"Med(5-10):\", med, \"High(&gt;10):\", high}' echo # 5. Methylation distribution echo \"Methylation Distribution:\" yame unpack -a $CX_FILE | \\ awk '$1!=\"NA\" {beta=$1; if(beta&lt;0.3) hypo++; else if(beta&lt;0.7) inter++; else hyper++} END{print \"Hypo(&lt;0.3):\", hypo, \"Inter(0.3-0.7):\", inter, \"Hyper(&gt;0.7):\", hyper}' echo echo \"=== QC Complete ===\" . ",
+    "url": "/YAME/docs/pack_unpack.html#practical-workflows",
+    
+    "relUrl": "/docs/pack_unpack.html#practical-workflows"
+  },"49": {
+    "doc": "Storage & Format",
+    "title": "Best Practices",
+    "content": "For Packing . | Always align with reference first bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c . | Verify dimensions match # Count reference CpGs zcat cpg_ref.bed.gz | wc -l # Count your data rows wc -l your_data.txt . | Choose appropriate format . | Binary (0/1) → Format 0 | States/categories → Format 2 | M,U counts → Format 3 | Fractions → Format 4 | . | Handle missing values properly . | Format 3: Use M=0, U=0 for no coverage | Format 4: Use “NA” for missing values | Format 2: Use “.” for unassigned CpGs | . | Test with small subset first head -1000 data.txt | yame pack -fb - &gt; test.cg yame info test.cg yame unpack test.cg | head . | . For Feature Files . | Use -loj (left outer join) for completeness bedtools intersect -a cpg_ref.bed.gz -b features.bed -loj -sorted . | Handle overlapping features explicitly bedtools groupby -g 1-3 -c 7 -o first # Take first # or bedtools groupby -g 1-3 -c 7 -o last # Take last # or bedtools groupby -g 1-3 -c 7 -o collapse # Keep all (comma-separated) . | Quality control your features yame summary feature.cm # Check: N_mask (should be reasonable number of CpGs) . | Document feature creation # Add comment in script # Feature: ChromHMM 15-state model # Source: ENCODE, hg38 # Date created: 2025-01-15 # Command: [paste command here] . | . For Unpacking . | Filter by coverage when appropriate yame unpack -f 5 data.cg # Only CpGs with coverage ≥ 5 . | Pipe to reduce storage yame unpack data.cg | process_data.py # Don't save intermediate . | Verify unpacked data yame unpack data.cg | head # Check format yame unpack data.cg | wc -l # Check row count . | . ",
+    "url": "/YAME/docs/pack_unpack.html#best-practices",
+    
+    "relUrl": "/docs/pack_unpack.html#best-practices"
+  },"50": {
+    "doc": "Storage & Format",
+    "title": "Format Selection Guide",
+    "content": "Choose the optimal format for your data: . | Your Data Type | Format | Command Example | . | DMR sites (yes/no) | 0/b | yame pack -fb | . | Differential calls (hypo/no/hyper) | 5 | yame pack -f5 | . | Chromatin states | 2/s | yame pack -f2 | . | ChIP-seq peaks | 0/b | yame pack -fb | . | M and U counts | 3 | yame pack -f3 | . | 450k array betas | 4 | yame pack -f4 | . | WGBS betas | 4 | yame pack -f4 | . | Gene annotations | 2/s | yame pack -f2 | . | Genomic bins | 2/s | yame pack -f2 | . | Query + background | 6 | yame pack -f6 | . | CpG coordinates | 7 | yame pack -f7 | . ",
+    "url": "/YAME/docs/pack_unpack.html#format-selection-guide",
+    
+    "relUrl": "/docs/pack_unpack.html#format-selection-guide"
+  },"51": {
+    "doc": "Storage & Format",
+    "title": "Troubleshooting",
+    "content": "Common Issues . Problem: “Dimension mismatch” error . Solution: . # Check dimensions zcat cpg_ref.bed.gz | wc -l # Reference wc -l your_data.txt # Your data # These must match! If not: bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 &gt; aligned_data.txt . Problem: Packed file is unexpectedly large . Solutions: . | Check if you’re using the right format (binary data shouldn’t use format 3) | Verify data is properly aligned | Consider if data is actually compressible | . Problem: Unpacked data shows all NAs . Solutions: . # Check file format yame info yourfile.cg # Verify data exists yame summary yourfile.cg # Try unpacking without filters yame unpack yourfile.cg | head . Problem: Feature labels not showing in enrichment . Solutions: . # Verify format 2 was used yame info feature.cm # Check labels yame unpack feature.cm | sort | uniq -c # Recreate with proper format yame pack -f2 states.txt &gt; feature.cm . Problem: bedtools intersect produces wrong output . Solutions: . # Ensure proper sorting bedtools sort -i file1.bed &gt; file1_sorted.bed bedtools sort -i file2.bed &gt; file2_sorted.bed # Use -sorted flag bedtools intersect -a file1_sorted.bed -b file2_sorted.bed -sorted # Check chromosome naming (chr1 vs 1) head file1.bed head file2.bed . Problem: Memory errors when packing large files . Solutions: . # Process in chunks split -l 5000000 large_data.txt chunk_ for chunk in chunk_*; do yame pack -fb $chunk &gt; ${chunk}.cg done # Combine (if needed) cat chunk_*.cg &gt; combined.cg . ",
+    "url": "/YAME/docs/pack_unpack.html#troubleshooting",
+    
+    "relUrl": "/docs/pack_unpack.html#troubleshooting"
+  },"52": {
+    "doc": "Storage & Format",
+    "title": "Performance Optimization",
+    "content": "Speed Tips . | Use pipes to avoid I/O # Slow (intermediate files) bedtools intersect ... &gt; temp.bed cut -f4 temp.bed &gt; temp2.txt yame pack -fb temp2.txt &gt; output.cg # Fast (piped) bedtools intersect ... | cut -f4 | yame pack -fb - &gt; output.cg . | Parallel processing for multiple files # Process multiple samples in parallel parallel -j 8 'yame pack -f3 {} &gt; {.}.cg' ::: *.txt . | Pre-sort large files # Sort once, use many times bedtools sort -i large_file.bed &gt; large_file_sorted.bed . | . Storage Tips . | Don’t double-compress # CX files are already compressed, don't gzip them yame pack -fb data.txt &gt; output.cg # Good yame pack -fb data.txt | gzip &gt; output.cg.gz # Redundant . | Choose appropriate format . | Format 0 for binary: ~32x compression | Format 3 for M/U: ~10-20x compression | Format 2 for states: Varies by number of categories | . | Remove intermediate text files yame pack -fb data.txt &gt; data.cg &amp;&amp; rm data.txt . | . ",
+    "url": "/YAME/docs/pack_unpack.html#performance-optimization",
+    
+    "relUrl": "/docs/pack_unpack.html#performance-optimization"
+  },"53": {
+    "doc": "Storage & Format",
+    "title": "Validation and Testing",
+    "content": "Always validate your packed files: . #!/bin/bash # Validation script CX_FILE=$1 echo \"Validating $CX_FILE...\" # 1. Check file is valid CX format if yame info $CX_FILE &gt; /dev/null 2&gt;&amp;1; then echo . ",
+    "url": "/YAME/docs/pack_unpack.html#validation-and-testing",
+    
+    "relUrl": "/docs/pack_unpack.html#validation-and-testing"
+  },"54": {
+    "doc": "Storage & Format",
+    "title": "Storage & Format",
     "content": " ",
     "url": "/YAME/docs/pack_unpack.html",
     
     "relUrl": "/docs/pack_unpack.html"
-  },"32": {
-    "doc": "Methylation Data Row Operations",
+  },"55": {
+    "doc": "Row Subset/Operations",
     "title": "Row operations of the methylation sites",
-    "content": "yame rowop provides a fast and convenient way to perform some frequently used row operations such as obtaining the mean and standard deviation statistics from yame rowop -o mean and yame rowop -o std. The most common use of yame rowop might be taking the sum of binary data to merge the pseudobulks. For example, we have a single cell methylation .cg file, and we want to merge cluster #1 to obatin the cluster #1 pseudobulks, we can combine this with yame subset by . yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum &gt; single_cell_pseudobulk1.cg . yame rowop also allows . | Binarization of the .cg file with the output of binary strings using yame rowop -o binstring | Co-methylation patterns of neighboring CGs using yame rowop -o cometh. | . For more help with rowop, run yame rowop in the terminal or check out the rowop help page. ",
+    "content": "yame rowop provides a fast and convenient way to perform some frequently used row operations such as obtaining the mean and standard deviation statistics from yame rowop -o mean and yame rowop -o std. The most common use of yame rowop might be taking the sum of binary data to merge the pseudobulks. For example, we have a single cell methylation .cg file, and we want to merge cluster #1 to obatin the cluster #1 pseudobulks, we can combine this with yame subset by . yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum &gt; single_cell_pseudobulk1.cg . yame rowop also allows . | Binarization of the .cg file with the output of binary strings using yame rowop -o binstring | Co-methylation patterns of neighboring CGs using yame rowop -o cometh. | . For more help with rowop, run yame rowop in the terminal or check out the rowop help page. yame chunk and yame chunkchar breakdown .cx file into smaller and more manageable parts. For more help with chunk, run yame chunk in the terminal or check out the chunk help page. ",
     "url": "/YAME/docs/rowop.html#row-operations-of-the-methylation-sites",
     
     "relUrl": "/docs/rowop.html#row-operations-of-the-methylation-sites"
-  },"33": {
-    "doc": "Methylation Data Row Operations",
-    "title": "Methylation Data Row Operations",
+  },"56": {
+    "doc": "Row Subset/Operations",
+    "title": "Row Subset/Operations",
     "content": " ",
     "url": "/YAME/docs/rowop.html",
     
     "relUrl": "/docs/rowop.html"
-  },"34": {
-    "doc": "Methylation Data Sample Operations",
+  },"57": {
+    "doc": "Sample Combination/Indexing",
     "title": "Sample operations",
-    "content": "yame index generates the index file for the .cx input. This is helpful when .cx contains multiple samples. yame split splitx the samples when provided with -s sample name list. For more help with split, run yame split in the terminal or check out the pack help page. yame chunk and yame chunkchar breakdown .cx file into smaller and more manageable parts. For more help with chunk, run yame chunk in the terminal or check out the chunk help page. ",
+    "content": "yame index generates the index file for the .cx input. This is helpful when .cx contains multiple samples. ",
     "url": "/YAME/docs/sample.html#sample-operations",
     
     "relUrl": "/docs/sample.html#sample-operations"
-  },"35": {
-    "doc": "Methylation Data Sample Operations",
-    "title": "Methylation Data Sample Operations",
+  },"58": {
+    "doc": "Sample Combination/Indexing",
+    "title": "Example of merging a feature file with multiple .cm files",
+    "content": "Here’s an example showing how to merge multiple histone modification ChIP-Seq peak bed files into one merged .cm feature file using yame index. First, obtain a .tsv file describing the index and path for each of the bed file like controlfiles.tsv below: . 268 GSM648494 human_hm/268_sort_peaks.narrowPeak.bed 269 GSM648495 human_hm/269_sort_peaks.narrowPeak.bed 272 GSM575295 human_hm/272_b_sort_peaks.broadPeak.bed 273 GSM575280 human_hm/273_sort_peaks.narrowPeak.bed 274 GSM575296 human_hm/274_b_sort_peaks.broadPeak.bed 275 GSM575281 human_hm/275_sort_peaks.narrowPeak.bed 367 GSM575223 human_hm/367_sort_peaks.narrowPeak.bed 368 GSM575222 human_hm/368_sort_peaks.narrowPeak.bed 382 GSM610328 human_hm/382_sort_peaks.narrowPeak.bed . Then, make individual .cm files for each feature, see yame pack. cat controlfiles.tsv | parallel --colsep '\\t' -j 72 'id={1};path={3}; sortbed $path | bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c | cut -f4 | yame pack -f b - $id.cm' . Then, run the following commands and tailor the threshold for quality control. awk '{print \"\"$1\".cm\", $2\";\"$4;}' controlfiles.tsv | while read fn anno; do yame summary $fn; done &gt; qc.txt awk '$1!~/QFile/ &amp;&amp; $6&gt;5000' qc.txt | awk 'NR==FNR{a[$1]=1;}NR!=FNR&amp;&amp;($1\".cm\" in a){print $0;}' - controlfiles.tsv | awk '{print \"\"$1\".cm\", $2\";\"$4;}' | sort -k2,2 | while read fn anno; do cat $fn &gt;&gt; merged.cm; yame index -1 $anno merged.cm; done . yame split splits the samples when provided with -s sample name list. For more help with split, run yame split in the terminal or check out the split help page. ",
+    "url": "/YAME/docs/sample.html#example-of-merging-a-feature-file-with-multiple-cm-files",
+    
+    "relUrl": "/docs/sample.html#example-of-merging-a-feature-file-with-multiple-cm-files"
+  },"59": {
+    "doc": "Sample Combination/Indexing",
+    "title": "Sample Combination/Indexing",
     "content": " ",
     "url": "/YAME/docs/sample.html",
     
     "relUrl": "/docs/sample.html"
-  },"36": {
+  },"60": {
+    "doc": "Storage & Format",
+    "title": "Methylation Data Packing and Unpacking",
+    "content": "Convert between text and compressed CX binary formats for efficient storage and analysis. ",
+    "url": "/YAME/docs/storage.html#methylation-data-packing-and-unpacking",
+    
+    "relUrl": "/docs/storage.html#methylation-data-packing-and-unpacking"
+  },"61": {
+    "doc": "Storage & Format",
+    "title": "Table of Contents",
+    "content": ". | Overview . | Why Use CX Formats? | Key Concepts | . | Understanding CX Formats . | The CX Format Family | Choosing the Right Format | . | yame pack . | Basic Syntax | Essential Options | Critical Input Requirement | . | Format-Specific Packing Examples . | Format 0/b - Binary Data | Format 2/s - Chromatin States | Format 3 - M/U Sequencing Counts | Format 4 - Methylation Fractions | Format 5 - Differential Methylation | Format 6 - Set and Universe | Format 7 - Reference Coordinates | . | Creating Feature Files - Complete Guide . | Example 1: ChromHMM Chromatin States . | Input Data Format | Step-by-Step Workflow | . | Example 2: Histone Modification Peaks | Example 3: Gene Annotations | Example 4: Genomic Bins/Windows | Example 5: Custom Region Sets | . | yame unpack . | Basic Syntax | Common Options | . | Unpacking Examples . | Format 3 - M/U Count Data | Format 0/b - Binary Data | Format 2/s - State Data | Format 7 - Reference Coordinates | Unpacking Specific Samples | . | Practical Workflows . | Workflow 1: Process Bisulfite Sequencing Data | Workflow 2: Create Multi-Feature Database | Workflow 3: Convert Array Data to CX Format | Workflow 4: Quality Control Pipeline | . | Best Practices . | For Packing | For Feature Files | For Unpacking | . | Format Selection Guide | Troubleshooting . | Common Issues | . | Performance Optimization . | Speed Tips | Storage Tips | . | Validation and Testing | . ",
+    "url": "/YAME/docs/storage.html#table-of-contents",
+    
+    "relUrl": "/docs/storage.html#table-of-contents"
+  },"62": {
+    "doc": "Storage & Format",
+    "title": "Overview",
+    "content": "YAME’s pack and unpack commands provide bidirectional conversion between human-readable text formats and the compressed CX binary format family. The CX formats dramatically reduce storage requirements (often 10-100x compression) while enabling rapid analysis operations. Why Use CX Formats? . | Massive compression - Reduce storage from gigabytes to megabytes | Fast I/O - BGZF compression enables rapid reading/writing | Uniform structure - All formats share consistent internal architecture | Optimized for methylation - Each format designed for specific data types | Seamless integration - Works with all YAME commands and external tools | . Key Concepts . | Packing - Convert text data (BED, TSV, CSV) to compressed binary CX format | Unpacking - Convert CX format back to human-readable text | Format specification - Different CX formats optimized for different data types | Reference coordinates - All data must align with reference CpG coordinate order | BGZF compression - Block-compressed format allowing random access | . ",
+    "url": "/YAME/docs/storage.html#overview",
+    
+    "relUrl": "/docs/storage.html#overview"
+  },"63": {
+    "doc": "Storage & Format",
+    "title": "Understanding CX Formats",
+    "content": "The CX Format Family . YAME supports 8 different CX formats, each optimized for specific data types: . | Format | Type Code | File Ext | Data Type | Compression Method | Best For | . | Format 0 | b or 0 | .cg | Binary | 1 byte per 8 CpGs | Presence/absence, DMR calls | . | Format 1 | 1 | .cg | Value + RLE | Value (1B) + RLE (2B) | Compressed integer counts | . | Format 2 | s or 2 | .cm | State + RLE | State labels + Index RLE | Chromatin states, genomic features | . | Format 3 | 3 | .cg | MU RLE | M/U counts + Ladder byte | Bisulfite sequencing (M,U) | . | Format 4 | 4 | .cg | Fraction + NA-RLE | Float fraction + NA encoding | Methylation beta values | . | Format 5 | 5 | .cg | 2-bit + NA-RLE | Ternary values {0,1,2} | Differential calls (hypo/unchanged/hyper) | . | Format 6 | 6 | .cg | 2-bit boolean | Set and universe flags | Query + background for enrichment | . | Format 7 | 7 | .cr | Compressed BED | Delta-encoded coordinates | CpG reference coordinates | . Choosing the Right Format . Quick Decision Tree: . What type of data do you have? ├─ Binary (yes/no, present/absent) │ └─&gt; Format 0 (b) │ ├─ Chromatin states or categorical features │ └─&gt; Format 2 (s) │ ├─ M and U count pairs from bisulfite sequencing │ └─&gt; Format 3 │ ├─ Beta values or methylation fractions (0.0-1.0) │ └─&gt; Format 4 │ ├─ Differential calls (hypomethylated/unchanged/hypermethylated) │ └─&gt; Format 5 │ ├─ Query + background for enrichment testing │ └─&gt; Format 6 │ └─ Reference genomic coordinates └─&gt; Format 7 . ",
+    "url": "/YAME/docs/storage.html#understanding-cx-formats",
+    
+    "relUrl": "/docs/storage.html#understanding-cx-formats"
+  },"64": {
+    "doc": "Storage & Format",
+    "title": "yame pack",
+    "content": "Basic Syntax . yame pack -f&lt;format&gt; [options] &lt;input_file&gt; [output_file] . Essential Options . | Option | Description | Example | . | -f&lt;format&gt; | Format specification (required) | -fb, -f2, -f3 | . | - | Read from stdin | cat data.txt \\| yame pack -fb - | . | output.cg | Output filename (optional) | yame pack -fb input.txt output.cg | . Critical Input Requirement . ⚠️ Your input MUST match reference CpG coordinates exactly: . | Same number of rows as reference CpGs | Same order as reference CpGs | One value per CpG in reference | . How to ensure alignment: . # Step 1: Get reference coordinates yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # Step 2: Intersect your BED file with reference bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; aligned_output.cg . ",
+    "url": "/YAME/docs/storage.html#yame-pack",
+    
+    "relUrl": "/docs/storage.html#yame-pack"
+  },"65": {
+    "doc": "Storage & Format",
+    "title": "Format-Specific Packing Examples",
+    "content": "Format 0/b - Binary Data . Use case: Presence/absence, binary methylation calls, DMR indicators . Input: One line per CpG, values 0 or 1 . # Example input (binary_data.txt): # 1 # 0 # 1 # 1 # 0 # Pack from text file yame pack -fb binary_data.txt &gt; binary_output.cg # Pack from BED file via bedtools bedtools sort -i dmr_sites.bed | \\ bedtools intersect -a cpg_ref.bed.gz -b - -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; dmr_binary.cg . Compression: ~32x reduction (8 CpGs per byte) . Format 2/s - Chromatin States . Use case: Categorical annotations, chromatin states, genomic features . Input: One line per CpG, containing state label (text string) . # Example input (states.txt): # TssA # TssFlnk # TxFlnk # Tx # Tx # EnhG # Enh # Pack state data yame pack -f2 states.txt &gt; chromatin_states.cm # Or use 's' shorthand yame pack -fs states.txt &gt; chromatin_states.cm . Special property: Excellent for feature files with many categories . Format 3 - M/U Sequencing Counts . Use case: Bisulfite sequencing methylated (M) and unmethylated (U) read counts . Input: Two tab-separated columns per line (M count, U count) . # Example input (mu_counts.txt): # 12 3 # 8 8 # 0 15 # 20 2 # 0 0 # 5 10 # Pack M/U count data yame pack -f3 mu_counts.txt &gt; sequencing_data.cg . Compression: Highly efficient for typical sequencing coverage distributions . Note: M and U can be any non-negative integers . Format 4 - Methylation Fractions . Use case: Beta values, methylation fractions, continuous values 0.0-1.0 . Input: One line per CpG, float values between 0 and 1 (or NA) . # Example input (beta_values.txt): # 0.75 # 0.33 # 0.88 # NA # 0.50 # 0.92 # Pack fraction data yame pack -f4 beta_values.txt &gt; methylation_fractions.cg . Special handling: . | NA values are properly encoded | Preserves precision for methylation fractions | Efficient for array data | . Format 5 - Differential Methylation . Use case: Three-state differential calls . Input: One line per CpG, values {0, 1, 2} only . | 0 = Hypomethylated | 1 = Unchanged / Not significant | 2 = Hypermethylated | . # Example input (diff_calls.txt): # 0 # 1 # 2 # 1 # 0 # 2 # Pack differential calls yame pack -f5 diff_calls.txt &gt; differential.cg . Compression: 2 bits per CpG (4 CpGs per byte) . Format 6 - Set and Universe . Use case: Enrichment testing with query set and background/universe . Input: Two tab-separated columns . | Column 1: Query set (0 or 1) | Column 2: Universe/background (0 or 1) | . # Example input (query_universe.txt): # 1 1 (in query, in universe) # 0 1 (not in query, in universe) # 1 1 (in query, in universe) # 0 0 (not in query, not in universe) # Pack query + universe yame pack -f6 query_universe.txt &gt; query_bg.cg . Use case: More precise enrichment testing (see enrichment guide) . Format 7 - Reference Coordinates . Use case: CpG reference coordinate files . Input: BED format with CpG identifiers . # Example input (cpg_coords.bed): # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 # Pack reference coordinates yame pack -f7 cpg_coords.bed &gt; cpg_reference.cr . Output: .cr file (CpG reference) . Compression: Delta encoding of positions for maximum compression . ",
+    "url": "/YAME/docs/storage.html#format-specific-packing-examples",
+    
+    "relUrl": "/docs/storage.html#format-specific-packing-examples"
+  },"66": {
+    "doc": "Storage & Format",
+    "title": "Creating Feature Files - Complete Guide",
+    "content": "Feature files (format 2) are essential for enrichment testing and feature-based analysis. Here’s the complete workflow. Example 1: ChromHMM Chromatin States . This detailed example shows how to create a ChromHMM feature file from full-stack chromatin state annotations. Input Data Format . Your ChromHMM BED file (hg38_chromhmm_100_segments.bed.gz) should look like: . chr1 10000 10400 1_TssA chr1 10400 10600 2_TssFlnk chr1 10600 10800 8_EnhW1 chr1 10800 12800 15_Quies chr1 12800 13000 8_EnhW1 chr1 13000 13200 7_EnhG2 chr1 13200 14800 15_Quies . Column format: . | Chromosome | Start position | End position | Chromatin state label | . Step-by-Step Workflow . Step 1: Prepare reference CpG coordinates . # Unpack reference .cr file to BED format yame unpack cpg_nocontig.cr | gzip &gt; cpg_nocontig.bed.gz # Verify it worked zcat cpg_nocontig.bed.gz | head -3 # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 . Step 2: Intersect CpGs with chromatin states . zcat hg38_chromhmm_100_segments.bed.gz | \\ bedtools sort | \\ bedtools intersect -a cpg_nocontig.bed.gz -b - -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; ChromHMM_FullStack.cm . Command breakdown: . | zcat ... | bedtools sort - Ensure chromatin state BED is sorted | bedtools intersect -loj - Left outer join: keep ALL reference CpGs . | CpGs overlapping states get the state label | CpGs not overlapping any state get “.” (NA) | . | bedtools groupby -g 1-3 -c 7 -o first - For CpGs in multiple states, take first | cut -f4 - Extract the state label (4th column is state name) | yame pack -f2 - - Pack as format 2 (categorical state data) | . Step 3: Verify the output . # Check file info yame info ChromHMM_FullStack.cm # Preview state distribution yame unpack ChromHMM_FullStack.cm | sort | uniq -c | sort -rn | head . Step 4: Use for enrichment testing . yame summary -m ChromHMM_FullStack.cm query.cg &gt; enrichment_results.txt . Example 2: Histone Modification Peaks . Create feature file from ChIP-seq peaks: . # Single histone mark bedtools intersect -a cpg_ref.bed.gz -b H3K4me3_peaks.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; H3K4me3.cm # Multiple marks - see sample.markdown for merging multiple features . Example 3: Gene Annotations . Create features for different gene regions: . # Promoters (2kb upstream of TSS) bedtools intersect -a cpg_ref.bed.gz -b promoters.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; promoters.cm # Exons bedtools intersect -a cpg_ref.bed.gz -b exons.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; exons.cm # Gene bodies bedtools intersect -a cpg_ref.bed.gz -b gene_bodies.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; gene_bodies.cm . Example 4: Genomic Bins/Windows . Create fixed-size genomic windows: . # 1. Create 100kb windows bedtools makewindows -g hg38.genome -w 100000 | \\ awk '{print $0\"\\tchr\"$1\":\"$2/100000}' &gt; windows_100kb.bed # 2. Assign CpGs to windows yame unpack cpg_ref.cr | \\ bedtools intersect -a - -b windows_100kb.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; bins_100kb.cm # 3. Use for single-cell aggregation yame summary -m bins_100kb.cm single_cell.cg &gt; binned_methylation.txt . Example 5: Custom Region Sets . Create feature from any custom BED file: . # Your custom regions (e.g., enhancers, TADs, etc.) # custom_regions.bed format: # chr1 100000 102000 enhancer_1 # chr1 150000 153000 enhancer_2 bedtools intersect -a cpg_ref.bed.gz -b custom_regions.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; custom_features.cm . ",
+    "url": "/YAME/docs/storage.html#creating-feature-files---complete-guide",
+    
+    "relUrl": "/docs/storage.html#creating-feature-files---complete-guide"
+  },"67": {
+    "doc": "Storage & Format",
+    "title": "yame unpack",
+    "content": "Convert CX binary format back to human-readable text. Basic Syntax . yame unpack [options] &lt;cx_file&gt; . Common Options . | Option | Description | Example | . | -a | Unpack all samples | yame unpack -a multi.cg | . | -f &lt;N&gt; | Filter by min coverage | yame unpack -f 5 data.cg | . | -s &lt;name&gt; | Unpack specific sample | yame unpack -s sample1 data.cg | . | -i &lt;index&gt; | Unpack by sample index | yame unpack -i 0 data.cg | . ",
+    "url": "/YAME/docs/storage.html#yame-unpack",
+    
+    "relUrl": "/docs/storage.html#yame-unpack"
+  },"68": {
+    "doc": "Storage & Format",
+    "title": "Unpacking Examples",
+    "content": "Format 3 - M/U Count Data . # Unpack all samples with coverage &gt;= 1 yame unpack -a -f 1 sequencing.cg # Output format (tab-separated): # beta coverage # 0.75 4 # 0.33 3 # 0.88 8 # NA 0 # 0.50 2 . Columns: . | Beta: Methylation fraction (M / (M+U)) | Coverage: Total reads (M + U) | . Format 0/b - Binary Data . # Unpack binary data yame unpack binary_data.cg # Output (one value per line): # 1 # 0 # 1 # 1 # 0 . Format 2/s - State Data . # Unpack chromatin states yame unpack ChromHMM.cm | head -10 # Output (state labels): # 1_TssA # 1_TssA # 3_TxFlnk # 4_Tx # 4_Tx # 7_Enh # 15_Quies . Format 7 - Reference Coordinates . # Unpack reference coordinates to BED yame unpack cpg_nocontig.cr &gt; cpg_coordinates.bed # Output (BED format): # chr1 10468 10469 chr1_10469 # chr1 10470 10471 chr1_10471 # chr1 10483 10484 chr1_10484 . Unpacking Specific Samples . # Check available samples first yame info multi_sample.cg # Unpack specific sample yame unpack -s \"sample_A\" multi_sample.cg &gt; sample_A.txt # Unpack first sample (index 0) yame unpack -i 0 multi_sample.cg &gt; first_sample.txt . ",
+    "url": "/YAME/docs/storage.html#unpacking-examples",
+    
+    "relUrl": "/docs/storage.html#unpacking-examples"
+  },"69": {
+    "doc": "Storage & Format",
+    "title": "Practical Workflows",
+    "content": "Workflow 1: Process Bisulfite Sequencing Data . Complete pipeline from bisulfite sequencing output to analysis: . # Assuming you have M and U counts from your pipeline # Format: chr start end M U # 1. Extract M and U, align with reference bedtools intersect -a cpg_ref.bed.gz -b methylation_calls.bed -loj -sorted | \\ awk '{if ($8==\".\") print \"0\\t0\"; else print $8\"\\t\"$9}' | \\ yame pack -f3 - &gt; sample.cg # 2. Verify data quality yame info sample.cg yame summary sample.cg # 3. Perform enrichment analysis yame summary -m ChromHMM.cm sample.cg &gt; chromatin_enrichment.txt yame summary -m genes.cm sample.cg &gt; gene_enrichment.txt # 4. If needed, unpack for external tools yame unpack -f 5 sample.cg &gt; sample_cov5.txt . Workflow 2: Create Multi-Feature Database . Build comprehensive feature database: . #!/bin/bash # Create comprehensive feature database for hg38 # 1. Prepare reference yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Download and process multiple features declare -A features=( [\"ChromHMM_15\"]=\"ChromHMM_15state.bed.gz\" [\"CpG_Islands\"]=\"cpgIslandExt.bed.gz\" [\"Promoters\"]=\"promoters_2kb.bed.gz\" [\"Enhancers\"]=\"enhancers_merged.bed.gz\" [\"TFBS\"]=\"tfbs_combined.bed.gz\" ) # 3. Create individual feature files for name in \"${!features[@]}\"; do file=\"${features[$name]}\" echo \"Processing $name...\" zcat \"$file\" | bedtools sort | \\ bedtools intersect -a cpg_ref.bed.gz -b - -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; \"${name}.cm\" done echo \"Feature files created:\" ls -lh *.cm . Workflow 3: Convert Array Data to CX Format . Convert Illumina array data: . #!/bin/bash # Convert 450k/EPIC array data to CX format # Assuming you have: array_data.txt with columns: ProbeID, Beta # 1. Get array manifest with probe coordinates # manifest.bed format: chr start end ProbeID # 2. Intersect with reference CpGs bedtools intersect -a cpg_ref.bed.gz -b manifest.bed -loj -sorted &gt; probe_cpg_map.bed # 3. Map betas to CpG positions join -1 4 -2 1 -t$'\\t' \\ &lt;(sort -k4,4 probe_cpg_map.bed) \\ &lt;(sort -k1,1 array_data.txt) | \\ sort -k2,2 -k3,3n | \\ cut -f7 | \\ awk '{if ($1==\"\") print \"NA\"; else print $1}' | \\ yame pack -f4 - &gt; array_sample.cg echo \"Array data converted to CX format\" yame info array_sample.cg . Workflow 4: Quality Control Pipeline . Systematic QC for methylation data: . #!/bin/bash # QC pipeline for CX files CX_FILE=$1 echo \"=== Quality Control Report for $CX_FILE ===\" echo # 1. Basic file info echo \"File Information:\" yame info $CX_FILE echo # 2. Coverage statistics echo \"Coverage Statistics:\" yame summary $CX_FILE echo # 3. CpG island enrichment (should be enriched) echo \"CpG Island Enrichment:\" yame summary -m CpG_islands.cm $CX_FILE | awk 'NR&gt;1 {print \"Log2OR:\", $9}' echo # 4. Check coverage distribution echo \"Coverage Distribution:\" yame unpack -a $CX_FILE | \\ awk '{cov=$2} cov&gt;0 {if(cov&lt;5) low++; else if(cov&lt;10) med++; else high++} END{print \"Low(&lt;5):\", low, \"Med(5-10):\", med, \"High(&gt;10):\", high}' echo # 5. Methylation distribution echo \"Methylation Distribution:\" yame unpack -a $CX_FILE | \\ awk '$1!=\"NA\" {beta=$1; if(beta&lt;0.3) hypo++; else if(beta&lt;0.7) inter++; else hyper++} END{print \"Hypo(&lt;0.3):\", hypo, \"Inter(0.3-0.7):\", inter, \"Hyper(&gt;0.7):\", hyper}' echo echo \"=== QC Complete ===\" . ",
+    "url": "/YAME/docs/storage.html#practical-workflows",
+    
+    "relUrl": "/docs/storage.html#practical-workflows"
+  },"70": {
+    "doc": "Storage & Format",
+    "title": "Best Practices",
+    "content": "For Packing . | Always align with reference first bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c . | Verify dimensions match # Count reference CpGs zcat cpg_ref.bed.gz | wc -l # Count your data rows wc -l your_data.txt . | Choose appropriate format . | Binary (0/1) → Format 0 | States/categories → Format 2 | M,U counts → Format 3 | Fractions → Format 4 | . | Handle missing values properly . | Format 3: Use M=0, U=0 for no coverage | Format 4: Use “NA” for missing values | Format 2: Use “.” for unassigned CpGs | . | Test with small subset first head -1000 data.txt | yame pack -fb - &gt; test.cg yame info test.cg yame unpack test.cg | head . | . For Feature Files . | Use -loj (left outer join) for completeness bedtools intersect -a cpg_ref.bed.gz -b features.bed -loj -sorted . | Handle overlapping features explicitly bedtools groupby -g 1-3 -c 7 -o first # Take first # or bedtools groupby -g 1-3 -c 7 -o last # Take last # or bedtools groupby -g 1-3 -c 7 -o collapse # Keep all (comma-separated) . | Quality control your features yame summary feature.cm # Check: N_mask (should be reasonable number of CpGs) . | Document feature creation # Add comment in script # Feature: ChromHMM 15-state model # Source: ENCODE, hg38 # Date created: 2025-01-15 # Command: [paste command here] . | . For Unpacking . | Filter by coverage when appropriate yame unpack -f 5 data.cg # Only CpGs with coverage ≥ 5 . | Pipe to reduce storage yame unpack data.cg | process_data.py # Don't save intermediate . | Verify unpacked data yame unpack data.cg | head # Check format yame unpack data.cg | wc -l # Check row count . | . ",
+    "url": "/YAME/docs/storage.html#best-practices",
+    
+    "relUrl": "/docs/storage.html#best-practices"
+  },"71": {
+    "doc": "Storage & Format",
+    "title": "Format Selection Guide",
+    "content": "Choose the optimal format for your data: . | Your Data Type | Format | Command Example | . | DMR sites (yes/no) | 0/b | yame pack -fb | . | Differential calls (hypo/no/hyper) | 5 | yame pack -f5 | . | Chromatin states | 2/s | yame pack -f2 | . | ChIP-seq peaks | 0/b | yame pack -fb | . | M and U counts | 3 | yame pack -f3 | . | 450k array betas | 4 | yame pack -f4 | . | WGBS betas | 4 | yame pack -f4 | . | Gene annotations | 2/s | yame pack -f2 | . | Genomic bins | 2/s | yame pack -f2 | . | Query + background | 6 | yame pack -f6 | . | CpG coordinates | 7 | yame pack -f7 | . ",
+    "url": "/YAME/docs/storage.html#format-selection-guide",
+    
+    "relUrl": "/docs/storage.html#format-selection-guide"
+  },"72": {
+    "doc": "Storage & Format",
+    "title": "Troubleshooting",
+    "content": "Common Issues . Problem: “Dimension mismatch” error . Solution: . # Check dimensions zcat cpg_ref.bed.gz | wc -l # Reference wc -l your_data.txt # Your data # These must match! If not: bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 &gt; aligned_data.txt . Problem: Packed file is unexpectedly large . Solutions: . | Check if you’re using the right format (binary data shouldn’t use format 3) | Verify data is properly aligned | Consider if data is actually compressible | . Problem: Unpacked data shows all NAs . Solutions: . # Check file format yame info yourfile.cg # Verify data exists yame summary yourfile.cg # Try unpacking without filters yame unpack yourfile.cg | head . Problem: Feature labels not showing in enrichment . Solutions: . # Verify format 2 was used yame info feature.cm # Check labels yame unpack feature.cm | sort | uniq -c # Recreate with proper format yame pack -f2 states.txt &gt; feature.cm . Problem: bedtools intersect produces wrong output . Solutions: . # Ensure proper sorting bedtools sort -i file1.bed &gt; file1_sorted.bed bedtools sort -i file2.bed &gt; file2_sorted.bed # Use -sorted flag bedtools intersect -a file1_sorted.bed -b file2_sorted.bed -sorted # Check chromosome naming (chr1 vs 1) head file1.bed head file2.bed . Problem: Memory errors when packing large files . Solutions: . # Process in chunks split -l 5000000 large_data.txt chunk_ for chunk in chunk_*; do yame pack -fb $chunk &gt; ${chunk}.cg done # Combine (if needed) cat chunk_*.cg &gt; combined.cg . ",
+    "url": "/YAME/docs/storage.html#troubleshooting",
+    
+    "relUrl": "/docs/storage.html#troubleshooting"
+  },"73": {
+    "doc": "Storage & Format",
+    "title": "Performance Optimization",
+    "content": "Speed Tips . | Use pipes to avoid I/O # Slow (intermediate files) bedtools intersect ... &gt; temp.bed cut -f4 temp.bed &gt; temp2.txt yame pack -fb temp2.txt &gt; output.cg # Fast (piped) bedtools intersect ... | cut -f4 | yame pack -fb - &gt; output.cg . | Parallel processing for multiple files # Process multiple samples in parallel parallel -j 8 'yame pack -f3 {} &gt; {.}.cg' ::: *.txt . | Pre-sort large files # Sort once, use many times bedtools sort -i large_file.bed &gt; large_file_sorted.bed . | . Storage Tips . | Don’t double-compress # CX files are already compressed, don't gzip them yame pack -fb data.txt &gt; output.cg # Good yame pack -fb data.txt | gzip &gt; output.cg.gz # Redundant . | Choose appropriate format . | Format 0 for binary: ~32x compression | Format 3 for M/U: ~10-20x compression | Format 2 for states: Varies by number of categories | . | Remove intermediate text files yame pack -fb data.txt &gt; data.cg &amp;&amp; rm data.txt . | . ",
+    "url": "/YAME/docs/storage.html#performance-optimization",
+    
+    "relUrl": "/docs/storage.html#performance-optimization"
+  },"74": {
+    "doc": "Storage & Format",
+    "title": "Validation and Testing",
+    "content": "Always validate your packed files: . #!/bin/bash # Validation script CX_FILE=$1 echo \"Validating $CX_FILE...\" # 1. Check file is valid CX format if yame info $CX_FILE &gt; /dev/null 2&gt;&amp;1; then echo . ",
+    "url": "/YAME/docs/storage.html#validation-and-testing",
+    
+    "relUrl": "/docs/storage.html#validation-and-testing"
+  },"75": {
+    "doc": "Storage & Format",
+    "title": "Storage & Format",
+    "content": " ",
+    "url": "/YAME/docs/storage.html",
+    
+    "relUrl": "/docs/storage.html"
+  },"76": {
     "doc": "YAME Subcommands",
     "title": "YAME Subcommands",
     "content": "Usage for all YAME subcommands (printed with YAME). Program: yame (Yet Another Methylation tool) - whole genome DNA methylation data management. Version: 0.3.20230904 Contact: Wanding Zhou&lt;wanding.zhou@pennmedicine.upenn.edu&gt; Usage: yame &lt;command&gt; [options] Available commands: pack - Pack data into a cx file. unpack - Unpack data from a cx file. subset - Subset samples from a cx file. rowsub - Subset rows a cx file using an index list file. info - Display basic parameter of the cx file. summary - calculate summary, with or without masks. index - Index samples in a cx file. split - Split multi-sample data into single-sample data. chunk - Chunk data into smaller fragments. chunkchar - Chunk text data into smaller fragments. rowop - Perform operations on rows, e.g., sum binary values. mask - Mask methylation data by setting masked record to M=U=0. dsample - Downsample methylation data by setting unsampled records to M=U=0. ",
     "url": "/YAME/docs/subcommands",
     
     "relUrl": "/docs/subcommands"
-  },"37": {
+  },"77": {
     "doc": "Methylation Data Subset",
     "title": "Subset of the packed .cx file",
     "content": " ",
     "url": "/YAME/docs/subset.html#subset-of-the-packed-cx-file",
     
     "relUrl": "/docs/subset.html#subset-of-the-packed-cx-file"
-  },"38": {
+  },"78": {
     "doc": "Methylation Data Subset",
     "title": "Subset samples",
-    "content": "yame subset will subset the samples from the multi sample .cx file. We can store the samples we want to keep with a text file or simply providing them in the command line. Make sure the sample names provided is in the sample names of .cx file. yame subset -l sample.txt yourfile.cg . For more help with subset, run yame subset in the terminal or check out the subset help page. ",
+    "content": "yame subset will subset the samples from the multi sample .cx file. We can store the samples we want to keep with a text file or simply providing them in the command line. Make sure the sample names provided is in the sample names of .cx file. yame subset -l sample.txt yourfile.cg . To extract one term of format 2 to format 0, you can use the yame subset -s function. For more help with subset, run yame subset in the terminal or check out the subset help page. ",
     "url": "/YAME/docs/subset.html#subset-samples",
     
     "relUrl": "/docs/subset.html#subset-samples"
-  },"39": {
+  },"79": {
     "doc": "Methylation Data Subset",
     "title": "Subset cx sites",
     "content": "If we want to obtain methylation sites from specific regions, we can use this yame rowsub function. If we have a list of CpG sites we want to subset, for example . chr16_18300002 chr16_18300046 chr16_18300140 chr16_18300162 chr16_18300172 . We can use -L with -R together (we provided two row coordiante .cr files mm10/hg38). yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cg &gt; subset.cg . For more help with rowsub, run yame rowsub in the terminal or check out the rowsub help page. ",
     "url": "/YAME/docs/subset.html#subset-cx-sites",
     
     "relUrl": "/docs/subset.html#subset-cx-sites"
-  },"40": {
+  },"80": {
     "doc": "Methylation Data Subset",
     "title": "Methylation Data Subset",
     "content": " ",
     "url": "/YAME/docs/subset.html",
     
     "relUrl": "/docs/subset.html"
-  },"41": {
-    "doc": "Methylation Data Summarization",
+  },"81": {
+    "doc": "Summary and Encoding",
     "title": "Summarization of the packed .cx file",
     "content": "yame summary and yame info provide a brief summarization and basic parameters of the input .cx file. Assume you have a .cg file from yame pack, then you simply need to run the following to obtain the information. yame info yourfile.cg . yame summary yourfile.cg . yame summary also allows user to input a -m feature file, this is particularly useful if you want to aggregate methylation sites information over certain features and conduct enrichment testings. ",
     "url": "/YAME/docs/summarize.html#summarization-of-the-packed-cx-file",
     
     "relUrl": "/docs/summarize.html#summarization-of-the-packed-cx-file"
-  },"42": {
-    "doc": "Methylation Data Summarization",
+  },"82": {
+    "doc": "Summary and Encoding",
     "title": "An example of yame summary with mask feature file",
     "content": "For example, in single cell DNA methylome analysis, a typical approach is to merge the CG sites into a fixed window size bin because of high sparsity levels of the data. To do that, we can download the Win100k.20220228.cm file from KYCG_mm10, and then run the following . yame summary -m Win100k.20220228.cm single_cell.cg . The ouput will look something like this . QFile Query MFile Mask N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth single_cell.cg Sample1 Win100k.20220228.cm chr1:30 21867837 1861715 589 48 -0.07 0.688 0.1 single_cell.cg Sample1 Win100k.20220228.cm chr1:31 21867837 1861715 574 36 -0.48 0.917 0.1 . The output columns are: . | The file name of the query .cx | The sample name in the query.cx | The file name of the feature file | The name of each mask in the feature file | The number of CG sites covered in the universe | The number of CG sites covered in the query file | The number of CG sites covered in each mask | The number of CG sites covered both in the query file and the mask | Log2 of the odds ratio for the enrichment overlap | Average methylation levels of the query file in the mask | An approximation of the depth of coverage in the mask | . For a full guideline on how to test feature enrichment using yame summary, check out enrichment help. For more help with summary, run yame summary in the terminal or check out the summary help page. ",
     "url": "/YAME/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file",
     
     "relUrl": "/docs/summarize.html#an-example-of-yame-summary-with-mask-feature-file"
-  },"43": {
-    "doc": "Methylation Data Summarization",
-    "title": "Methylation Data Summarization",
+  },"83": {
+    "doc": "Summary and Encoding",
+    "title": "Summary and Encoding",
     "content": " ",
     "url": "/YAME/docs/summarize.html",
     

@@ -1,6 +1,6 @@
 ---
-title: Methylation Data Summarization
-nav_order: 4
+title: Summary and Encoding
+nav_order: 1
 ---
 
 # Summarization of the packed .cx file

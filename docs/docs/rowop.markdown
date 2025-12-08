@@ -1,5 +1,5 @@
 ---
-title: Methylation Data Row Operations
+title: Row Subset/Operations
 nav_order: 6
 ---
 
@@ -19,3 +19,8 @@ yame subset -l cluster_1_id.txt single_cell.cg | yame rowop - -o binasum > singl
 
 For more help with `rowop`, run `yame rowop` in the terminal or check out the
 [rowop help page]({% link docs/subcommands/YAME_rowop.markdown %}).
+
+`yame chunk` and `yame chunkchar` breakdown `.cx` file into smaller and more manageable parts.
+
+For more help with `chunk`, run `yame chunk` in the terminal or check out the
+[chunk help page]({% link docs/subcommands/YAME_split.markdown %}).
