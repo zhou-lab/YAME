@@ -1,9 +1,9 @@
 ---
-title: Enrichment Testing
-nav_order: 2
+title: 3. Test Enrichment
+nav_order: 3
 ---
 
-# Enrichment Testing with YAME
+# 3. Enrichment Testing with YAME
 {: .no_toc }
 
 Test methylation enrichment across genomic features to identify biological associations.
@@ -93,7 +93,7 @@ yame summary -m feature.cm yourfile.cg > enrichment_results.txt
 - CpG islands and shores
 - Repetitive elements
 
-You can also create custom feature files using [`yame pack`]({% link docs/pack_unpack.markdown %}).
+You can also create custom feature files using [`yame pack`]({% link docs/storage.markdown %}).
 
 ---
 
@@ -239,7 +239,7 @@ In this format:
 
 ## Creating Custom Feature Files
 
-You can create your own feature annotations using `yame pack`. See the detailed example in the [pack_unpack documentation]({% link docs/pack_unpack.markdown %}#example-generating-feature-files).
+You can create your own feature annotations using `yame pack`. See the detailed example in the [storage documentation]({% link docs/storage.markdown %}#example-generating-feature-files).
 
 Quick example for a custom BED file:
 
