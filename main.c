@@ -54,7 +54,7 @@ int main_binarize(int argc, char *argv[]);
 static int usage()
 {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Program: yame (Yet Another Methylation tool) - whole genome DNA methylation data management.\n");
+  fprintf(stderr, "Program: yame (Yet Another Methylation Encoder) - whole genome DNA methylation data management.\n");
   fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
   fprintf(stderr, "Contact: Wanding Zhou<wanding.zhou@pennmedicine.upenn.edu>\n\n");
   fprintf(stderr, "Usage:   yame <command> [options]\n\n");
