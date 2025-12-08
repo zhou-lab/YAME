@@ -23,7 +23,7 @@ email: wanding.zhou@pennmedicine.upenn.edu
 description: >- # this means to ignore newlines until "baseurl:"
 baseurl: "/YAME" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
-github_username:  Hongxiang2023
+github_username:  zhou-lab
 
 # Build settings
 markdown: kramdown
@@ -31,7 +31,7 @@ theme: just-the-docs
 search_enabled: true
 aux_links:
   "YAME on GitHub":
-    - "//github.com/Hongxiang2023/YAME"
+    - "//github.com/zhou-lab/YAME"
 plugins:
   - jekyll-feed
 
