@@ -1,7 +1,11 @@
+# Compiler and flags
 CC ?= gcc
 CFLAGS = -W -Wall -finline-functions -fPIC -std=gnu99 -Wno-unused-result -O3
 CLIB = -lpthread -lz -lm
 CF_OPTIMIZE = 1
+
+SRC_DIR = src
+INCLUDE = include
 
 OS := $(shell uname)
 ifeq ($(OS),  Darwin)
@@ -10,19 +14,29 @@ else
 	CLIB += -lrt
 endif
 
-INCLUDE = include
-
+# Program name
 PROG = yame
 
-.PHONY: build
+# HTSlib
+LHTSLIB_DIR = htslib
+LHTSLIB = $(LHTSLIB_DIR)/libhts.a
+
+SOURCES := $(wildcard $(SRC_DIR)/*.c)
+OBJECTS := $(SOURCES:$(SRC_DIR)/%.c=$(SRC_DIR)/%.o)
+
+CFLAGS += -I$(SRC_DIR) -I$(LHTSLIB_DIR)
+
+.PHONY: all build debug clean
+
+all: build
+
 build: exportcf $(PROG)
 
 exportcf:
 	$(eval export CF_OPTIMIZE)
 
-.PHONY: debug
 debug: CF_OPTIMIZE := 0
-debug: CFLAGS += -g # -pg
+debug: CFLAGS += -g
 debug: CFLAGS := $(filter-out -O3,$(CFLAGS))
 debug: build
 
@@ -30,30 +44,27 @@ debug: build
 ##### libraries #####
 #####################
 
-LHTSLIB_DIR = htslib
-LHTSLIB_INCLUDE = htslib/htslib
-LHTSLIB = $(LHTSLIB_DIR)/libhts.a
 $(LHTSLIB) :
-	make -C $(LHTSLIB_DIR) libhts.a
+	$(MAKE) -C $(LHTSLIB_DIR) libhts.a
 
 ###################
-### subcommands ###
+### compilation ###
 ###################
 
-%.o: %.c
-	$(CC) -c $(CFLAGS) -I$(LUTILS_DIR) -I$(LHTSLIB_INCLUDE) $< -o $@
+# Compile each .c in src/ into a .o in src/
+$(SRC_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) -c $(CFLAGS) $< -o $@
 
-SOURCES := $(wildcard *.c)
-OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
+###################
+###  linking   ####
+###################
 
-LIBS=$(OBJECTS) $(LTHSLIB) # view.o chunk.o pack.o header.o bundle.o
+$(PROG): $(LHTSLIB) $(OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $(OBJECTS) $(LHTSLIB) $(CLIB)
 
-yame: $(LIBS)
-	$(CC) $(CFLAGS) -o $@ *.o $(LTHSLIB) $(CLIB)
-
-
-## clean just src
-.PHONY: clean
+###################
+###   clean    ####
+###################
 clean :
-	rm -f *.o yame
-	make -C $(LHTSLIB_DIR) clean
+	rm -f $(SRC_DIR)/*.o $(PROG)
+	$(MAKE) -C $(LHTSLIB_DIR) clean
