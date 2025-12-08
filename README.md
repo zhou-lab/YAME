@@ -4,48 +4,68 @@
   </a>
 </p>
 
-
 # YAME — Yet Another Methylation Encoder
 
-A methylation toolset designed for sequence-level DNA methylation data management. It is a command-line C program capable of performing sequence-level enrichment testing, row operations (such as merging pseudobulks), downsampling, and other related tasks with ultra fast speed.
+[![Install with Bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg)](https://bioconda.github.io/recipes/yame/README.html)
+[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
-**YAME** is a fast and lightweight toolkit for storing, manipulating, and analyzing large-scale DNA methylation data.  
-It introduces a family of compact binary formats (**CX formats**) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure.
+A fast and lightweight toolkit for storing, manipulating, and analyzing large-scale DNA methylation data at the sequence level.
 
-YAME provides command-line tools for:
+## Overview
 
-- Efficiently **packing** text files into `.cx` formats  
-- **Unpacking** and exporting `.cx` back to human-readable form  
-- **Downsampling**, **subsetting**, and **row operations**  
-- **Enrichment testing** and methylation **summarization**  
-- Managing **multi-sample** CX files and sample indices  
+YAME is designed for efficient sequence-level DNA methylation data management, capable of handling both bulk and single-cell DNA methylome workflows. It introduces a family of compact binary formats (**CX formats**) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure.
 
-YAME is designed for both bulk and single-cell DNA methylome workflows.
+### 🌟 Key Features
 
----
+- **Ultra-fast performance** with high compression for methylation matrices
+- **Scalable** to hundreds of thousands of single cells
+- **Versatile data support**: MU counts, binary methylation, chromatin states, fractions, differential calls, and CpG coordinate streams
+- **Comprehensive toolkit**: packing, unpacking, downsampling, subsetting, row operations, enrichment testing, and summarization
+- **Consistent internal API**: all data stored as `cdata_t` blocks inside BGZF frames
+- **Integrates seamlessly** with bedtools, KYCGKB, and other methylation workflows
 
-## 🌟 Key Features
+## Installation
 
-- **High compression performance** on methylation matrices  
-- Supports **MU counts**, **binary methylation**, **chromatin states**, **fractions**, **differential calls**, and **CpG coordinate streams**  
-- Scales to **hundreds of thousands** of single cells  
-- Consistent internal API: all data stored as `cdata_t` blocks inside BGZF frames  
-- Integrates naturally with bedtools, KYCGKB, and other methylation workflows  
-- Fully documented with structured guides in the `docs/` folder
+Install YAME using conda from the bioconda channel:
 
----
-
-
-## INSTALL
-
-```
+```bash
 conda install yame -c bioconda
 ```
 
-### Citing YAME
+## Documentation
 
-Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† ["KnowYourCG: Facilitating Base-level Sparse Methylome Interpretation"](https://www.science.org/doi/10.1126/sciadv.adw3027) Science Advances (2025)
+For detailed documentation, tutorials, and usage examples, visit the [YAME User Guide](https://zhou-lab.github.io/YAME/).
 
-## Usage and Documentation
+The guide includes:
+- Format specifications for CX file types
+- Comprehensive command references
+- Workflow examples for bulk and single-cell data
+- Best practices for large-scale methylation analysis
 
-A User Guide has been created to provide detailed documentation of YAME. The guide can be found at: https://zhou-lab.github.io/YAME/.
+## Citation
+
+If you use YAME in your research, please cite:
+
+Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† (2025). "KnowYourCG: Facilitating Base-level Sparse Methylome Interpretation." *Science Advances*. [https://doi.org/10.1126/sciadv.adw3027](https://www.science.org/doi/10.1126/sciadv.adw3027)
+
+## Support
+
+- **Documentation**: [https://zhou-lab.github.io/YAME/](https://zhou-lab.github.io/YAME/)
+- **Issues**: Please report bugs and feature requests on the [GitHub Issues page](https://github.com/zhou-lab/YAME/issues)
+
+## License
+
+YAME is dual-licensed:
+
+- **AGPL-3.0** for academic, educational, and non-profit research use
+- **Commercial License** for commercial applications
+
+### Academic & Non-Profit Use
+YAME is free to use for academic research, educational purposes, and non-profit organizations under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+
+### Commercial Use
+If you wish to use YAME in commercial products or services, or if the AGPL-3.0 restrictions are not suitable for your use case, please contact us for a commercial license: [zhouw3@chop.edu]
+
+---
+
+Developed by the Zhou Lab
