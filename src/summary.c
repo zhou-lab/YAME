@@ -628,7 +628,7 @@ static void prepare_mask(cdata_t *c) {
   if (c->fmt < '2') {
     convertToFmt0(c);
   } else {
-    decompress2(c);
+    decompress_in_situ(c);
   }
 }
 

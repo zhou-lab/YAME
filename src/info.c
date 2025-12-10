@@ -40,8 +40,7 @@ static void cdata_length(cdata_t *c, uint64_t *n, uint8_t *u) {
     *u = 1;
     break; }
   default: {
-    cdata_t inflated = {0};
-    decompress(c, &inflated);
+    cdata_t inflated = decompress(*c);
     *n = inflated.n;
     *u = inflated.unit;
     free(inflated.s);

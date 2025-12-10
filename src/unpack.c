@@ -139,13 +139,12 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
   }
   
   uint64_t i,m, k, kn = cs->size;
-  cdata_t expanded = {0};
-  decompress(ref_cdata_v(cs, 0), &expanded);
+  cdata_t expanded = decompress(*ref_cdata_v(cs, 0));
   uint64_t n = expanded.n;
   cdata_t *sliced = calloc(kn, sizeof(cdata_t));
   for (m=0; m <= n/s; ++m) {
     for (k=0; k<kn; ++k) {
-      decompress(ref_cdata_v(cs, k), &expanded);
+      expanded = decompress(*ref_cdata_v(cs, k));
       slice(&expanded, m*s, (m+1)*s-1, &sliced[k]);
     }
     for (i=0; i<sliced[0].n; ++i) {
@@ -171,7 +170,7 @@ static void print_cdata(cdata_v *cs, cdata_pfmt_t pfmt, char *fname_row) {
       inflated[k].s = malloc(c->n);
       memcpy(inflated[k].s, c->s, c->n);
     } else {
-      decompress(c, inflated+k);
+      inflated[k] = decompress(*c);
     }
   }
 

@@ -23,6 +23,99 @@
 #include <string.h>
 #include "cdata.h"
 
+/** ---- format 7 (genomic coordinates: chromosome + delta-encoded loci) -----
+ *
+ * Overall idea
+ * ------------
+ * Format 7 stores a sparse list of genomic coordinates.  Coordinates are
+ * grouped by chromosome, and each chromosome is represented by:
+ *
+ *   [ chrm_name '\0' ][ delta1 ][ delta2 ][ delta3 ] ... [ 0xff ]
+ *
+ * where:
+ *   - chrm_name is a null-terminated string (e.g. "chr1")
+ *   - each delta encodes the *difference* (loc_i - loc_{i-1}) with variable
+ *     byte width (1/2/8 bytes)
+ *   - 0xff marks the end of a chromosome block
+ *
+ * The entire format is *always compressed*; there is no inflated version.
+ * row_reader_next_loc() sequentially decodes the stream into full coordinates.
+ *
+ *
+ * Position and delta encoding
+ * ---------------------------
+ * Let loc_i be the 1-based genomic coordinate of entry i.  Instead of storing
+ * loc_i outright, we store dn_i = loc_i - loc_{i-1}.  dn_i is encoded as:
+ *
+ *   1-byte  delta (0 ≤ dn ≤ 0x7f):
+ *       [0bbb_bbbb]          (MSB two bits = 00)
+ *
+ *   2-byte delta (0x80 ≤ dn ≤ 0x3fff):
+ *       [10xx_xxxx][yyyy_yyyy]
+ *       top bits = 10, lower 14 bits carry dn
+ *
+ *   8-byte delta (dn ≤ (1<<62)-1):
+ *       [11......][........] (total 8 bytes, MSB two bits = 11)
+ *       remaining 62 bits store dn (big-endian in the byte stream)
+ *
+ * These rules match append_loc() and the decoding logic in row_reader_next_loc().
+ *
+ *
+ * Chromosome boundaries
+ * ---------------------
+ * After all deltas for a chromosome:
+ *
+ *     0xff
+ *
+ * is appended as an end-of-chromosome marker.  Next comes the next chromosome
+ * name + '\0', followed by its own delta stream.
+ *
+ *
+ * No uncompressed (inflated) representation
+ * -----------------------------------------
+ * Unlike formats 0–6, format 7 does *not* have a separate inflated layout.
+ * The on-disk byte stream *is* the compressed representation, and all
+ * iteration happens by decoding the stream with row_reader_next_loc().
+ *
+ * fmt7_data_length(c):
+ *     counts how many coordinates exist by scanning the stream.
+ *
+ * fmt7_next_bed(c):
+ *     like row_reader_next_loc(), but updates c->aux state for BED-style use.
+ *
+ *
+ * Before / after schematic
+ * ------------------------
+ *
+ *   Logical coordinate list:
+ *       chr1: 100, 105, 220, 221
+ *       chr2:  50,  55
+ *
+ *   Encoded format 7 stream:
+ *       "chr1\0"
+ *         dn=100    (1-byte)
+ *         dn=5      (1-byte)
+ *         dn=115    (2-byte)
+ *         dn=1      (1-byte)
+ *       0xff
+ *       "chr2\0"
+ *         dn=50     (1-byte)
+ *         dn=5      (1-byte)
+ *       0xff
+ *
+ * There is no "fmt7_decompress(c)" that expands into a fixed-width array.
+ * Instead, helpers (fmt7_next_bed, fmt7_decompress, fmt7_data_length, etc.)
+ * sequentially decode and expose the coordinates for downstream operations.
+ *
+ *
+ * Slicing utilities
+ * -----------------
+ * fmt7_sliceToBlock(), fmt7_sliceToIndices(), fmt7_sliceToMask():
+ *     - walk the decoded order of coordinates
+ *     - rebuild a new format-7 byte stream containing only the selected entries
+ *     - always output compressed=1 (because format 7 is inherently compressed)
+ */
+
 static int is_nonnegative_int(char *s) {
   size_t i;
   for (i=0; i<strlen(s); ++i) {
@@ -101,7 +194,7 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
     free_fields(fields, nfields);
   }
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   
@@ -264,7 +357,7 @@ cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask) {
 
   row_reader_t rdr = {0};
   uint64_t n = 0;
-  uint64_t i = 0, n_rec = 0;
+  uint64_t i = 0;
   char *chrm = NULL; uint64_t last = 0;
   cdata_t cr2 = {0};
   while (row_reader_next_loc(&rdr, cr)) {
@@ -276,7 +369,6 @@ cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask) {
         last = 0;
       }
       append_loc(rdr.value - last, &(cr2.s), &n);
-      n_rec++;
       last = rdr.value;
     }
     i++;

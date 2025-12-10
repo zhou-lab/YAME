@@ -100,22 +100,18 @@ static inline size_t bit_count(cdata_t c) {
   return m;
 }
 
-void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c);
-
-void decompress(cdata_t *c, cdata_t *expanded);
-void decompress2(cdata_t *c);
 void cdata_compress(cdata_t *c);
+cdata_t decompress(cdata_t c);
+void decompress_in_situ(cdata_t *c);
 
 static inline uint64_t cdata_n(cdata_t *c) {
   if (!c->compressed) return c->n;
-  cdata_t c2 = {0};
-  decompress(c, &c2);
+  cdata_t c2 = decompress(*c);
   uint64_t n = c2.n;
   free(c2.s);
   return n;
 }
 
-void fmt0_decompress(cdata_t *c, cdata_t *inflated);
 void convertToFmt0(cdata_t *c);
 #define FMT0_IN_SET(c, i) ((c).s[(i)>>3] & (1u<<((i)&0x7)))
 #define FMT0_SET(c, i) (c.s[(i)>>3] |= (1u<<((i)&0x7)))
@@ -123,19 +119,7 @@ void convertToFmt0(cdata_t *c);
 #define _FMT0_IN_SET(s, i) ((s)[(i)>>3] & (1u<<((i)&0x7)))
 #define _FMT0_SET(s, i) ((s)[(i)>>3] |= (1u<<((i)&0x7)))
 
-void fmt1_compress(cdata_t *c);
-void fmt1_decompress(cdata_t *c, cdata_t *inflated);
 
-// ----- format 2 (state data) ----
-// key section + data section
-// The key section and data section are separated by an extra '\0'.
-// The key section is made of multiple c-strings concatenated by '\0'.
-// The data section is either an RLE (compressed) or a integer vector (inflated).
-// When compressed, the RLE is made of a value part and a length part.
-// The value part size is defined by a uint8_t that leads the data section.
-// The length part is always 2 bytes in size.
-void fmt2_compress(cdata_t *c);
-void fmt2_decompress(cdata_t *c, cdata_t *inflated);
 void fmt2_set_aux(cdata_t *c);
 uint8_t* fmt2_get_data(cdata_t *c);
 uint64_t fmt2_get_keys_n(cdata_t *c);
@@ -143,21 +127,11 @@ uint64_t fmt2_get_keys_nbytes(cdata_t *c);
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
 char* f2_get_string(cdata_t *c, uint64_t i);
 
-void fmt3_compress(cdata_t *c);
-void fmt3_decompress(cdata_t *c, cdata_t *inflated);
 void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
 uint64_t f3_get_mu(cdata_t *c, uint64_t i);
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
 #define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 
-void fmt4_compress(cdata_t *c);
-void fmt4_decompress(cdata_t *c, cdata_t *inflated);
-
-void fmt5_compress(cdata_t *c);
-void fmt5_decompress(cdata_t *c, cdata_t *inflated);
-
-void fmt6_compress(cdata_t *c);
-void fmt6_decompress(cdata_t *c, cdata_t *inflated);
 #define FMT6_IN_SET(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2)))
 #define FMT6_IN_UNI(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2+1)))
 #define FMT6_SET0(c, i) ((c).s[i>>2] = ((c).s[i>>2] & ~(3<<((i&0x3)*2))) | (2<<((i&0x3)*2))) // 10

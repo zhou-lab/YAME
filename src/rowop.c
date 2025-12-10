@@ -109,8 +109,7 @@ static cdata_t rowop_binasum(cfile_t cf, unsigned mincov) {
       fflush(stderr);
       exit(1);
     }
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
     if (c2.n != cout.n) {
       fprintf(stderr, "[%s:%d] Data dimensions are inconsistent: %"PRIu64" vs %"PRIu64"\n", __func__, __LINE__, cout.n, c2.n);
       fflush(stderr);
@@ -160,8 +159,7 @@ static cdata_t rowop_musum(cfile_t cf) {
       fflush(stderr);
       exit(1);
     }
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
     if (c2.n != cout.n) {
       fprintf(stderr, "[%s:%d] Data dimensions are inconsistent: %"PRIu64" vs %"PRIu64"\n", __func__, __LINE__, cout.n, c2.n);
       fflush(stderr);
@@ -205,8 +203,7 @@ static void rowop_mean(cfile_t cf, char *fname_out, unsigned mincov) {
   for (uint64_t k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
     if (c.n == 0) break;
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
     
     switch (c.fmt) {
     case '3': meanFmt3(cnts, fracs, &c2, mincov); break;
@@ -267,8 +264,7 @@ static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
     if (c.n == 0) break;
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
     case '3': sumsqFmt3(cnts, sum, sum_sq, &c2, mincov); break;
@@ -309,8 +305,7 @@ static void rowop_binstring(cfile_t cf, char *fname_out, double beta_threshold) 
   for (k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
     if (c.n == 0) break;
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
 
     if (binstring_bytes*8 <= k) {
       binstring_bytes++;
@@ -357,8 +352,7 @@ void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_windo
   for (uint64_t k=0; ;++k) {
     cdata_t c0 = read_cdata1(&cf);
     if (c0.n == 0) break;
-    cdata_t c = {0};
-    decompress(&c0, &c);
+    cdata_t c = decompress(c0);
     if (!k) {                   /* first data, initialize */
       cnts = calloc(c.n*cometh_window, sizeof(uint64_t));
       ncnts = c.n;

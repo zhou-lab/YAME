@@ -65,6 +65,7 @@ cdata_t *fmt4_read_raw(char *fname, int verbose);
 cdata_t *fmt5_read_raw(char *fname, int verbose);
 cdata_t *fmt6_read_raw(char *fname, int verbose);
 cdata_t *fmt7_read_raw(char *fname, int verbose);
+void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c);
 
 int main_pack(int argc, char *argv[]) {
 
@@ -88,7 +89,7 @@ int main_pack(int argc, char *argv[]) {
   if (argc >= optind + 2)
     fname_out = strdup(argv[optind+1]);
 
-  cdata_t *c;
+  cdata_t *c = NULL;
   switch (fmt) {
   case 'b': {
     c = fmt0_read_raw(argv[optind], verbose);

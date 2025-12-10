@@ -70,15 +70,14 @@ int main_chunk(int argc, char *argv[]) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
     
-    cdata_t c2 = {0};
-    decompress(&c, &c2);
+    cdata_t c2 = decompress(c);
     cdata_t c3 = {0};
     for (i=0; i<=(c2.n/chunk_size); ++i) {
       c3.s = NULL;
       slice(&c2, i*chunk_size, (i+1)*chunk_size-1, &c3);
       cdata_compress(&c3);
       char *tmp = malloc(strlen(outdir) + 1000);
-      sprintf(tmp, "%s/%lu.cx", outdir, i);
+      sprintf(tmp, "%s/%llu.cx", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);
       if (k) cdata_write(tmp, &c3, "a", verbose);
       else cdata_write(tmp, &c3, "w", verbose);

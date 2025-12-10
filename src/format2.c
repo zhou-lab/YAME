@@ -23,6 +23,92 @@
 #include <string.h>
 #include "cdata.h"
 
+/** ---- format 2 (state / categorical data) -----
+ *
+ * Overall idea
+ * ------------
+ * Each row stores a categorical "state" (e.g. chromatin state) as an
+ * integer index into a string key table. The byte layout is:
+ *
+ *   [ key section ][ '\0' ][ data section ]
+ *
+ * The key section is the same in both compressed and uncompressed form;
+ * only the data section changes.
+ *
+ *
+ * Uncompressed (inflated) layout
+ * ------------------------------
+ * - c->compressed == 0
+ * - c->fmt        == '2'
+ * - c->n          = number of positions (rows)
+ * - c->unit       = number of bytes per integer value (usually 8 in read_raw)
+ *
+ * Bytes on disk / in memory:
+ *
+ *   key section:
+ *     - multiple C-strings concatenated back-to-back:
+ *         "state0\0state1\0...stateK-1\0"
+ *     - followed by an extra '\0' as separator:
+ *         ... "stateK-1\0" '\0'
+ *
+ *   data section (uncompressed):
+ *     - array of c->n integer indices, each taking c->unit bytes:
+ *
+ *         index i -> value v_i (0 <= v_i < #keys)
+ *         stored little-endian at:
+ *             data[i] = s[key_bytes+1 + i*c->unit .. + (i+1)*c->unit-1]
+ *
+ *   f2_aux_t (set by fmt2_set_aux):
+ *     - aux->keys[k]  points into key section (null-terminated strings)
+ *     - aux->data     points to start of data section
+ *     - f2_get_uint64(c,i) reads v_i from aux->data
+ *     - f2_get_string(c,i) returns aux->keys[v_i]
+ *
+ *
+ * Compressed layout (RLE on data section)
+ * ---------------------------------------
+ * - c->compressed == 1
+ * - key section is unchanged
+ * - data section is replaced by a run-length encoded (RLE) stream
+ *
+ * Bytes after the key section:
+ *
+ *   [ '\0' ][ value_bytes ][ (value, length) pairs ... ]
+ *
+ * where:
+ *   - `value_bytes` (1 byte) = number of bytes used to store each value
+ *       (chosen from {1,2,3,8} based on max state index)
+ *   - each run is:
+ *       value  : value_bytes bytes, little-endian encoded integer
+ *       length : 2 bytes (uint16, little-endian), repeat count (1..65535)
+ *
+ * So the compressed data section schematically is:
+ *
+ *   value_bytes
+ *   (v0, len0), (v1, len1), ..., (vR-1, lenR-1)
+ *
+ * Decompression walks that RLE stream, expanding each (v,len) into
+ * `len` copies of v in the inflated integer array.
+ *
+ *
+ * Before / after schematic
+ * ------------------------
+ *
+ *   Uncompressed view (per-position array):
+ *     keys:  ["state0", "state1", ..., "stateK-1"]
+ *     data:  v[0], v[1], ..., v[n-1]   (fixed-width integers, c->unit bytes)
+ *
+ *   Compressed view (same keys, RLE data):
+ *     keys:  ["state0", "state1", ..., "stateK-1"]
+ *     data:  value_bytes, (v0,len0), (v1,len1), ...
+ *
+ * fmt2_decompress():
+ *   - copies the key section verbatim
+ *   - reads value_bytes
+ *   - expands (value,length) pairs into a flat integer array
+ *   - sets inflated.unit = value_bytes, inflated.n = number of positions
+ */
+
 // from position index to term index
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
   if (!c->aux) fmt2_set_aux(c);
@@ -172,7 +258,7 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   /* memcpy(c->s + pos, data, data_n*sizeof(uint64_t)); */
 
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, data_n);
+    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, data_n);
     fflush(stderr);
   }
 
@@ -280,52 +366,52 @@ void fmt2_compress(cdata_t *c) {
   c->fmt = '2';
 }
 
-void fmt2_decompress(cdata_t *c, cdata_t *inflated) {
-  uint64_t keys_nb = fmt2_get_keys_nbytes(c);
-  uint8_t *keys = c->s;
-  uint8_t *data = fmt2_get_data(c) + 1; // skip value byte
-  uint64_t data_nbyte = fmt2_get_data_nbytes(c) - 1;
-  inflated->unit = fmt2_get_value_byte(c);
+cdata_t fmt2_decompress(cdata_t c) {
+  
+  cdata_t inflated = {0};
+  uint64_t keys_nb = fmt2_get_keys_nbytes(&c);
+  uint8_t *keys = c.s;
+  uint8_t *data = fmt2_get_data(&c) + 1; // skip value byte
+  uint64_t data_nbyte = fmt2_get_data_nbytes(&c) - 1;
+  inflated.unit = fmt2_get_value_byte(&c);
 
   // Iterate over RLE data to calculate total length of decompressed data
   uint64_t dec_data_n = 0;
   for (uint64_t i = 0; i < data_nbyte; ) {
-    i += inflated->unit;
+    i += inflated.unit;
     uint64_t length = ((uint64_t) data[i] | (uint64_t) (data[i+1] << 8));
     i += 2;
     dec_data_n += length;
   }
 
-  // Allocate memory directly to inflated->s
-  inflated->n = keys_nb + dec_data_n * inflated->unit + 1;
-  inflated->s = malloc(inflated->n);
-  if (inflated->s == NULL) {
+  // Allocate memory directly to inflated.s
+  inflated.n = keys_nb + dec_data_n * inflated.unit + 1;
+  inflated.s = malloc(inflated.n);
+  if (inflated.s == NULL) {
     fprintf(stderr, "Memory allocation failed. Exiting.\n");
     exit(1);
   }
 
-  // Copy keys to inflated->s
-  memcpy(inflated->s, keys, keys_nb);
-  inflated->s[keys_nb] = '\0';  // NULL separator
+  // Copy keys to inflated.s
+  memcpy(inflated.s, keys, keys_nb);
+  inflated.s[keys_nb] = '\0';  // NULL separator
 
   // Have dec_data point to the data part
-  uint64_t sum = 0;
-  uint8_t *dec_data = inflated->s + keys_nb + 1;
+  uint8_t *dec_data = inflated.s + keys_nb + 1;
   uint64_t n = 0;
   for (uint64_t i = 0; i < data_nbyte; ) {
-    uint64_t value = 0; uint8_t *d = data+i;
-    for (uint64_t j = 0; j < inflated->unit; ++j)
-      value |= data[i++] << (8*j);
+    uint8_t *d = data+i;
+    for (uint64_t j = 0; j < inflated.unit; ++j) i++;
     uint64_t length = ((uint64_t) data[i] | (uint64_t) (data[i+1] << 8));
-    sum += length;
     i += 2;
     for ( ; length--; ++n)
-      memcpy(dec_data+n*inflated->unit, d, inflated->unit);
+      memcpy(dec_data+n*inflated.unit, d, inflated.unit);
   }
 
-  inflated->compressed = 0;
-  inflated->fmt = '2';
-  inflated->n = n;
+  inflated.compressed = 0;
+  inflated.fmt = '2';
+  inflated.n = n;
+  return inflated;
 }
 
 void fmt2_set_aux(cdata_t *c) {

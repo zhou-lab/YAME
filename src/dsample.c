@@ -335,7 +335,7 @@ int main_dsample(int argc, char *argv[]) {
       break;  // end-of-file
     }
     
-    decompress2(&c_in);
+    decompress_in_situ(&c_in);
     uint64_t n_positions = c_in.n;
 
     if (!indices) {

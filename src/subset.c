@@ -22,7 +22,7 @@
 
 void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
   cdata_t c = read_cdata1(&cf);
-  decompress2(&c);
+  decompress_in_situ(&c);
   if (c.fmt != '2') {
     wzfatal("To subset states, please provide a format 2 input. Give %c", c.fmt);
   }

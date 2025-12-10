@@ -72,8 +72,8 @@ int main_pairwise(int argc, char *argv[]) {
   }
   bgzf_close(cf1.fh);
 
-  decompress2(&c1);
-  decompress2(&c2);
+  decompress_in_situ(&c1);
+  decompress_in_situ(&c2);
 
   if (c1.n != c2.n) wzfatal("Two inputs have different dimensions: %"PRIu64" vs %"PRIu64"\n", c1.n, c2.n);
 

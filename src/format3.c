@@ -23,6 +23,78 @@
 #include <string.h>
 #include "cdata.h"
 
+/**
+ * Format 3 (M/U counts) storage layout
+ *
+ * Inflated (uncompressed) representation
+ * --------------------------------------
+ * - c->compressed == 0
+ * - c->n = number of CpG sites
+ * - Each site uses c->unit bytes (little-endian) at s + i*unit:
+ *
+ *       [ M | U ]  packed into 'unit' bytes
+ *
+ *   Default: unit == 8
+ *       uint64_t mu = (M << 32) | U
+ *       bytes 0..3: U
+ *       bytes 4..7: M
+ *
+ *   f3_get_mu(c,i)  -> uint64  [ M(32b) | U(32b) ]
+ *   f3_set_mu(c,i,M,U) packs M,U back into unit bytes.
+ *
+ *
+ * Compressed representation
+ * -------------------------
+ * - c->compressed == 1
+ * - c->s is a byte stream of variable-length records.
+ * - Each record type is identified by its low 2 bits:
+ *
+ *  2byte | U=M=0 -------------- = run len (14 bit) + 0 (2bit)
+ *  1byte | U,M in [0,7] ------- = M (3bit)  | U (3bit)  + 1 (2bit)
+ *  2byte | U,M in [0,127]------ = M (7bit)  | U (7bit)  + 2 (2bit)
+ *  8byte | M,U in [128,2**31]-- = M (31bit) | U (31bit) + 3 (2bit)
+ *
+ *   Type 0: zero-run      (low bits 00)
+ *     - 2 bytes (uint16, little-endian)
+ *     - layout: [ run_len(14 bits) | 00 ]
+ *     - represents 'run_len' consecutive sites with M=0, U=0.
+ *
+ *   Type 1: small M,U     (low bits 01)
+ *     - 1 byte
+ *     - layout: [ M(3 bits) | U(3 bits) | 01 ]
+ *     - valid ranges: 0 <= M,U <= 6
+ *
+ *   Type 2: medium M,U    (low bits 10)
+ *     - 2 bytes (uint16, little-endian)
+ *     - layout: [ M(7 bits) | U(7 bits) | 10 ]
+ *     - valid ranges: 0 <= M,U <= 126
+ *
+ *   Type 3: large M,U     (low bits 11)
+ *     - 8 bytes (uint64, little-endian)
+ *     - layout: [ M(31 bits) | U(31 bits) | 11 ]
+ *     - M,U may be right-shifted (fitMU) to fit 31 bits.
+ *
+ *
+ * Schematic before/after compression
+ * ----------------------------------
+ *
+ *   Inflated view (per-site array):
+ *     index i:   [ M_i, U_i ]  (stored as unit-byte packed MU)
+ *     c->n = number of sites
+ *
+ *   Compressed view (byte stream):
+ *     [ rec0 ][ rec1 ][ rec2 ] ... [ recK ]
+ *
+ *       where each rec* is one of:
+ *         - zero-run (covers many sites with M=U=0), or
+ *         - a single non-zero (M,U) entry
+ *
+ *   Decompression walks the compressed stream, expanding:
+ *     - Type 0 into 'run_len' copies of (M=0,U=0)
+ *     - Types 1/2/3 into one (M,U) pair each,
+ *   and writes them back into the inflated array using f3_pack_mu().
+ */
+
 static int is_int(char *s) {
   size_t i;
   for (i=0; i<strlen(s); ++i) {
@@ -103,7 +175,7 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %lu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cdata_t *c = calloc(sizeof(cdata_t),1);
@@ -115,12 +187,6 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
   return c;
 }
 
-/* compressed format
-   2byte | U=M=0 -------------- = run len (14 bit) + 0 (2bit)
-   1byte | U,M in [0,7] ------- = M (3bit) | U (3bit) + 1 (2bit)
-   2byte | U,M in [0,127]------ = M (7bit) | U (7bit) + 2 (2bit)
-   8byte | M,U in [128,2**31]-- = M (31bit) | U (31bit) + 3 (2bit)
-*/
 void fmt3_compress(cdata_t *c) {
   uint8_t *s = NULL;
   uint64_t n = 0;
@@ -199,45 +265,47 @@ static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
   return n;
 }
 
-void fmt3_decompress(cdata_t *c, cdata_t *inflated) {
+cdata_t fmt3_decompress(cdata_t c) {
   uint8_t unit = 1;
-  uint64_t n0 = get_data_length(c, &unit);
-  if (c->unit) inflated->unit = c->unit;
-  else inflated->unit = unit; // use inferred max unit if unset
-  uint8_t *s = calloc(inflated->unit*n0, sizeof(uint8_t));
-  uint64_t n = 0; uint64_t modified = 0;
-  for (uint64_t i=0; i < c->n; ) {
-    if ((c->s[i] & 0x3) == 0) {
-      uint64_t l = unpack_value(c->s+i, 2)>>2; // the length is 14 bits, so unit = 2
-      memset(s+n*inflated->unit, 0, inflated->unit*l); n += l;
+  uint64_t n0 = get_data_length(&c, &unit);
+  cdata_t inflated = {0};
+  if (c.unit) inflated.unit = c.unit;
+  else inflated.unit = unit; // use inferred max unit if unset
+  uint8_t *s = calloc(inflated.unit*n0, sizeof(uint8_t));
+  uint64_t n = 0;
+  for (uint64_t i=0; i < c.n; ) {
+    if ((c.s[i] & 0x3) == 0) {
+      uint64_t l = unpack_value(c.s+i, 2)>>2; // the length is 14 bits, so unit = 2
+      memset(s+n*inflated.unit, 0, inflated.unit*l); n += l;
       i += 2;
-    } else if ((c->s[i] & 0x3) == 1) {
-      uint64_t M = (c->s[i])>>5;
-      uint64_t U = ((c->s[i])>>2) & 0x7;
-      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, inflated->unit<<2);
-      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
+    } else if ((c.s[i] & 0x3) == 1) {
+      uint64_t M = (c.s[i])>>5;
+      uint64_t U = ((c.s[i])>>2) & 0x7;
+      if (inflated.unit == 1) fitMU(&M, &U, 4);
+      else fitMU(&M, &U, inflated.unit<<2);
+      f3_pack_mu(s+(n++)*inflated.unit, M, U, inflated.unit);
       i++;
-    } else if ((c->s[i] & 0x3) == 2) {
-      uint64_t M = unpack_value(c->s+i, 2)>>2;
+    } else if ((c.s[i] & 0x3) == 2) {
+      uint64_t M = unpack_value(c.s+i, 2)>>2;
       uint64_t U = M & ((1ul<<7)-1);
       M >>= 7;
-      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, inflated->unit<<2);
-      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
+      if (inflated.unit == 1) fitMU(&M, &U, 4);
+      else fitMU(&M, &U, inflated.unit<<2);
+      f3_pack_mu(s+(n++)*inflated.unit, M, U, inflated.unit);
       i += 2;
     } else {
-      uint64_t M = unpack_value(c->s+i, 8)>>2;
+      uint64_t M = unpack_value(c.s+i, 8)>>2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
-      if (inflated->unit == 1) modified += fitMU(&M, &U, 4);
-      else modified += fitMU(&M, &U, inflated->unit<<2);
-      f3_pack_mu(s+(n++)*inflated->unit, M, U, inflated->unit);
+      if (inflated.unit == 1) fitMU(&M, &U, 4);
+      else fitMU(&M, &U, inflated.unit<<2);
+      f3_pack_mu(s+(n++)*inflated.unit, M, U, inflated.unit);
       i += 8;
     }
   }
-  inflated->s = s;
-  inflated->n = n;
-  inflated->compressed = 0;
-  inflated->fmt = '3';
+  inflated.s = s;
+  inflated.n = n;
+  inflated.compressed = 0;
+  inflated.fmt = '3';
+  return inflated;
 }

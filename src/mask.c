@@ -115,7 +115,7 @@ int main_mask(int argc, char *argv[]) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
     if (c.fmt == '1') convertToFmt0(&c);
-    decompress2(&c);
+    decompress_in_situ(&c);
     if (c.n != c_mask.n) {
       fprintf(stderr, "[%s:%d] mask (n=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask.n, c.n);
       fflush(stderr);

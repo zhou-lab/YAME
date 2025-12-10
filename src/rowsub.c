@@ -363,8 +363,7 @@ int main_rowsub(int argc, char *argv[]) {
       cdata_write1(fp_out, &c2);
       free_cdata(&c2);
     } else {
-      cdata_t c2 = {0};
-      decompress(&c, &c2);
+      cdata_t c2 = decompress(c);
       cdata_t c3 = {0};
       if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
       else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);

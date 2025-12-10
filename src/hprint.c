@@ -62,7 +62,7 @@ int main_hprint(int argc, char *argv[]) {
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
-    decompress2(&c);
+    decompress_in_situ(&c);
     if (c.fmt != '6') {
       fprintf(stderr, "[%s:%d] Only format 6 (given %d) files are supported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
