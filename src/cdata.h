@@ -51,7 +51,7 @@ typedef struct f2_aux_t {
 **/
 typedef struct cdata_t {
   uint8_t *s;
-  uint64_t n; /* number of bytes, except for fmt 0, which is sub-byte you need the actual length */
+  uint64_t n; /* number of bytes when compressed, except for fmt 0, which is sub-byte you need the actual length */
   int compressed;
   char fmt;
   uint8_t unit; // how many bytes is needed for each decompressed data unit, use 0 for format 0,1,6
@@ -64,6 +64,12 @@ static inline uint64_t cdata_nbytes(cdata_t *c) {
   case '0': n = ((c->n+7)>>3); break;
   case '6': n = ((c->n+3)>>2); break;
   default: n = c->n;
+  }
+
+  if (!c->compressed) {
+    if(c->fmt == '3') {
+      n *= c->unit;
+    } // TODO: add other formats
   }
   return n;
 }
@@ -158,9 +164,11 @@ void fmt6_decompress(cdata_t *c, cdata_t *inflated);
 #define FMT6_SET1(c, i) ((c).s[i>>2] |= (3<<((i&0x3)*2))) // 11
 #define FMT6_SET_NA(c, i) ((c).s[i>>2] &= (~(3<<((i&0x3)*2)))) // 00
 
+/* this doesn't work for format 2, no copy of aux */
 static inline cdata_t cdata_duplicate(cdata_t c) {
   cdata_t cout = c;
-  cout.s = malloc(c.n);
+  cout.s = (uint8_t*) malloc(cdata_nbytes(&c));
+  if (cout.s==NULL) wzfatal("[cdata_duplicate] Cannot allocate memory.\n");
   memcpy(cout.s, c.s, cdata_nbytes(&c));
   return cout;
 }

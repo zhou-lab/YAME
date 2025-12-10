@@ -376,8 +376,8 @@ int main_dsample(int argc, char *argv[]) {
     free_cdata(&c_in);
   }
 
-  free(indices);
-  free(to_include);
+  /* free(indices); */
+  /* free(to_include); */
   bgzf_close(cf.fh);
   bgzf_close(fp_out);
 

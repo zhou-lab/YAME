@@ -30,9 +30,9 @@ int read_cdata2(cfile_t *cf, cdata_t *c) {
   if (sig != CDSIG) wzfatal("Unmatched signature. File corrupted.\n");
   bgzf_read(cf->fh, &(c->fmt), sizeof(char));
   bgzf_read(cf->fh, &(c->n), sizeof(uint64_t));
+  c->compressed = 1;
   c->s = realloc(c->s, cdata_nbytes(c));
   bgzf_read(cf->fh, c->s, cdata_nbytes(c));
-  c->compressed = 1;
   cf->n++;
   return 1;
 }

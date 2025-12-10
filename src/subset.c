@@ -38,7 +38,7 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
 
   if (!c.aux) fmt2_set_aux(&c);
   f2_aux_t *aux = (f2_aux_t*) c.aux;
-  cdata_t c0 = {.n = c.n, .fmt = '0'}; // output data
+  cdata_t c0 = {.n = c.n, .fmt = '0', .compressed=1}; // output data
   c0.s = calloc(cdata_nbytes(&c0), 1);
   for (int64_t i = 0; i<snames.n; ++i) {
     uint64_t i_term = 0; int found = 0;
