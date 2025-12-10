@@ -86,42 +86,45 @@ static void fisher_yates_shuffle_select(uint64_t *array, uint64_t N, uint64_t K)
  *   - indices: length >= cout->n
  *   - to_include: bitset with at least ceil(cout->n/8) bytes
  */
-void dsample_fmt3(cdata_t *c, cdata_t *cout, uint64_t N,
-                  uint64_t *indices, uint8_t *to_include) {
+cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
+                     uint64_t *indices, uint8_t *to_include) {
   // copy and expand into cout
-  decompress(c, cout);
+  // decompress(c, cout);
+  assert(c->compressed == 0);
+  cdata_t cout = cdata_duplicate(*c);
 
   uint64_t N_indices = 0;
-  for (uint64_t i = 0; i < cout->n; ++i)
-    if (f3_get_mu(cout, i))
+  for (uint64_t i = 0; i < cout.n; ++i)
+    if (f3_get_mu(&cout, i))
       N_indices++;
 
   // If we want >= all available entries, do nothing (keep all)
-  if (N >= N_indices) return;
+  if (N >= N_indices) return cout;
 
   // Collect indices of eligible sites
   uint64_t j = 0;
-  for (uint64_t i = 0; i < cout->n; ++i)
-    if (f3_get_mu(cout, i))
+  for (uint64_t i = 0; i < cout.n; ++i)
+    if (f3_get_mu(&cout, i))
       indices[j++] = i;
 
   // Randomly select N of them into the first N slots of indices[]
   fisher_yates_shuffle_select(indices, N_indices, N);
 
   // Build bitset of which indices to keep
-  uint64_t nbytes = cout->n / 8 + 1;
+  uint64_t nbytes = cout.n / 8 + 1;
   memset(to_include, 0, nbytes * sizeof(uint8_t));
 
   for (uint64_t k = 0; k < N; ++k)
     _FMT0_SET(to_include, indices[k]);
 
   // Mask out everything not selected
-  for (uint64_t i = 0; i < cout->n; ++i) {
-    if (f3_get_mu(cout, i) && !_FMT0_IN_SET(to_include, i)) {
+  for (uint64_t i = 0; i < cout.n; ++i) {
+    if (f3_get_mu(&cout, i) && !_FMT0_IN_SET(to_include, i)) {
       // set M=U=0
-      f3_set_mu(cout, i, 0, 0);
+      f3_set_mu(&cout, i, 0, 0);
     }
   }
+  return cout;
 }
 
 /**
@@ -135,37 +138,40 @@ void dsample_fmt3(cdata_t *c, cdata_t *cout, uint64_t N,
  *   - indices: length >= cout->n
  *   - to_include: bitset with at least ceil(cout->n/8) bytes
  */
-void dsample_fmt6(cdata_t *c, cdata_t *cout, uint64_t N,
+cdata_t dsample_fmt6(cdata_t *c, uint64_t N,
                   uint64_t *indices, uint8_t *to_include) {
-  decompress(c, cout);
+  /* decompress(c, cout); */
+  assert(c->compressed == 0);
+  cdata_t cout = cdata_duplicate(*c);
 
   // count eligible entries in universe
   uint64_t N_indices = 0;
-  for (uint64_t i = 0; i < cout->n; ++i)
-    if (FMT6_IN_UNI(*cout, i))
+  for (uint64_t i = 0; i < cout.n; ++i)
+    if (FMT6_IN_UNI(cout, i))
       N_indices++;
 
-  if (N >= N_indices) return; // keep all
+  if (N >= N_indices) return cout; // keep all
 
   uint64_t j = 0;
-  for (uint64_t i = 0; i < cout->n; ++i)
-    if (FMT6_IN_UNI(*cout, i))
+  for (uint64_t i = 0; i < cout.n; ++i)
+    if (FMT6_IN_UNI(cout, i))
       indices[j++] = i;
 
   fisher_yates_shuffle_select(indices, N_indices, N);
 
   // bitset of which universe positions to keep
-  uint64_t nbytes = cout->n / 8 + 1;
+  uint64_t nbytes = cout.n / 8 + 1;
   memset(to_include, 0, nbytes * sizeof(uint8_t));
   for (uint64_t k = 0; k < N; ++k)
     _FMT0_SET(to_include, indices[k]);
 
-  for (uint64_t i = 0; i < cout->n; ++i) {
-    if (FMT6_IN_UNI(*cout, i) && !_FMT0_IN_SET(to_include, i)) {
+  for (uint64_t i = 0; i < cout.n; ++i) {
+    if (FMT6_IN_UNI(cout, i) && !_FMT0_IN_SET(to_include, i)) {
       // mark as NA outside the sampled subset
-      FMT6_SET_NA(*cout, i);
+      FMT6_SET_NA(cout, i);
     }
   }
+  return cout;
 }
 
 /**
@@ -283,9 +289,10 @@ int main_dsample(int argc, char *argv[]) {
   unsigned seed = (unsigned) time(NULL);
   uint64_t N = 100;
   int n_rep = 1;
-  
-  while ((c = getopt(argc, argv, "r:s:N:h"))>=0) {
+  char *fname_out = NULL;
+  while ((c = getopt(argc, argv, "o:r:s:N:h"))>=0) {
     switch (c) {
+    case 'o': fname_out = strdup(optarg); break;
     case 'r': n_rep = atoi(optarg); break;
     case 's': seed = (unsigned) strtoul(optarg, NULL, 10); break;
     case 'N': N = strtoul(optarg, NULL, 10); break;
@@ -302,19 +309,11 @@ int main_dsample(int argc, char *argv[]) {
   }
 
   char *fname = argv[optind];
+  BGZF* fp_out;
+  if (fname_out) fp_out = bgzf_open2(fname_out, "wb");
+  else fp_out = bgzf_dopen(fileno(stdout), "wb");
 
-  /* If a positional out.cx is given and -o is not, honor it.
-     This keeps behavior consistent with other yame subcommands. */
-  char *fname_out = NULL;
-  if (!fname_out && (argc >= optind + 2)) {
-    fname_out = strdup(argv[optind + 1]);
-  }
-  
-  BGZF* fp;
-  if (fname_out) fp = bgzf_open2(fname_out, "wb");
-  else fp = bgzf_dopen(fileno(stdout), "wb");
-
-  if (fp == NULL) {
+  if (fp_out == NULL) {
     fprintf(stderr, "[%s:%d] Error opening file for writing: %s\n",
             __func__, __LINE__, fname_out ? fname_out : "<stdout>");
     fflush(stderr);
@@ -357,33 +356,33 @@ int main_dsample(int argc, char *argv[]) {
 
       switch (c_in.fmt) {
       case '3':
-        dsample_fmt3(&c_in, &c_out, N, indices, to_include);
+        c_out = dsample_fmt3(&c_in, N, indices, to_include);
         break;
       case '6':
-        dsample_fmt6(&c_in, &c_out, N, indices, to_include);
+        c_out = dsample_fmt6(&c_in, N, indices, to_include);
         break;
       default:
         wzfatal("Format %d not recognized (only 3 and 6 are supported).\n", c_in.fmt);
       }
 
+      fflush(stderr);
       if (!c_out.compressed) {
         cdata_compress(&c_out);
       }
-      cdata_write1(fp, &c_out);
+      fflush(stderr);
+      cdata_write1(fp_out, &c_out);
       free_cdata(&c_out);
     }
-
     free_cdata(&c_in);
   }
-  
+
   free(indices);
   free(to_include);
+  bgzf_close(cf.fh);
+  bgzf_close(fp_out);
 
   /* Only attempt to write an index when we actually wrote to a regular file. */
   write_index_with_rep(fname, fname_out, n_samples, n_rep);
-
-  bgzf_close(cf.fh);
-  bgzf_close(fp);
   if (fname_out) free(fname_out);
    
   return 0;
