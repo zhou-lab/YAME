@@ -72,7 +72,7 @@ int main_chunkchar(int argc, char *argv[]) {
   uint64_t u,i;
   for (u=0; u<=n/chunk_size; ++u) {
     char *tmp = malloc(strlen(outdir) + 1000);
-    sprintf(tmp, "%s/%llu.txt", outdir, u);
+    sprintf(tmp, "%s/%"PRIu64".txt", outdir, u);
     if (verbose) fprintf(stdout, "%s\n", tmp);
     FILE *fh = fopen(tmp, "w");
     for (i=u*chunk_size; i<(u+1)*chunk_size; ++i) {

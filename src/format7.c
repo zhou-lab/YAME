@@ -194,7 +194,7 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
     free_fields(fields, nfields);
   }
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %llu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   

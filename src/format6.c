@@ -125,7 +125,7 @@ cdata_t* fmt6_read_raw(char *fname, int verbose) {
   free(line);
   wzclose(fh);
   if (verbose) {
-    fprintf(stderr, "[%s:%d] Data of length %llu loaded\n", __func__, __LINE__, n);
+    fprintf(stderr, "[%s:%d] Data of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
   cdata_t *c = calloc(sizeof(cdata_t),1);

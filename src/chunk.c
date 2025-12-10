@@ -77,7 +77,7 @@ int main_chunk(int argc, char *argv[]) {
       slice(&c2, i*chunk_size, (i+1)*chunk_size-1, &c3);
       cdata_compress(&c3);
       char *tmp = malloc(strlen(outdir) + 1000);
-      sprintf(tmp, "%s/%llu.cx", outdir, i);
+      sprintf(tmp, "%s/%"PRIu64".cx", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);
       if (k) cdata_write(tmp, &c3, "a", verbose);
       else cdata_write(tmp, &c3, "w", verbose);
