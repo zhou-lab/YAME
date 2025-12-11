@@ -1,13 +1,13 @@
 ---
-title: Fmt 1 - Integer Values
+title: Fmt 1 - ASCII Values
 parent: 1. Storage & Format
 nav_order: 1
 ---
 
-# Format 1 – Integer Values with RLE Compression
+# Format 1 – ASCII Values with RLE Compression
 
-Format 1 stores **integer per-CpG values** using **run-length encoding (RLE)** for efficient compression.  
-It is ideal when your data consists of **small integers** repeated across long stretches of the genome.
+Format 1 stores **ASCII per-CpG values** using **run-length encoding (RLE)** for efficient compression.  
+It is ideal when your data consists of **small integers (0-255)** repeated across long stretches of the genome.
 
 Examples:
 
@@ -22,7 +22,7 @@ Examples:
 
 Use **Format 1** when:
 
-- You have **integer-valued** data (0, 1, 2, 3…)
+- You have **single-character** data (`0`, `1`, `2`, `3`, ..., `a`, `b`, `A`, `B`, ...)
 - You expect **long runs of identical values**  
   (e.g., 0 for most CpGs, intermittent 1’s or 2’s)
 - Storage size matters — Format 1 can give **10–100× compression** for RLE-friendly data

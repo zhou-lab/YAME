@@ -34,12 +34,12 @@ run ../yame pack -fb input/f0_binary.txt output/f0.cg
 # run diff -u truth/f0.cg output/f0.cg
 
 ############################################
-# FORMAT 1 – Integer (f1)
+# FORMAT 1 – ASCII (f1)
 ############################################
 cat > input/f1_int.txt << 'EOF'
 0
-0
-0
+9
+a
 2
 2
 1

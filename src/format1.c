@@ -23,7 +23,7 @@
 #include <string.h>
 #include "cdata.h"
 
-/** ---- format 1 (integer / ASCII with RLE) -----
+/** ---- format 1 (ASCII with RLE) -----
  *
  * Overall idea
  * ------------
