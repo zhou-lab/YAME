@@ -37,7 +37,7 @@ YAME currently supports the following CX format family:
 | Format                                                             | Code      | Typical Ext | Best for                                                                     |
 |--------------------------------------------------------------------|-----------|-------------|------------------------------------------------------------------------------|
 | [**Format 0**]({% link docs/formats/format0_binary.markdown %})    | `0` / `b` | `.cg`       | Binary presence/absence (DMR sites, ChIP-seq peaks, generic 0/1 tracks)      |
-| [**Format 1**]({% link docs/formats/format1_integer.markdown %})   | `1`       | `.cg`       | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals)  |
+| [**Format 1**]({% link docs/formats/format1_ascii.markdown %})   | `1`       | `.cg`       | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals)  |
 | [**Format 2**]({% link docs/formats/format2_states.markdown %})    | `2` / `s` | `.cm`       | Chromatin states, genomic annotations, gene features, windows/bins           |
 | [**Format 3**]({% link docs/formats/format3_mu.markdown %})        | `3` / `m` | `.cg`       | M/U read counts from bisulfite sequencing                                    |
 | [**Format 4**]({% link docs/formats/format4_beta.markdown %})      | `4`       | `.cg`       | Continuous methylation values (beta/fraction), array/WGBS imputed values     |
