@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cdata.h"
+#include "summary.h"
 
 /** ---- format 4 (float / beta values with NA runs) -----
  *
@@ -204,4 +205,142 @@ void fmt4_compress(cdata_t *c) {
   c->s = (uint8_t*) s;
   c->n = n*4;
   c->compressed = 1;
+}
+
+stats_t* summarize1_queryfmt4(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+
+  stats_t *st = NULL;
+  float_t *vals = (float_t*) c->s;
+
+  if (c_mask->n == 0) {          // no mask
+
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+
+    for (uint64_t i = 0; i < c->n; ++i) {
+      double b = vals[i];
+      if (b >= 0.0) {            // non-NA beta
+        st[0].n_q++;
+        st[0].n_o++;
+        st[0].sum_beta += b;
+      }
+    }
+
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
+
+  } else if (c_mask->fmt <= '1') { // binary mask
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n",
+              __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+
+    for (uint64_t i = 0; i < c->n; ++i) {
+      double b = vals[i];
+      if (b >= 0.0) st[0].n_q++;
+      if (FMT0_IN_SET(*c_mask, i)) {
+        st[0].n_m++;
+        if (b >= 0.0) {
+          st[0].n_o++;
+          st[0].sum_beta += b;
+        }
+      }
+    }
+
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n",
+              __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+
+    for (uint64_t i = 0; i < c->n; ++i) {
+      double b = vals[i];
+      if (b >= 0.0) st[0].n_q++;
+      if (FMT6_IN_UNI(*c_mask, i) && FMT6_IN_SET(*c_mask, i)) {
+        st[0].n_m++;
+        if (b >= 0.0) {
+          st[0].n_o++;
+          st[0].sum_beta += b;
+        }
+      }
+    }
+
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
+
+  } else if (c_mask->fmt == '2') { // state mask
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n",
+              __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    if (!c_mask->aux) fmt2_set_aux(c_mask);
+    f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
+
+    *n_st = aux->nk;
+    st = calloc((*n_st), sizeof(stats_t));
+    uint64_t nq = 0;
+
+    for (uint64_t i = 0; i < c->n; ++i) {
+      uint64_t index = f2_get_uint64(c_mask, i);
+      if (index >= (*n_st)) {
+        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+        fflush(stderr);
+        exit(1);
+      }
+      double b = vals[i];
+      if (b >= 0.0) {
+        st[index].n_o++;
+        st[index].sum_beta += b;
+        nq++;
+      }
+      st[index].n_m++;
+    }
+
+    for (uint64_t k = 0; k < (*n_st); ++k) {
+      st[k].n_q = nq;
+      st[k].n_u = c->n;
+      st[k].beta = st[k].n_o ? (st[k].sum_beta / st[k].n_o) : NAN;
+      if (config->section_name) {
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
+        st[k].sm = tmp.s;
+      } else {
+        st[k].sm = strdup(aux->keys[k]);
+      }
+      st[k].sq = strdup(sq);
+    }
+
+  } else {                      // other masks
+    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n",
+            __func__, __LINE__, c_mask->fmt);
+    fflush(stderr);
+    exit(1);
+  }
+
+  return st;
 }

@@ -26,7 +26,7 @@
 #include "wzbed.h"
 #include "cfile.h"
 #include "snames.h"
-#include "kstring.h"
+#include "summary.h"
 
 static int usage() {
   fprintf(stderr, "\n");
@@ -48,28 +48,6 @@ static int usage() {
 
   return 1;
 }
-
-typedef struct stats_t {
-  uint64_t sum_depth;           // sum of depth
-  double sum_beta;
-  double beta;
-  uint64_t n_u;                 // universe
-  uint64_t n_q;                 // query
-  uint64_t n_m;                 // mask
-  uint64_t n_o;                 // overlap
-  char* sm;                     // mask name
-  char* sq;                     // query name
-} stats_t;
-
-typedef struct config_t {
-  int full_name;
-  int section_name;
-  int in_memory;
-  int no_header;
-  char *fname_mask;
-  char *fname_snames;
-  char *fname_qry_stdin;
-} config_t;
 
 static stats_t* summarize1_queryfmt0(
   cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
@@ -557,6 +535,8 @@ static stats_t* summarize1_queryfmt6(
   return st;
 }
 
+stats_t* summarize1_queryfmt4(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+
 static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
   if (c->fmt == '3') {
     return summarize1_queryfmt3(c, c_mask, n_st, sm, sq, config);
@@ -566,6 +546,8 @@ static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm
     return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
   } else if (c->fmt == '6') {
     return summarize1_queryfmt6(c, c_mask, n_st, sm, sq, config);
+  } else if (c->fmt == '4') {
+    return summarize1_queryfmt4(c, c_mask, n_st, sm, sq, config);
   } else {
     fprintf(stderr, "[%s:%d] Query format %c unsupported.\n", __func__, __LINE__, c->fmt);
     fflush(stderr);

@@ -1,5 +1,5 @@
 ---
-title: Fmt 6 – Query & Universe
+title: Fmt 6 – Set & Universe
 parent: 1. Storage & Format
 nav_order: 6
 ---

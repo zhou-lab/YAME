@@ -98,22 +98,6 @@ run ../yame pack -f4 input/f4_beta.txt output/f4.cg
 # run diff -u truth/f4.cg output/f4.cg
 
 ############################################
-# FORMAT 5 – Ternary calls (f5)
-############################################
-cat > input/f5_ternary.txt << 'EOF'
-0
-1
-2
-1
-0
-2
-EOF
-
-echo "[FMT5] pack input/f5_ternary.txt -> output/f5.cm"
-run ../yame pack -f5 input/f5_ternary.txt output/f5.cm
-# run diff -u truth/f5.cm output/f5.cm
-
-############################################
 # FORMAT 6 – Query/Universe (f6)
 ############################################
 {

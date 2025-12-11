@@ -23,7 +23,7 @@
 #include <string.h>
 #include "cdata.h"
 
-/** ----- format 5 (ternary 0/1/2 with compact runs) -----
+/** FORMAT 5 IS OBSOLETE AND REPLACED BY FORMAT 6
  *
  * Overall idea
  * ------------
@@ -62,7 +62,6 @@
  *      Decompression:
  *        repeat value 2, L times.
  *
- *
  *   2) packed 0/1 byte (MSB = 1):
  *        bit7 = 1  (signals this is a packed 0/1 block)
  *        remaining 7 bits are split into up to 4 (flag,value) pairs:
@@ -81,7 +80,6 @@
  *              emit (byte >> offset) & 0x1  // vk
  *          else
  *              break   // remaining slots unused
- *
  *
  * Before / after schematic
  * ------------------------
@@ -168,7 +166,7 @@ cdata_t* fmt5_read_raw(char *fname, int verbose) {
 
 /*
   8 bits = 0 (1bit) | run length of NA (7bits)
-  8 bits = 1 (1bit)|value (1bit) + 1 (1bit)|value (1bit) + ...
+  8 bits = 1 (1bit) | value (1bit) + status (1bit) | value (1bit) + ...
 */
 void fmt5_compress(cdata_t *c) {
   uint64_t n = 0;

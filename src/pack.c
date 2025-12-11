@@ -25,36 +25,78 @@
 #include "cfile.h"
 
 static int usage() {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
-    fprintf(stderr, "The input text file must match the dimension and order of the reference CpG bed file.\n\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
+  fprintf(stderr, "Pack tab-delimited text into a compressed cx file.\n");
+  fprintf(stderr, "The input file must have one row per CpG and match the\n");
+  fprintf(stderr, "dimension and order of the reference CpG BED file.\n\n");
 
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "    -f [char] Format specification (choose one character or number):\n");
-    fprintf(stderr, "              (b) Binary data. Format default to 0 or 1 depending on size:\n");
-    fprintf(stderr, "                  0 - 1 byte for 8 binary CpGs\n");
-    fprintf(stderr, "                  1 - Value (1 byte) + Run-Length Encoding (RLE) (2 bytes)\n");
-    fprintf(stderr, "              (s) State data. Format default to 2:\n");
-    fprintf(stderr, "                  2 - State text + Index RLE (Best for chromatin states).\n");
-    fprintf(stderr, "                      Use format 0 for sequence context.\n");
-    fprintf(stderr, "              (m) Sequencing MU data. Format default to 3:\n");
-    fprintf(stderr, "                  3 - MU RLE + Ladder byte (Input: 2-column text, M and U).\n");
-    fprintf(stderr, "              (d) Differential meth data. Format default to 6:\n");
-    fprintf(stderr, "                  5 - 2-bits + NA-RLE (Input: only 0, 1, 2 values).\n");
-    fprintf(stderr, "                  6 - 2-bits boolean for S (set) and U (universe).\n");
-    fprintf(stderr, "                      (Input: 2-column text, S and U).\n");
-    fprintf(stderr, "              (n) Fraction data. Format default to 4:\n");
-    fprintf(stderr, "                  4 - Fraction / NA-RLE (32 bytes).\n");
-    fprintf(stderr, "              (r) Reference coordinates. Format default to 7:\n");
-    fprintf(stderr, "                  7 - Compressed BED format for CGs.\n");
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    -f [char] Format specification (one of b,c,s,m,d,n,r):\n");
+  fprintf(stderr, "              (b) Binary data (format 0).\n");
+  fprintf(stderr, "                  Each entry is 0 or 1.\n");
+  fprintf(stderr, "                  Example (single-sample, one column):\n");
+  fprintf(stderr, "                      0\n");
+  fprintf(stderr, "                      1\n");
+  fprintf(stderr, "                      1\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (c) Character / small integer data (format 1).\n");
+  fprintf(stderr, "                  One byte per entry, typically 0–255.\n");
+  fprintf(stderr, "                  Example:\n");
+  fprintf(stderr, "                      0\n");
+  fprintf(stderr, "                      5\n");
+  fprintf(stderr, "                      9\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (s) State data (format 2).\n");
+  fprintf(stderr, "                  Categorical strings compressed via an index + RLE.\n");
+  fprintf(stderr, "                  Best for chromatin states or other labels.\n");
+  fprintf(stderr, "                  Example:\n");
+  fprintf(stderr, "                      quies\n");
+  fprintf(stderr, "                      quies\n");
+  fprintf(stderr, "                      enhA\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (m) Sequencing MU data (format 3).\n");
+  fprintf(stderr, "                  Input is 2-column text: M and U counts per CpG.\n");
+  fprintf(stderr, "                  M=U=0 is treated as missing.\n");
+  fprintf(stderr, "                  Example (M U):\n");
+  fprintf(stderr, "                      10\t5\n");
+  fprintf(stderr, "                      20\t0\n");
+  fprintf(stderr, "                      13\t17\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (d) Differential / mask data (format 6).\n");
+  fprintf(stderr, "                  2-bit boolean for S (set) and U (universe).\n");
+  fprintf(stderr, "                  Input is 2-column text: S and U, each 0 or 1.\n");
+  fprintf(stderr, "                  Example (S U):\n");
+  fprintf(stderr, "                      1\t1\n");
+  fprintf(stderr, "                      0\t1\n");
+  fprintf(stderr, "                      0\t0\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (n) Fraction / beta data (format 4).\n");
+  fprintf(stderr, "                  Floating-point fraction in [0,1] or NA.\n");
+  fprintf(stderr, "                  Example:\n");
+  fprintf(stderr, "                      0.250\n");
+  fprintf(stderr, "                      NA\n");
+  fprintf(stderr, "                      1.000\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              (r) Reference coordinates (format 7).\n");
+  fprintf(stderr, "                  Compressed BED records for CpG coordinates.\n");
+  fprintf(stderr, "                  Input is 4-column BED: chrom, start, end, name.\n");
+  fprintf(stderr, "                  Example:\n");
+  fprintf(stderr, "                      chr1\t100\t101\tCpG_1\n");
+  fprintf(stderr, "                      chr1\t200\t201\tCpG_2\n");
+  fprintf(stderr, "                      chr1\t300\t301\tCpG_3\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "              The examples above show single-sample input.\n");
+  fprintf(stderr, "              Multi-sample input can be provided as additional\n");
+  fprintf(stderr, "              columns per row, following the same conventions.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "    -u [int]  Number of bytes per unit when inflated (1-8).\n");
+  fprintf(stderr, "              Lower values are more memory efficient but may be lossier.\n");
+  fprintf(stderr, "              0 - infer from data.\n");
+  fprintf(stderr, "    -v        Verbose mode.\n");
+  fprintf(stderr, "    -h        Display this help message.\n\n");
 
-    fprintf(stderr, "    -u [int]  Number of bytes per unit data when inflated (1-8).\n");
-    fprintf(stderr, "              Lower values are more memory efficient but may be lossier.\n");
-    fprintf(stderr, "              0 - Inferred from data.\n");
-    fprintf(stderr, "    -v        Verbose mode\n");
-    fprintf(stderr, "    -h        Display this help message\n\n");
-
-    return 1;
+  return 1;
 }
 
 cdata_t *fmt0_read_raw(char *fname, int verbose);
@@ -62,10 +104,10 @@ cdata_t *fmt1_read_raw(char *fname, int verbose);
 cdata_t *fmt2_read_raw(char *fname, int verbose);
 cdata_t *fmt3_read_raw(char *fname, uint8_t unit, int verbose);
 cdata_t *fmt4_read_raw(char *fname, int verbose);
-cdata_t *fmt5_read_raw(char *fname, int verbose);
+/* cdata_t *fmt5_read_raw(char *fname, int verbose); */
 cdata_t *fmt6_read_raw(char *fname, int verbose);
 cdata_t *fmt7_read_raw(char *fname, int verbose);
-void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c);
+/* void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c); */
 
 int main_pack(int argc, char *argv[]) {
 
@@ -93,7 +135,11 @@ int main_pack(int argc, char *argv[]) {
   switch (fmt) {
   case 'b': {
     c = fmt0_read_raw(argv[optind], verbose);
-    fmta_tryBinary2byteRLE_ifsmaller(c);
+    /* fmta_tryBinary2byteRLE_ifsmaller(c); */
+    break;
+  }
+  case 'c': {
+    c = fmt1_read_raw(argv[optind], verbose);
     break;
   }
   case 'd': {
@@ -136,10 +182,10 @@ int main_pack(int argc, char *argv[]) {
     c = fmt4_read_raw(argv[optind], verbose);
     break;
   }
-  case '5': {
-    c = fmt5_read_raw(argv[optind], verbose);
-    break;
-  }
+  /* case '5': { */
+  /*   c = fmt5_read_raw(argv[optind], verbose); */
+  /*   break; */
+  /* } */
   case '6': {
     c = fmt6_read_raw(argv[optind], verbose);
     break;

@@ -34,16 +34,15 @@ YAME’s `pack` and `unpack` commands provide bidirectional conversion between h
 
 YAME currently supports the following CX format family:
 
-| Format | Code | Typical Ext | Best for |
-|--------|------|------|----------|
-| [**Format 0**]({% link docs/formats/format0_binary.markdown %}) | `0` / `b` | `.cg` | Binary presence/absence (DMR sites, ChIP-seq peaks, generic 0/1 tracks) |
-| [**Format 1**]({% link docs/formats/format1_integer.markdown %}) | `1` | `.cg` | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals) |
-| [**Format 2**]({% link docs/formats/format2_states.markdown %}) | `2` / `s` | `.cm` | Chromatin states, genomic annotations, gene features, windows/bins |
-| [**Format 3**]({% link docs/formats/format3_mu.markdown %}) | `3` / `m` | `.cg` | M/U read counts from bisulfite sequencing |
-| [**Format 4**]({% link docs/formats/format4_beta.markdown %}) | `4` | `.cg` | Continuous methylation values (beta/fraction), array/WGBS imputed values |
-| [**Format 5**]({% link docs/formats/format5_ternary.markdown %}) | `5` | `.cg` | Ternary differential calls (hypo / unchanged / hyper) |
-| [**Format 6**]({% link docs/formats/format6_sparse.markdown %}) | `6` | `.cg` | Query + universe representation for enrichment; sparse single-cell methylation |
-| [**Format 7**]({% link docs/formats/format7_reference.markdown %}) | `7` | `.cr` | CpG genomic reference coordinates (required for all `.cg` / `.cm` files) |
+| Format                                                             | Code      | Typical Ext | Best for                                                                     |
+|--------------------------------------------------------------------|-----------|-------------|------------------------------------------------------------------------------|
+| [**Format 0**]({% link docs/formats/format0_binary.markdown %})    | `0` / `b` | `.cg`       | Binary presence/absence (DMR sites, ChIP-seq peaks, generic 0/1 tracks)      |
+| [**Format 1**]({% link docs/formats/format1_integer.markdown %})   | `1`       | `.cg`       | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals)  |
+| [**Format 2**]({% link docs/formats/format2_states.markdown %})    | `2` / `s` | `.cm`       | Chromatin states, genomic annotations, gene features, windows/bins           |
+| [**Format 3**]({% link docs/formats/format3_mu.markdown %})        | `3` / `m` | `.cg`       | M/U read counts from bisulfite sequencing                                    |
+| [**Format 4**]({% link docs/formats/format4_beta.markdown %})      | `4`       | `.cg`       | Continuous methylation values (beta/fraction), array/WGBS imputed values     |
+| [**Format 6**]({% link docs/formats/format6_su.markdown %})        | `6`       | `.cx`       | Set + universe representation for enrichment; sparse single-cell methylation |
+| [**Format 7**]({% link docs/formats/format7_reference.markdown %}) | `7`       | `.cr`       | CpG genomic reference coordinates (required for all `.cg` / `.cm` files)     |
 
 All CX formats use BGZF compression and share a consistent internal structure (`cdata_t` blocks), enabling uniform handling across different data types.
 

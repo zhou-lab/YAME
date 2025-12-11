@@ -517,685 +517,622 @@
     
     "relUrl": "/docs/formats/format4_beta.html"
   },"74": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "Format 5 – Ternary Differential Methylation Calls",
-    "content": "Format 5 stores a single ternary value per CpG, typically representing: . | 0 → hypomethylated | 1 → unchanged / not significant | 2 → hypermethylated | . This format is compact (2 bits per CpG), extremely fast to read, and ideal for storing categorical differential methylation results. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#format-5--ternary-differential-methylation-calls",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#format-5--ternary-differential-methylation-calls"
-  },"75": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "1. When to Use Format 5",
-    "content": "Use Format 5 when your data: . | Represents three discrete states (e.g., {hypo, unchanged, hyper}) | Comes from: . | differential methylation analysis (DMRs) | EWAS with discretized outcomes | statistical calling pipelines | . | Does not require: . | continuous values (use Format 4) | counts (use Format 3) | categorical labels of arbitrary strings (use Format 2) | . | . Format 5 is ideal for large differential methylation compendia because it’s tiny and fast. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#1-when-to-use-format-5",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#1-when-to-use-format-5"
-  },"76": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "2. Input Requirements",
-    "content": "Input must include: . | One line per CpG | A value from the set {0, 1, 2} | . Example input (diff_calls.txt): . 0 1 2 1 0 2 . Interpretation (default): . | Value | Meaning | . | 0 | Hypomethylated | . | 1 | No change | . | 2 | Hypermethylated | . (These semantic labels are user-defined; YAME treats them as integers.) . ",
-    "url": "/YAME/docs/formats/format5_ternary.html#2-input-requirements",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#2-input-requirements"
-  },"77": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "3. Packing to Format 5",
-    "content": "3.1 Pack from text . yame pack -f5 diff_calls.txt &gt; differential.cg . 3.2 Generate Format 5 from an external DMR pipeline . If your DMR results are in BED or TSV, convert them into a CpG-level ternary track by intersecting with reference CpGs: . # Example: columns = chr, start, end, diff_call (0/1/2) bedtools intersect -a cpg_ref.bed.gz -b dmr_calls.bed -loj -sorted \\ | awk '{ if ($8 == \".\") print \"1\"; else print $8 }' \\ | yame pack -f5 - &gt; diff.cg . Interpretation: . | Sites lacking a call become 1 (unchanged) (You can change this behavior depending on your workflow.) | . ",
-    "url": "/YAME/docs/formats/format5_ternary.html#3-packing-to-format-5",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#3-packing-to-format-5"
-  },"78": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "4. Unpacking Format 5",
-    "content": "yame unpack differential.cg | head . Output: . 0 1 2 1 0 2 . Format 5 unpacks to integers exactly as originally stored. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#4-unpacking-format-5",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#4-unpacking-format-5"
-  },"79": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "5. Integration with YAME Commands",
-    "content": "Format 5 integrates with major YAME tools. 5.1 yame summary . Use Format 5 to compute enrichment of hypo / hyper states across features: . yame summary -m ChromHMM.cm differential.cg &gt; diff_summary.txt . Behavior: . | N_query = number of CpGs with non-1 values (or all CpGs, depending on interpretation) | N_overlap = number of CpGs in the mask with relevant values | Beta = mean ternary state (0–2) across the mask (This is typically interpretable as “direction of change”) | Depth = NA (unused) | . If you want to treat only hypo (0) vs hyper (2) as binary, you may preprocess the data. 5.2 yame rowop . Format 5 supports row-wise aggregation across multiple samples. Summing ternary states: . yame rowop -o binasum differential_multi.cg &gt; diff_votes.cg . Interpretation: . | Converts: . | 0 → unmethylated vote | 2 → methylated vote | 1 → ambiguous (ignored) | . | Produces a Format 3 pseudobulk count file. | . Mean or standard deviation: . yame rowop -o mean differential_multi.cg &gt; mean_state.tsv yame rowop -o std differential_multi.cg &gt; state_variability.tsv . Output: . | mean: average state (0–2) across samples | std: variability in differential calling | . 5.3 yame dsample . Downsampling Format 5 retains N non-1 CpGs per sample: . yame dsample -N 10000 diff.cg &gt; diff_10k.cg . Rules: . | Eligible = CpGs where state ≠ 1 (i.e., changes) | Non-selected = set to 1 (unchanged) | . 5.4 yame rowsub . # Extract CpGs that are differential yame rowsub -m diff_mask.cx diff.cg &gt; diff_only.cg # Extract genomic subregions yame rowsub -R cpg_nocontig.cr -L CpG_sites.txt diff.cg &gt; subset.cg . 5.5 yame mask . To mask out (remove) certain CpGs: . yame mask diff.cg lowqual_mask.cx -o filtered_diff.cg . Masked values become 1 (interpreted as “not differential”). Or use -v to invert mask logic. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#5-integration-with-yame-commands",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#5-integration-with-yame-commands"
-  },"80": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "6. When Not to Use Format 5",
-    "content": "Choose a different format if: . | You need floating-point values → Format 4 | You need per-CpG M/U counts → Format 3 | You need arbitrary string labels → Format 2 | You need a sparse binary representation with an explicit universe → Format 6 | . Format 5 is strictly for three-state encoded data. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#6-when-not-to-use-format-5",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#6-when-not-to-use-format-5"
-  },"81": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "7. Minimal End-to-End Example",
-    "content": "# 1. Prepare reference CpGs yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Convert DMR calls into ternary CpG-level states bedtools intersect -a cpg_ref.bed.gz -b dmr_calls.bed -loj -sorted \\ | awk '{ if ($8 == \".\") print \"1\"; else print $8 }' \\ | yame pack -f5 - &gt; diff.cg # 3. Evaluate enrichment of differential states across ChromHMM annotations yame summary -m ChromHMM.cm diff.cg &gt; diff_enrichment.txt # 4. Extract hypermethylated CpGs (state = 2) grep \"^2$\" diff.cg &gt; hyper_sites.txt # 5. Downsample for benchmarking yame dsample -N 20000 diff.cg &gt; diff_20k.cg . Format 5 is the compact, efficient format for discrete differential methylation calls, offering excellent compression and fast downstream feature-based analysis. ",
-    "url": "/YAME/docs/formats/format5_ternary.html#7-minimal-end-to-end-example",
-    
-    "relUrl": "/docs/formats/format5_ternary.html#7-minimal-end-to-end-example"
-  },"82": {
-    "doc": "Fmt 5 – Differential Calls",
-    "title": "Fmt 5 – Differential Calls",
-    "content": " ",
-    "url": "/YAME/docs/formats/format5_ternary.html",
-    
-    "relUrl": "/docs/formats/format5_ternary.html"
-  },"83": {
-    "doc": "Fmt 6 – Query & Universe",
+    "doc": "Fmt 6 – Set & Universe",
     "title": "Format 6 – Query &amp; Universe (Boolean Sparse Representation)",
     "content": "Format 6 encodes two complementary boolean vectors for each CpG: . | SET bit → CpG is included in the query | UNIVERSE bit → CpG belongs to the background universe | . This format is essential for: . | Enrichment testing (query vs universe) | Sparse single-cell methylation (accessible universe + binary call) | Binary presence/absence with explicit context | Efficient representation of cell-specific CpG availability | . Format 6 allows YAME to know both the methylated/unmethylated call and whether the CpG is even in scope for that sample. ",
-    "url": "/YAME/docs/formats/format6_sparse.html#format-6--query--universe-boolean-sparse-representation",
+    "url": "/YAME/docs/formats/format6_su.html#format-6--query--universe-boolean-sparse-representation",
     
-    "relUrl": "/docs/formats/format6_sparse.html#format-6--query--universe-boolean-sparse-representation"
-  },"84": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#format-6--query--universe-boolean-sparse-representation"
+  },"75": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "1. When to Use Format 6",
     "content": "Use Format 6 when: . | You want to run enrichment tests (yame summary -m mask.cm sample.cx) | You want to represent sparse CpG coverage per sample (e.g., scWGBS) | You want a contextualized binary representation in which: . | CpG exists in the cell’s “universe” | CpG is methylated/unmethylated inside that universe | . | . Format 6 is the only CX format that explicitly encodes two bits per CpG. This makes it the natural fit for: . | Single-cell bisulfite data | Sparse pseudo-bulk models | Query/background analyses | Fine-grained masking workflows (e.g., yame mask -c) | . ",
-    "url": "/YAME/docs/formats/format6_sparse.html#1-when-to-use-format-6",
+    "url": "/YAME/docs/formats/format6_su.html#1-when-to-use-format-6",
     
-    "relUrl": "/docs/formats/format6_sparse.html#1-when-to-use-format-6"
-  },"85": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#1-when-to-use-format-6"
+  },"76": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "2. Input Requirements",
     "content": "Input must contain two columns, each with 0 or 1: . &lt;QueryBit&gt; &lt;UniverseBit&gt; . Example: . 1 1 # in query, in universe 0 1 # not in query, in universe 1 1 # in query, in universe 0 0 # outside the universe entirely . Meaning: . | Query | Universe | Interpretation | . | 1 | 1 | CpG is part of query set | . | 0 | 1 | CpG is in universe but not part of query | . | 0 | 0 | CpG should be ignored entirely | . | 1 | 0 | Invalid (cannot be in query if not in universe) | . YAME enforces this logic automatically when packing/masking. ",
-    "url": "/YAME/docs/formats/format6_sparse.html#2-input-requirements",
+    "url": "/YAME/docs/formats/format6_su.html#2-input-requirements",
     
-    "relUrl": "/docs/formats/format6_sparse.html#2-input-requirements"
-  },"86": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#2-input-requirements"
+  },"77": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "3. Packing to Format 6",
     "content": "3.1 Packing from a text file with two columns . yame pack -f6 query_universe.txt &gt; sample.cx . 3.2 Using BED inputs (query and universe tracks) . Generate a query mask: . bedtools intersect -a cpg_ref.bed.gz -b query_peaks.bed -sorted -c \\ | cut -f4 &gt; query.txt . Generate a universe mask: . bedtools intersect -a cpg_ref.bed.gz -b regions_accessible.bed -sorted -c \\ | cut -f4 &gt; universe.txt . Combine to two columns: . paste query.txt universe.txt | \\ awk '{print ($1&gt;0?1:0) \"\\t\" ($2&gt;0?1:0)}' \\ | yame pack -f6 - &gt; query.cx . 3.3 From Format 0 + Universe mask using yame mask -c (recommended) . If you already have a binary vector (Format 0), and a universe mask: . # binary input: 1 = methylated, 0 = unmethylated yame mask -c input_binary.cx universe_mask.cx -o contextual.cx . Rules: . | Universe = mask’s 1s | Query = input’s binary values inside universe | . This is common in single-cell pipelines. ",
-    "url": "/YAME/docs/formats/format6_sparse.html#3-packing-to-format-6",
+    "url": "/YAME/docs/formats/format6_su.html#3-packing-to-format-6",
     
-    "relUrl": "/docs/formats/format6_sparse.html#3-packing-to-format-6"
-  },"87": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#3-packing-to-format-6"
+  },"78": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "4. Unpacking Format 6",
     "content": "yame unpack sample.cx | head . The output has two columns: . &lt;Query&gt; &lt;Universe&gt; 1 1 0 1 1 1 0 0 ... Matching the original input format. ",
-    "url": "/YAME/docs/formats/format6_sparse.html#4-unpacking-format-6",
+    "url": "/YAME/docs/formats/format6_su.html#4-unpacking-format-6",
     
-    "relUrl": "/docs/formats/format6_sparse.html#4-unpacking-format-6"
-  },"88": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#4-unpacking-format-6"
+  },"79": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "5. Integration with YAME Commands",
     "content": "Format 6 integrates deeply with the core statistical logic of YAME. 5.1 yame summary . Format 6 is designed for enrichment analysis: . yame summary -m feature.cm sample.cx . Interpretation: . | N_univ = number of CpGs where UniverseBit = 1 | N_query = number of CpGs with both UniverseBit = 1 and QueryBit = 1 | N_mask = size of feature | N_overlap = how many CpGs are (in query) AND (in mask) | Log2OddsRatio = enrichment of query inside mask | Beta = fraction of QueryBit = 1 among universe CpGs within mask | Depth = NA (Format 6 has no coverage) | . This is the recommended representation for: . | Comparing different CpG subsets | Representing sparse single-cell methylomes | Querying binary signatures within genomic features | . 5.2 yame rowop . Useful operations: . # Binary summation across samples yame rowop -o binasum multi.cx &gt; pseudobulk.cg # Convert to binary string yame rowop -o binstring multi.cx &gt; patterns.txt . Rules: . | Query bit → methylated/unmethylated value | Universe bit → determines coverage; if Universe = 0, skip site entirely | . 5.3 yame dsample . Downsampling Format 6: . yame dsample -N 10000 sample.cx &gt; sample_10k.cx . Rules: . | Eligible sites = UniverseBit = 1 | Randomly keep N of them per sample | Non-selected → UniverseBit set to 0; QueryBit cleared | . This is extremely useful for benchmarking single-cell sparsity. 5.4 yame rowsub . Format 6 supports all selection methods: . # Subset by mask yame rowsub -m promoters.cm sample.cx &gt; subset.cx # Coordinate lists yame rowsub -R cpg_nocontig.cr -L CpG_sites.txt sample.cx &gt; subset.cx . 5.5 yame mask (contextualization mode) . # Convert binary format 0 → format 6 with a universe mask yame mask -c binary.cx universe.cx -o out.cx . | Universe bits taken from mask | Query bits taken from binary vector | Sites outside universe become NA-like (Universe = 0) | . This workflow is central to building high-quality single-cell methylome objects. ",
-    "url": "/YAME/docs/formats/format6_sparse.html#5-integration-with-yame-commands",
+    "url": "/YAME/docs/formats/format6_su.html#5-integration-with-yame-commands",
     
-    "relUrl": "/docs/formats/format6_sparse.html#5-integration-with-yame-commands"
-  },"89": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#5-integration-with-yame-commands"
+  },"80": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "6. When NOT to Use Format 6",
     "content": "Use a different format if: . | You need floating-point methylation values → Format 4 | You need M/U counts → Format 3 | You have categorical labels → Format 2 | You need simple 0/1 binary without context → Format 0 | . Format 6 is best when context matters (universe vs query). ",
-    "url": "/YAME/docs/formats/format6_sparse.html#6-when-not-to-use-format-6",
+    "url": "/YAME/docs/formats/format6_su.html#6-when-not-to-use-format-6",
     
-    "relUrl": "/docs/formats/format6_sparse.html#6-when-not-to-use-format-6"
-  },"90": {
-    "doc": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#6-when-not-to-use-format-6"
+  },"81": {
+    "doc": "Fmt 6 – Set & Universe",
     "title": "7. Minimal End-to-End Example",
     "content": "# 1. Prepare reference CpGs yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Build a universe mask (e.g., accessible CpGs) bedtools intersect -a cpg_ref.bed.gz -b ATAC.bed -sorted -c \\ | cut -f4 \\ | yame pack -fb - &gt; universe.cx # 3. Build a binary methylation call track bedtools intersect -a cpg_ref.bed.gz -b methylated_calls.bed -sorted -c \\ | cut -f4 \\ | yame pack -fb - &gt; binary.cx # 4. Contextualize into Format 6 yame mask -c binary.cx universe.cx -o cell.cx # 5. Run enrichment against ChromHMM yame summary -m ChromHMM.cm cell.cx &gt; enrich.txt # 6. Downsample to 50k accessible CpGs yame dsample -N 50000 cell.cx &gt; cell_50k.cx . Format 6 is the essential representation for sparse binary methylation, especially in single-cell analyses and feature-level enrichment testing. It is compact, expressive, and foundational for high-performance YAME workflows. ``` . ",
-    "url": "/YAME/docs/formats/format6_sparse.html#7-minimal-end-to-end-example",
+    "url": "/YAME/docs/formats/format6_su.html#7-minimal-end-to-end-example",
     
-    "relUrl": "/docs/formats/format6_sparse.html#7-minimal-end-to-end-example"
-  },"91": {
-    "doc": "Fmt 6 – Query & Universe",
-    "title": "Fmt 6 – Query & Universe",
+    "relUrl": "/docs/formats/format6_su.html#7-minimal-end-to-end-example"
+  },"82": {
+    "doc": "Fmt 6 – Set & Universe",
+    "title": "Fmt 6 – Set & Universe",
     "content": " ",
-    "url": "/YAME/docs/formats/format6_sparse.html",
+    "url": "/YAME/docs/formats/format6_su.html",
     
-    "relUrl": "/docs/formats/format6_sparse.html"
-  },"92": {
+    "relUrl": "/docs/formats/format6_su.html"
+  },"83": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "Format 7 – CpG Reference Coordinate Files (.cr)",
     "content": "Format 7 provides the reference coordinate system for all .cx files in YAME. Every .cg / .cm file—regardless of format (0–6)—must match the row count and ordering of a Format 7 reference file. This makes Format 7 the backbone of the entire YAME infrastructure. A .cr file contains: . | Chromosome | Start position | End position | CpG ID (e.g., chr1_10469) | Efficiently delta-encoded and BGZF-compressed for fast access | . ",
     "url": "/YAME/docs/formats/format7_reference.html#format-7--cpg-reference-coordinate-files-cr",
     
     "relUrl": "/docs/formats/format7_reference.html#format-7--cpg-reference-coordinate-files-cr"
-  },"93": {
+  },"84": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "1. Purpose of Format 7",
     "content": "Format 7 answers two fundamental questions: . | Where is CpG row i located in the genome? | What row corresponds to genomic coordinate (chr, pos)? | . All downstream YAME operations assume that every sample is aligned to the same .cr file. Typical uses: . | Establish genome-wise ordering of CpGs | Provide coordinate context to summary operations | Support indexing, subsetting, windowing, and masking | Serve as the base for feature creation (format 2) | Ensure consistent row alignment across multi-sample .cx files | . ",
     "url": "/YAME/docs/formats/format7_reference.html#1-purpose-of-format-7",
     
     "relUrl": "/docs/formats/format7_reference.html#1-purpose-of-format-7"
-  },"94": {
+  },"85": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "2. What Format 7 Contains",
     "content": "Each row represents one CpG: . chr1 10468 10469 chr1_10469 chr1 10470 10471 chr1_10471 chr1 10483 10484 chr1_10484 ... Columns: . | Chromosome | Start (0-based BED convention) | End (start+1) | Name (or ID), usually chr_pos1 | . Internally, YAME stores: . | Delta-compressed positions | RLE encoding of chromosome boundaries | A name dictionary | . This makes .cr much smaller than a BED. ",
     "url": "/YAME/docs/formats/format7_reference.html#2-what-format-7-contains",
     
     "relUrl": "/docs/formats/format7_reference.html#2-what-format-7-contains"
-  },"95": {
+  },"86": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "3. Packing to Format 7",
     "content": "3.1 From a BED file of CpG sites . yame pack -f7 cpg_coords.bed &gt; cpg_reference.cr . Input BED must contain at least the first 3 columns; the 4th is optional but recommended. Example input (cpg_coords.bed): . chr1 10468 10469 chr1_10469 chr1 10470 10471 chr1_10471 chr1 10483 10484 chr1_10484 . If no name is supplied, YAME generates row IDs automatically. 3.2 Converting an existing .cr file to BED . yame unpack cpg_reference.cr &gt; cpg_ref.bed . This unpacking step is foundational for most workflows: . | Feature construction (Format 2) | BED-based intersection | Generating masks or windows | . ",
     "url": "/YAME/docs/formats/format7_reference.html#3-packing-to-format-7",
     
     "relUrl": "/docs/formats/format7_reference.html#3-packing-to-format-7"
-  },"96": {
+  },"87": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "4. Using Format 7 as the Reference Genome for .cx Data",
     "content": "Every .cg / .cm file must: . | Contain one row per CpG | Follow the same ordering as the .cr file | Use the same genome build and coordinate convention | . To verify alignment: . yame info sample.cg . This prints: . | Row count | Format ID | Validity checks | Compatibility with .cr (if provided) | . 4.1 Aligning BED-like data to the reference CpGs . This is the standard workflow: . yame unpack cpg_reference.cr | gzip &gt; cpg_ref.bed.gz bedtools intersect -a cpg_ref.bed.gz -b input.bed -loj -sorted \\ | cut -f4 \\ | yame pack -fb - &gt; binary.cg . This ensures: . | Same ordering as .cr | One CpG per row | Missing positions explicitly included (value 0) | . 4.2 Aligning M/U counts or fraction values . See examples in Format 3 / Format 4 documentation: . bedtools intersect -a cpg_ref.bed.gz -b mu_counts.bed -loj -sorted \\ | awk '{print $8\"\\t\"$9}' \\ | yame pack -f3 - &gt; sample.cg . ",
     "url": "/YAME/docs/formats/format7_reference.html#4-using-format-7-as-the-reference-genome-for-cx-data",
     
     "relUrl": "/docs/formats/format7_reference.html#4-using-format-7-as-the-reference-genome-for-cx-data"
-  },"97": {
+  },"88": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "5. Integration with YAME Commands",
     "content": ". 5.1 yame rowsub . Coordinate-based row selection requires .cr: . # Extract CpGs listed by genomic coordinate yame rowsub -R cpg_reference.cr -L CpG_sites.txt sample.cg &gt; subset.cg . 5.2 yame summary . Format 7 itself is not summarized, but masks and queries rely on the order defined by .cr. 5.3 yame chunk / yame chunkchar . When chunking .cg files: . yame chunk sample.cg chunks/ . the row boundaries respect .cr ordering. 5.4 Creating features (Format 2) requires .cr . Example: . yame unpack cpg_reference.cr | gzip &gt; cpg_ref.bed.gz bedtools intersect -a cpg_ref.bed.gz -b chromhmm.bed -loj -sorted \\ | bedtools groupby -g 1-3 -c 7 -o first \\ | cut -f4 \\ | yame pack -f2 - &gt; ChromHMM.cm . ",
     "url": "/YAME/docs/formats/format7_reference.html#5-integration-with-yame-commands",
     
     "relUrl": "/docs/formats/format7_reference.html#5-integration-with-yame-commands"
-  },"98": {
+  },"89": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "6. Choosing or Building a CpG Reference",
     "content": "Most users rely on prebuilt .cr files, e.g.: . | hg19: CpG_nocontig CR file | hg38: CpG_nocontig CR file | mm10, mm39: Available via KYCGKB repositories | . Custom genomes: . # Build your own CpG reference grep -E -o 'CG' -b genome.fa \\ | awk '{pos=$1; ... construct BED rows ... }' \\ &gt; cpg_coords.bed yame pack -f7 cpg_coords.bed &gt; cpg_reference.cr . ",
     "url": "/YAME/docs/formats/format7_reference.html#6-choosing-or-building-a-cpg-reference",
     
     "relUrl": "/docs/formats/format7_reference.html#6-choosing-or-building-a-cpg-reference"
-  },"99": {
+  },"90": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "7. When NOT to Use Format 7",
     "content": "Do NOT use Format 7 for: . | Storing methylation data → use Formats 0,1,3,4,5,6 | Storing mask or feature annotations → use Format 2 | Storing per-sample or bulk CpG calls → use Formats 0/3/4 | . Format 7 is strictly a reference coordinate container. ",
     "url": "/YAME/docs/formats/format7_reference.html#7-when-not-to-use-format-7",
     
     "relUrl": "/docs/formats/format7_reference.html#7-when-not-to-use-format-7"
-  },"100": {
+  },"91": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "8. Minimal End-to-End Example",
     "content": "# 1. Unpack the reference CpGs yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Align your BED data to reference CpGs bedtools intersect -a cpg_ref.bed.gz -b peaks.bed -loj -sorted \\ | cut -f4 \\ | yame pack -fb - &gt; peaks.cg # 3. Create a feature file using ChromHMM zcat ChromHMM.bed.gz \\ | bedtools intersect -a cpg_ref.bed.gz -b - -loj -sorted \\ | bedtools groupby -g 1-3 -c 7 -o first \\ | cut -f4 \\ | yame pack -f2 - &gt; chromhmm.cm # 4. Summarize enrichment yame summary -m chromhmm.cm peaks.cg &gt; enrich.txt . Format 7 is the foundation of all YAME workflows: It defines CpG identity, ordering, genomic position, and compatibility across all .cg and .cm files. A correct and consistent .cr file ensures that your entire methylation analysis pipeline remains coherent, efficient, and reproducible. ",
     "url": "/YAME/docs/formats/format7_reference.html#8-minimal-end-to-end-example",
     
     "relUrl": "/docs/formats/format7_reference.html#8-minimal-end-to-end-example"
-  },"101": {
+  },"92": {
     "doc": "Fmt 7 – Ref Coordinates",
     "title": "Fmt 7 – Ref Coordinates",
     "content": " ",
     "url": "/YAME/docs/formats/format7_reference.html",
     
     "relUrl": "/docs/formats/format7_reference.html"
-  },"102": {
+  },"93": {
     "doc": "Home",
     "title": "YAME - Yet Another Methylation Encoder",
     "content": "A fast and lightweight toolkit for sequence-level DNA methylation analysis . Get Started View on GitHub . ",
     "url": "/YAME/#yame---yet-another-methylation-encoder",
     
     "relUrl": "/#yame---yet-another-methylation-encoder"
-  },"103": {
+  },"94": {
     "doc": "Home",
     "title": "Overview",
     "content": "YAME (Yet Another Methylation Encoder) is designed for efficient sequence-level DNA methylation data management, capable of handling both bulk and single-cell DNA methylome workflows. It introduces a family of compact binary formats (CX formats) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure. Use Cases include: . | Single-cell methylome analysis - Efficiently store and analyze sparse single-cell data | Bulk methylome processing - Fast operations on large cohorts | Enrichment testing - Test methylation enrichment across genomic features | Feature aggregation - Summarize methylation over bins, chromatin states, or custom regions | Pseudobulk generation - Merge single cells into cluster-level pseudobulks | Differential methylation - Identify and test differentially methylated sites | . ",
     "url": "/YAME/#overview",
     
     "relUrl": "/#overview"
-  },"104": {
+  },"95": {
     "doc": "Home",
     "title": "Tutorials &amp; Workflows",
     "content": ". | Storage &amp; Format - Working with CX formats | Summarize &amp; Encode - Calculate statistics and aggregations | Test Enrichment - Test methylation enrichment across genomic features | Subset Rows - Extract samples and regions | Aggregate Row-wise - Merge pseudobulks and perform calculations | Combine, Split &amp; Index - Handle multi-sample datasets | Mask Data - Test methods at different sparsity levels | . ",
     "url": "/YAME/#tutorials--workflows",
     
     "relUrl": "/#tutorials--workflows"
-  },"105": {
+  },"96": {
     "doc": "Home",
     "title": "Installation",
     "content": "# Option 1: Install via Conda (Recommended) conda install yame -c bioconda # Option 2: Build from Source git clone https://github.com/zhou-lab/YAME.git cd YAME make . ",
     "url": "/YAME/#installation",
     
     "relUrl": "/#installation"
-  },"106": {
+  },"97": {
     "doc": "Home",
     "title": "Quick Start",
     "content": "# Pack binary methylation data yame pack -fb yourfile.bed &gt; yourfile.cg # Pack MU count data (M and U columns) yame pack -f3 methylation_counts.txt &gt; yourfile.cg # Summarize methylation data yame summary yourfile.cg # Test enrichment over genomic features yame summary -m ChromHMM_states.cm yourfile.cg &gt; enrichment_results.txt # Subset samples from multi-sample data yame subset -l sample_list.txt yourfile.cg &gt; subset.cg # Merge single cells into pseudobulks yame subset -l cluster1_cells.txt single_cell.cg | yame rowop - -o binasum &gt; pseudobulk.cg . ",
     "url": "/YAME/#quick-start",
     
     "relUrl": "/#quick-start"
-  },"107": {
+  },"98": {
     "doc": "Home",
     "title": "Reference",
     "content": "Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† (2025) KnowYourCG: Facilitating Base-level Sparse Methylome Interpretation. Science Advances DOI: 10.1126/sciadv.adw3027 . ",
     "url": "/YAME/#reference",
     
     "relUrl": "/#reference"
-  },"108": {
+  },"99": {
     "doc": "Home",
     "title": "Acknowledgements",
     "content": "This work is supported by NIH/NIGMS 5R35GM146978. YAME integrates with the KYCG knowledge base for comprehensive methylation feature analysis. ",
     "url": "/YAME/#acknowledgements",
     
     "relUrl": "/#acknowledgements"
-  },"109": {
+  },"100": {
     "doc": "Home",
     "title": "Getting Help",
     "content": ". | Command Help: Run yame or yame &lt;command&gt; for usage information | Issues: Report bugs on GitHub Issues | KYCG Resources: Download reference coordinates and feature files from KYCG hg38 or KYCG mm10 | . ",
     "url": "/YAME/#getting-help",
     
     "relUrl": "/#getting-help"
-  },"110": {
+  },"101": {
     "doc": "Home",
     "title": "Home",
     "content": " ",
     "url": "/YAME/",
     
     "relUrl": "/"
-  },"111": {
+  },"102": {
     "doc": "5. Aggregate Row-wise",
     "title": "5. Row-wise Aggregation of Methylation Sites",
     "content": "yame rowop provides fast, low-level operations applied row-by-row across all samples of a .cx file. These operations are frequently used in single-cell methylation analysis, pseudobulk aggregation, QC, and exploratory co-methylation analyses. Usage: yame rowop -o &lt;operation&gt; &lt;in.cx&gt; &lt;out&gt; . If &lt;out&gt; is omitted, results are written to stdout. ",
     "url": "/YAME/docs/rowop.html#5-row-wise-aggregation-of-methylation-sites",
     
     "relUrl": "/docs/rowop.html#5-row-wise-aggregation-of-methylation-sites"
-  },"112": {
+  },"103": {
     "doc": "5. Aggregate Row-wise",
     "title": "5.1 Common Use Case: Summing Binary Data to Create Pseudobulks",
     "content": "A very common operation is to sum binarized methylation calls across cells belonging to the same cluster. For example, to generate a pseudobulk for cluster 1 from a single-cell .cg file: . yame subset -l cluster_1_id.txt single_cell.cg \\ | yame rowop -o binasum - &gt; cluster1_pseudobulk.cg . What binasum does: . | For binary formats (0/1): It counts how many cells have methylation = 1 vs 0. | For format 3 (M/U counts): It compares M vs U in each cell and votes for the majority state. Only rows with coverage ≥ -c mincov are counted. | . The output is a format 3 .cg file where each position contains: . | Total number of methylated votes (M) | Total number of unmethylated votes (U) | . This is ideal for downstream: . | Pseudobulk methylation beta estimates | Differential methylation analysis | Cluster-level QC | . ",
     "url": "/YAME/docs/rowop.html#51-common-use-case-summing-binary-data-to-create-pseudobulks",
     
     "relUrl": "/docs/rowop.html#51-common-use-case-summing-binary-data-to-create-pseudobulks"
-  },"113": {
+  },"104": {
     "doc": "5. Aggregate Row-wise",
     "title": "5.2 Available Operations",
     "content": "Below is a complete list of operations supported by -o. ",
     "url": "/YAME/docs/rowop.html#52-available-operations",
     
     "relUrl": "/docs/rowop.html#52-available-operations"
-  },"114": {
+  },"105": {
     "doc": "5. Aggregate Row-wise",
     "title": "1. binasum — Sum binarized methylation across samples",
     "content": "yame rowop -o binasum input.cx output.cx . | Works on formats 0, 1, and 3 | Produces a new format 3 dataset | For format 3 inputs, rows with depth &lt; -c (default 1) are ignored | Interprets each sample’s methylation as a binary vote | . Useful for: . | Pseudobulk construction | Collapsing replicates | Aggregating barcodes / technical partitions | . ",
     "url": "/YAME/docs/rowop.html#1-binasum--sum-binarized-methylation-across-samples",
     
     "relUrl": "/docs/rowop.html#1-binasum--sum-binarized-methylation-across-samples"
-  },"115": {
+  },"106": {
     "doc": "5. Aggregate Row-wise",
     "title": "2. musum — Sum M and U counts directly",
     "content": "yame rowop -o musum input.cx output.cx . | Works only on format 3 | Directly adds up: . | all M counts | all U counts | . | Produces a new .cx file in format 3 | . Useful when: . | You want true aggregated read counts | You trust the original M/U values (not just binary interpretation) | . ",
     "url": "/YAME/docs/rowop.html#2-musum--sum-m-and-u-counts-directly",
     
     "relUrl": "/docs/rowop.html#2-musum--sum-m-and-u-counts-directly"
-  },"116": {
+  },"107": {
     "doc": "5. Aggregate Row-wise",
     "title": "3. mean — Per-row methylation mean and count",
     "content": "yame rowop -o mean input.cx &gt; mean.tsv . Output (tab-delimited): . beta_mean number_of_valid_cells . Only samples with coverage ≥ -c contribute. Rows with no valid values output NA 0. Useful for: . | QC summaries | Computing single-cell methylation averages | Identifying globally variable CpGs | . ",
     "url": "/YAME/docs/rowop.html#3-mean--per-row-methylation-mean-and-count",
     
     "relUrl": "/docs/rowop.html#3-mean--per-row-methylation-mean-and-count"
-  },"117": {
+  },"108": {
     "doc": "5. Aggregate Row-wise",
     "title": "4. std — Per-row methylation standard deviation",
     "content": "yame rowop -o std input.cx &gt; std.tsv . Output columns: . std_dev counts . Uses the same filtering as mean. Helpful for: . | Measuring variability | Ranking variable CpGs | Identifying DNA methylation landmarks | . ",
     "url": "/YAME/docs/rowop.html#4-std--per-row-methylation-standard-deviation",
     
     "relUrl": "/docs/rowop.html#4-std--per-row-methylation-standard-deviation"
-  },"118": {
+  },"109": {
     "doc": "5. Aggregate Row-wise",
     "title": "5. binstring — Convert methylation profiles to binary strings",
     "content": "yame rowop -o binstring -b 0.6 input.cx &gt; binstrings.txt . | Converts each sample to a binary string per row | Threshold -b decides methylated vs unmethylated (default 0.5) | Outputs one string per row | . Example output: . 0010110101 1100001110 ... Useful for: . | Clustering by Hamming distance | Haplotype inference | Co-methylation motif discovery | Compression for machine learning models | . ",
     "url": "/YAME/docs/rowop.html#5-binstring--convert-methylation-profiles-to-binary-strings",
     
     "relUrl": "/docs/rowop.html#5-binstring--convert-methylation-profiles-to-binary-strings"
-  },"119": {
+  },"110": {
     "doc": "5. Aggregate Row-wise",
     "title": "6. cometh — Co-methylation of neighboring CpGs",
     "content": "yame rowop -o cometh -w 5 input.cx &gt; cometh.tsv . For each CpG i and neighbors i+1 … i+w, cometh outputs a vector encoding four categories: . | U0U1 | U0M1 | M0U1 | M0M1 | . Counts are stored in a compact 64-bit representation; use -v to print them explicitly: . i U0U1-U0M1-M0U1-M0M1 U0U2-U0M2-M0U2-M0M2 ... Additional behavior: . | Only format 3 is allowed | Excludes intermediate methylation values (0.3–0.7) | Requires both CpGs to have depth ≥ -c mincov | -w sets window size (default: 5) | . This is useful for: . | Detecting locally coordinated methylation | Assessing haplotype methylation patterns | Fragment-level epiallele analysis | Identifying footprints or nucleosome-scale structure | . ",
     "url": "/YAME/docs/rowop.html#6-cometh--co-methylation-of-neighboring-cpgs",
     
     "relUrl": "/docs/rowop.html#6-cometh--co-methylation-of-neighboring-cpgs"
-  },"120": {
+  },"111": {
     "doc": "5. Aggregate Row-wise",
     "title": "5.3 Summary of Operations",
     "content": "| Operation | Output Type | Input Requirement | Purpose | . | binasum | .cx (format 3) | fmt 0/1/3 | Pseudobulk / aggregation | . | musum | .cx (format 3) | fmt 3 | True count summation | . | mean | text | fmt 3 | Mean methylation per CpG | . | std | text | fmt 3 | Standard deviation per CpG | . | binstring | text | fmt 3 | Binary methylation strings | . | cometh | text | fmt 3 | Local co-methylation patterns | . ",
     "url": "/YAME/docs/rowop.html#53-summary-of-operations",
     
     "relUrl": "/docs/rowop.html#53-summary-of-operations"
-  },"121": {
+  },"112": {
     "doc": "5. Aggregate Row-wise",
     "title": "5.4 Additional Notes",
     "content": "Minimum coverage control (-c) . Many operations ignore rows where: . M + U &lt; mincov . Default is 1. Verbose output (-v) . For cometh, verbose mode expands packed category counts into readable numbers. Binarization threshold (-b) . Relevant only for binstring. ",
     "url": "/YAME/docs/rowop.html#54-additional-notes",
     
     "relUrl": "/docs/rowop.html#54-additional-notes"
-  },"122": {
+  },"113": {
     "doc": "5. Aggregate Row-wise",
     "title": "5.5 Help and Subcommand Documentation",
     "content": "For detailed usage: . yame rowop -h . Subcommand documentation: . | rowop help page | . ",
     "url": "/YAME/docs/rowop.html#55-help-and-subcommand-documentation",
     
     "relUrl": "/docs/rowop.html#55-help-and-subcommand-documentation"
-  },"123": {
+  },"114": {
     "doc": "5. Aggregate Row-wise",
     "title": "5. Aggregate Row-wise",
     "content": " ",
     "url": "/YAME/docs/rowop.html",
     
     "relUrl": "/docs/rowop.html"
-  },"124": {
+  },"115": {
     "doc": "4. Subset Rows",
     "title": "4. Subsetting Rows in a Packed .cx File",
     "content": "YAME provides several tools for extracting subsets of rows (genomic sites) or breaking a .cx file into smaller pieces. The main tools covered here are: . | yame rowsub — extract specific CpG rows or ranges | yame chunk — divide a .cx file into size-based chunks | yame chunkchar — divide large text files into size-based chunks | . This section describes how to use each tool and the most common workflows. ",
     "url": "/YAME/docs/rowsub.html#4-subsetting-rows-in-a-packed-cx-file",
     
     "relUrl": "/docs/rowsub.html#4-subsetting-rows-in-a-packed-cx-file"
-  },"125": {
+  },"116": {
     "doc": "4. Subset Rows",
     "title": "4.1 Subset CpG Rows with yame rowsub",
     "content": "yame rowsub allows you to extract specific genomic rows from a .cx file. This is useful when: . | You want methylation values only at specific CpG sites | You want to subset a contiguous genomic block | You want to filter using a binary mask (fmt0) | You want to extract rows by genomic coordinate rather than integer index | . The output is written to stdout, allowing direct piping or saving to file. ",
     "url": "/YAME/docs/rowsub.html#41-subset-cpg-rows-with-yame-rowsub",
     
     "relUrl": "/docs/rowsub.html#41-subset-cpg-rows-with-yame-rowsub"
-  },"126": {
+  },"117": {
     "doc": "4. Subset Rows",
     "title": "Basic Usage",
     "content": "yame rowsub [options] &lt;in.cx&gt; &gt; subset.cx . The command supports three major ways to select rows: . ",
     "url": "/YAME/docs/rowsub.html#basic-usage",
     
     "relUrl": "/docs/rowsub.html#basic-usage"
-  },"127": {
+  },"118": {
     "doc": "4. Subset Rows",
     "title": "A. Select rows by integer index (-l)",
     "content": "If you have a list of row indices (1-based), e.g.: . 12 455 9012 ... Then run: . yame rowsub -l row_ids.txt yourfile.cx &gt; subset.cx . No sorting is required; YAME internally maintains the given order. ",
     "url": "/YAME/docs/rowsub.html#a-select-rows-by-integer-index--l",
     
     "relUrl": "/docs/rowsub.html#a-select-rows-by-integer-index--l"
-  },"128": {
+  },"119": {
     "doc": "4. Subset Rows",
     "title": "B. Select rows by genomic coordinate labels (-L + -R)",
     "content": "This is the most common method for extracting specific CpG sites. You will need: . | A row coordinate file (.cr) containing genome coordinates for each .cx row YAME provides: . | mm10 row coordinates | hg38 row coordinates | . | A list of site names in the format chr_beg1, one per line, e.g.: . | . chr16_18300002 chr16_18300046 chr16_18300140 chr16_18300162 chr16_18300172 . Then run: . yame rowsub -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cx &gt; subset.cx . YAME internally: . | Loads the .cr coordinate file | Maps each chrX_pos string to the correct row index | Extracts only those rows | Outputs a smaller .cx | . You can also include coordinates as the first dataset in the output with: . yame rowsub -1 -R cpg_nocontig.cr -L CpG_sites.tsv yourfile.cx &gt; subset.cx . ",
     "url": "/YAME/docs/rowsub.html#b-select-rows-by-genomic-coordinate-labels--l---r",
     
     "relUrl": "/docs/rowsub.html#b-select-rows-by-genomic-coordinate-labels--l---r"
-  },"129": {
+  },"120": {
     "doc": "4. Subset Rows",
     "title": "C. Select rows using a binary mask (-m)",
     "content": "Mask file must be format 0 or 1, representing a vector of 0/1 flags. Example: . yame rowsub -m mask.cx yourfile.cx &gt; subset.cx . Any row where the mask equals 1 is retained. This acts similarly to feature masking in yame summary. ",
     "url": "/YAME/docs/rowsub.html#c-select-rows-using-a-binary-mask--m",
     
     "relUrl": "/docs/rowsub.html#c-select-rows-using-a-binary-mask--m"
-  },"130": {
+  },"121": {
     "doc": "4. Subset Rows",
     "title": "D. Select a contiguous block (-B or -I)",
     "content": "Select a row range (0-based): . yame rowsub -B 1000_2000 yourfile.cx &gt; subset.cx . Extracts rows 1000–1999. If only one number is given: . yame rowsub -B 1000 yourfile.cx . Outputs a single row. Select a block by block index (-I) . Useful for chunked batch processing: . yame rowsub -I 5_1000000 yourfile.cx . This extracts: . | Block index = 5 | Block size = 1,000,000 rows | Row range = 5,000,000 to 5,999,999 | . If block size is omitted, default = 1,000,000. ",
     "url": "/YAME/docs/rowsub.html#d-select-a-contiguous-block--b-or--i",
     
     "relUrl": "/docs/rowsub.html#d-select-a-contiguous-block--b-or--i"
-  },"131": {
+  },"122": {
     "doc": "4. Subset Rows",
     "title": "Summary: Ways to Select Rows",
     "content": "| Method | Option | When to Use | . | Integer row list | -l &lt;file&gt; | You know row indices | . | Genomic coords | -L &lt;file&gt; -R &lt;row.cr&gt; | You know genome coordinates | . | Binary mask | -m &lt;mask.cx&gt; | Filtering by precomputed selection | . | Range of rows | -B &lt;beg_end&gt; | Simple slicing by index | . | Block slicing | -I &lt;block_blockSize&gt; | Batch processing | . | Include coords in output | -1 | To append .cr for clarity | . ",
     "url": "/YAME/docs/rowsub.html#summary-ways-to-select-rows",
     
     "relUrl": "/docs/rowsub.html#summary-ways-to-select-rows"
-  },"132": {
+  },"123": {
     "doc": "4. Subset Rows",
     "title": "4.1.1 rowsub Common Examples",
     "content": "Extract a single genomic region . yame rowsub -B 500000_510000 input.cx &gt; region.cx . Extract CpGs in a BED region . (using row coordinate file + interval expansion) . awk '{print $1\"_\"$2+1}' region.bed &gt; coords.txt yame rowsub -R genome.cr -L coords.txt input.cx &gt; subset.cx . Apply a mask file . yame rowsub -m mymask.cx input.cx &gt; masked.cx . ",
     "url": "/YAME/docs/rowsub.html#411-rowsub-common-examples",
     
     "relUrl": "/docs/rowsub.html#411-rowsub-common-examples"
-  },"133": {
+  },"124": {
     "doc": "4. Subset Rows",
     "title": "4.2 Chunking .cx Files with yame chunk",
     "content": "yame chunk splits a packed .cx file into multiple smaller .cx files, each containing a fixed number of rows. This is essential for: . | Distributed computing | Parallel model training | Memory-efficient processing | Splitting extremely large .cx files into manageable pieces | . ",
     "url": "/YAME/docs/rowsub.html#42-chunking-cx-files-with-yame-chunk",
     
     "relUrl": "/docs/rowsub.html#42-chunking-cx-files-with-yame-chunk"
-  },"134": {
+  },"125": {
     "doc": "4. Subset Rows",
     "title": "Basic Usage",
     "content": "yame chunk -s &lt;chunkSize&gt; input.cx output_dir/ . If output_dir is not provided, a directory named: . input.cx_chunks/ . is automatically created. ",
     "url": "/YAME/docs/rowsub.html#basic-usage-1",
     
     "relUrl": "/docs/rowsub.html#basic-usage-1"
-  },"135": {
+  },"126": {
     "doc": "4. Subset Rows",
     "title": "Example",
     "content": "Split into chunks of 500,000 rows each: . yame chunk -s 500000 input.cx chunks/ . This produces: . chunks/0.cx chunks/1.cx chunks/2.cx ... Each chunk file maintains the same number of samples as the original. All samples are split identically row-wise. ",
     "url": "/YAME/docs/rowsub.html#example",
     
     "relUrl": "/docs/rowsub.html#example"
-  },"136": {
+  },"127": {
     "doc": "4. Subset Rows",
     "title": "4.3 Chunking Text Files with yame chunkchar",
     "content": "yame chunkchar works like chunk, but for plain text files rather than .cx files. This is useful for splitting: . | BED files | FASTA headers | List files | Any long line-based text file | . ",
     "url": "/YAME/docs/rowsub.html#43-chunking-text-files-with-yame-chunkchar",
     
     "relUrl": "/docs/rowsub.html#43-chunking-text-files-with-yame-chunkchar"
-  },"137": {
+  },"128": {
     "doc": "4. Subset Rows",
     "title": "Basic Usage",
     "content": "yame chunkchar -s &lt;chunkSize&gt; input.txt . By default, output is written to: . input.txt_chunks/ . ",
     "url": "/YAME/docs/rowsub.html#basic-usage-2",
     
     "relUrl": "/docs/rowsub.html#basic-usage-2"
-  },"138": {
+  },"129": {
     "doc": "4. Subset Rows",
     "title": "Example",
     "content": "Split a large text file into 1M-line chunks: . yame chunkchar -s 1000000 sites.txt . Outputs: . sites.txt_chunks/0.txt sites.txt_chunks/1.txt sites.txt_chunks/2.txt ... Each file contains up to chunkSize lines. ",
     "url": "/YAME/docs/rowsub.html#example-1",
     
     "relUrl": "/docs/rowsub.html#example-1"
-  },"139": {
+  },"130": {
     "doc": "4. Subset Rows",
     "title": "4.4 Help and Developer References",
     "content": "For additional details: . | Run with -h . yame rowsub -h yame chunk -h yame chunkchar -h . | See full subcommand documentation: . | rowsub help page | chunk help page | chunkchar help page | . | . ",
     "url": "/YAME/docs/rowsub.html#44-help-and-developer-references",
     
     "relUrl": "/docs/rowsub.html#44-help-and-developer-references"
-  },"140": {
+  },"131": {
     "doc": "4. Subset Rows",
     "title": "4.5 Summary Table",
     "content": "| Command | Input | Output | Purpose | . | rowsub | .cx | .cx to stdout | Fine-grained row selection | . | chunk | .cx | multiple .cx | Split methylation matrix into fixed-size parts | . | chunkchar | text | multiple .txt | Split large text files | . ",
     "url": "/YAME/docs/rowsub.html#45-summary-table",
     
     "relUrl": "/docs/rowsub.html#45-summary-table"
-  },"141": {
+  },"132": {
     "doc": "4. Subset Rows",
     "title": "4. Subset Rows",
     "content": " ",
     "url": "/YAME/docs/rowsub.html",
     
     "relUrl": "/docs/rowsub.html"
-  },"142": {
+  },"133": {
     "doc": "6. Combine, Split & Index",
     "title": "6. Combine, Split &amp; Index",
     "content": "This section covers operations that manipulate samples (columns) in a .cx file: . | yame index — build or update a sample index | yame split — split a multi-sample .cx file into individual .cx files | yame subset — extract selected samples or states | Combining files — achieved using standard Unix cat | . These tools are essential for workflows that involve multiple .cx samples, such as merging epigenomic features, analyzing groups of samples, or reorganizing sample structure. ",
     "url": "/YAME/docs/sample.html#6-combine-split--index",
     
     "relUrl": "/docs/sample.html#6-combine-split--index"
-  },"143": {
+  },"134": {
     "doc": "6. Combine, Split & Index",
     "title": "6.1 Generating and Updating Index Files (yame index)",
     "content": "A .cx file containing multiple samples stores its samples sequentially, and YAME uses an accompanying index file (.cx.idx) to record the byte offset of each sample. You can generate an index using: . yame index yourfile.cx . This produces: . yourfile.cx.idx . with two columns: . sample_name byte_offset . ",
     "url": "/YAME/docs/sample.html#61-generating-and-updating-index-files-yame-index",
     
     "relUrl": "/docs/sample.html#61-generating-and-updating-index-files-yame-index"
-  },"144": {
+  },"135": {
     "doc": "6. Combine, Split & Index",
     "title": "Assigning Sample Names from a List",
     "content": "If the .cx has N samples but no index file, provide a sample-name list: . yame index -s sample_names.tsv yourfile.cx . sample_names.tsv contains names in its first column. ",
     "url": "/YAME/docs/sample.html#assigning-sample-names-from-a-list",
     
     "relUrl": "/docs/sample.html#assigning-sample-names-from-a-list"
-  },"145": {
+  },"136": {
     "doc": "6. Combine, Split & Index",
     "title": "Appending a New Sample (-1)",
     "content": "If you have added an extra cdata block to the end of a .cx file, you may append it to the existing index: . yame index -1 NewSampleName yourfile.cx . YAME locates the final block and records the offset of the newly appended sample. ",
     "url": "/YAME/docs/sample.html#appending-a-new-sample--1",
     
     "relUrl": "/docs/sample.html#appending-a-new-sample--1"
-  },"146": {
+  },"137": {
     "doc": "6. Combine, Split & Index",
     "title": "Output to Console",
     "content": "yame index -c yourfile.cx . This prints the index to stdout instead of writing yourfile.cx.idx. ",
     "url": "/YAME/docs/sample.html#output-to-console",
     
     "relUrl": "/docs/sample.html#output-to-console"
-  },"147": {
+  },"138": {
     "doc": "6. Combine, Split & Index",
     "title": "6.2 Example: Merging Multiple .cm Feature Files",
     "content": "This example demonstrates how to: . | Convert many BED files into .cm feature files | QC them | Merge them together | Generate a combined index | . Step 1 — Prepare the table describing sample IDs and BED paths . 268 GSM648494 human_hm/268_sort_peaks.narrowPeak.bed 269 GSM648495 human_hm/269_sort_peaks.narrowPeak.bed 272 GSM575295 human_hm/272_b_sort_peaks.broadPeak.bed ... Step 2 — Convert each BED into .cm . cat controlfiles.tsv \\ | parallel --colsep '\\t' -j 72 ' id={1}; path={3}; sortbed $path \\ | bedtools intersect -a cpg_nocontig.bed.gz -b - -sorted -c \\ | cut -f4 \\ | yame pack -f b - $id.cm ' . Each $id.cm is a binary feature mask aligned to the CpG coordinate list. Step 3 — QC each .cm . awk '{print \"\"$1\".cm\", $2\";\"$4;}' controlfiles.tsv \\ | while read fn anno; do yame summary $fn; done \\ &gt; qc.txt . Example filter: keep feature files with ≥ 5000 overlapping CpGs. Step 4 — Merge and index . awk '$1!~/QFile/ &amp;&amp; $6&gt;5000' qc.txt \\ | awk 'NR==FNR{a[$1]=1;}NR!=FNR&amp;&amp;($1\".cm\" in a){print $0;}' - controlfiles.tsv \\ | awk '{print \"\"$1\".cm\", $2\";\"$4;}' \\ | sort -k2,2 \\ | while read fn anno; do cat $fn &gt;&gt; merged.cm yame index -1 $anno merged.cm done . merged.cm is the concatenation of all retained .cm samples, with indexing updated each iteration. ",
     "url": "/YAME/docs/sample.html#62-example-merging-multiple-cm-feature-files",
     
     "relUrl": "/docs/sample.html#62-example-merging-multiple-cm-feature-files"
-  },"148": {
+  },"139": {
     "doc": "6. Combine, Split & Index",
     "title": "6.3 Splitting Multi-Sample Files (yame split)",
     "content": "yame split takes a multi-sample .cx file and produces one .cx file per sample. Basic usage: . yame split input.cx output_prefix . If sample names are present in the index, the output naming scheme becomes: . output_prefix&lt;SampleName&gt;.cx . Otherwise: . output_prefix_split_1.cx output_prefix_split_2.cx ... ",
     "url": "/YAME/docs/sample.html#63-splitting-multi-sample-files-yame-split",
     
     "relUrl": "/docs/sample.html#63-splitting-multi-sample-files-yame-split"
-  },"149": {
+  },"140": {
     "doc": "6. Combine, Split & Index",
     "title": "Providing a Sample List",
     "content": "If the .cx has no index file but you know sample names: . yame split -s sample_list.txt input.cx prefix_ . sample_list.txt should contain one name per line. This preserves sample naming and ensures the prefix_&lt;sample&gt;.cx files correspond correctly. For more help: . | split help page | . ",
     "url": "/YAME/docs/sample.html#providing-a-sample-list",
     
     "relUrl": "/docs/sample.html#providing-a-sample-list"
-  },"150": {
+  },"141": {
     "doc": "6. Combine, Split & Index",
     "title": "6.4 Subsetting Samples (yame subset)",
     "content": "yame subset extracts a subset of samples from a multi-sample .cx file. It uses the .cx.idx file to locate and extract the requested samples efficiently. Basic syntax: . yame subset -l sample_list.txt input.cx &gt; subset.cx . or: . yame subset input.cx SampleA SampleB SampleC &gt; subset.cx . If you specify an output file via -o, YAME writes both: . | the new subset .cx | a new index .cx.idx | . Example: . yame subset -o cluster1.cx singlecell.cx Cell_01 Cell_07 Cell_33 . Head / Tail extraction . Useful for inspecting the first or last N samples: . yame subset -H 10 input.cx &gt; first10.cx # first 10 samples yame subset -T 5 input.cx &gt; last5.cx # last 5 samples . Subsetting Format 2 states (-s) . If the input is a format 2 .cx file (categorical states), you may split states into binary masks: . yame subset -s -l state_list.txt -o states.cx chromatin_states.cx . This produces one binary vector per selected state. For more help: . | subset help page | . ",
     "url": "/YAME/docs/sample.html#64-subsetting-samples-yame-subset",
     
     "relUrl": "/docs/sample.html#64-subsetting-samples-yame-subset"
-  },"151": {
+  },"142": {
     "doc": "6. Combine, Split & Index",
     "title": "6.5 Combining .cx Files",
     "content": "YAME does not provide a dedicated combine command because combining .cx files is equivalent to concatenation: . cat sample1.cx sample2.cx sample3.cx &gt; combined.cx yame index combined.cx . Rules: . | All .cx files must have the same format and same row dimension. | After combining, run yame index to regenerate the sample index. | . This pattern is used in the .cm merging example above. ",
     "url": "/YAME/docs/sample.html#65-combining-cx-files",
     
     "relUrl": "/docs/sample.html#65-combining-cx-files"
-  },"152": {
+  },"143": {
     "doc": "6. Combine, Split & Index",
     "title": "Summary of Commands",
     "content": "| Command | Purpose | Notes | . | yame index | Build or update a .cx.idx sample index | Required for fast sample lookup | . | yame split | Produce one .cx per sample | Naming uses index or user-supplied list | . | yame subset | Extract selected samples or states | Supports head/tail and format-2 filtering | . | cat | Combine .cx files | Must re-index after concatenation | . ",
     "url": "/YAME/docs/sample.html#summary-of-commands",
     
     "relUrl": "/docs/sample.html#summary-of-commands"
-  },"153": {
+  },"144": {
     "doc": "6. Combine, Split & Index",
     "title": "6. Combine, Split & Index",
     "content": " ",
     "url": "/YAME/docs/sample.html",
     
     "relUrl": "/docs/sample.html"
-  },"154": {
+  },"145": {
     "doc": "1. Storage & Format",
     "title": "1. Storage &amp; Format",
     "content": "Convert between text and compressed CX binary formats for efficient storage and analysis. ",
     "url": "/YAME/docs/storage.html#1-storage--format",
     
     "relUrl": "/docs/storage.html#1-storage--format"
-  },"155": {
+  },"146": {
     "doc": "1. Storage & Format",
     "title": "Overview",
     "content": "YAME’s pack and unpack commands provide bidirectional conversion between human-readable text formats (BED/TSV/etc.) and the compressed CX binary formats. CX formats: . | Dramatically reduce storage requirements (often 10–100×) | Are optimized for different methylation / feature data types | Are interoperable across all YAME commands | . Most workflows follow this pattern: . | Align your data to a CpG reference coordinate file (.cr, format 7) | Pack into an appropriate CX format (0/2/3/4/5/6) | Use other YAME commands (summary, rowsub, rowop, subset, etc.) | Optionally unpack to text for external tools | . ",
     "url": "/YAME/docs/storage.html#overview",
     
     "relUrl": "/docs/storage.html#overview"
-  },"156": {
+  },"147": {
     "doc": "1. Storage & Format",
     "title": "Format Overview",
-    "content": "YAME currently supports the following CX format family: . | Format | Code | Typical Ext | Best for | . | Format 0 | 0 / b | .cg | Binary presence/absence (DMR sites, ChIP-seq peaks, generic 0/1 tracks) | . | Format 1 | 1 | .cg | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals) | . | Format 2 | 2 / s | .cm | Chromatin states, genomic annotations, gene features, windows/bins | . | Format 3 | 3 / m | .cg | M/U read counts from bisulfite sequencing | . | Format 4 | 4 | .cg | Continuous methylation values (beta/fraction), array/WGBS imputed values | . | Format 5 | 5 | .cg | Ternary differential calls (hypo / unchanged / hyper) | . | Format 6 | 6 | .cg | Query + universe representation for enrichment; sparse single-cell methylation | . | Format 7 | 7 | .cr | CpG genomic reference coordinates (required for all .cg / .cm files) | . All CX formats use BGZF compression and share a consistent internal structure (cdata_t blocks), enabling uniform handling across different data types. ",
+    "content": "YAME currently supports the following CX format family: . | Format | Code | Typical Ext | Best for | . | Format 0 | 0 / b | .cg | Binary presence/absence (DMR sites, ChIP-seq peaks, generic 0/1 tracks) | . | Format 1 | 1 | .cg | Integer values with RLE (count tracks, QC metrics, per-CpG integer signals) | . | Format 2 | 2 / s | .cm | Chromatin states, genomic annotations, gene features, windows/bins | . | Format 3 | 3 / m | .cg | M/U read counts from bisulfite sequencing | . | Format 4 | 4 | .cg | Continuous methylation values (beta/fraction), array/WGBS imputed values | . | Format 6 | 6 | .cg | Set + universe representation for enrichment; sparse single-cell methylation | . | Format 7 | 7 | .cr | CpG genomic reference coordinates (required for all .cg / .cm files) | . All CX formats use BGZF compression and share a consistent internal structure (cdata_t blocks), enabling uniform handling across different data types. ",
     "url": "/YAME/docs/storage.html#format-overview",
     
     "relUrl": "/docs/storage.html#format-overview"
-  },"157": {
+  },"148": {
     "doc": "1. Storage & Format",
     "title": "Pack / Unpack Basics",
     "content": "The core commands are: . # Pack text → CX yame pack -f&lt;format&gt; [options] &lt;input.txt&gt; [output.cx] # Read from stdin: cat data.txt | yame pack -fb - data.cg # Unpack CX → text yame unpack [options] &lt;input.cx&gt; . ⚠️ Your input MUST match reference CpG coordinates exactly: . | Same number of rows as reference CpGs | Same order as reference CpGs | One value per CpG in reference | . How to ensure alignment: . # Step 1: Get reference coordinates yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # Step 2: Intersect your BED file with reference bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c | \\ cut -f4 | \\ yame pack -fb - &gt; aligned_output.cg # the following two output should match in dimension yame info cpg_nocontig.cr yame info aligned_output.cg . A more complete workflow (including reference coordinate alignment) is described in each format’s page. ",
     "url": "/YAME/docs/storage.html#pack--unpack-basics",
     
     "relUrl": "/docs/storage.html#pack--unpack-basics"
-  },"158": {
+  },"149": {
     "doc": "1. Storage & Format",
     "title": "Practical Workflows",
     "content": "Workflow 1: Process Bisulfite Sequencing Data . Complete pipeline from bisulfite sequencing output to analysis: . # Assuming you have M and U counts from your pipeline # Format: chr start end M U # 1. Extract M and U, align with reference bedtools intersect -a cpg_ref.bed.gz -b methylation_calls.bed -loj -sorted | \\ awk '{if ($8==\".\") print \"0\\t0\"; else print $8\"\\t\"$9}' | \\ yame pack -f3 - &gt; sample.cg # 2. Verify data quality yame info sample.cg yame summary sample.cg # 3. Perform enrichment analysis yame summary -m ChromHMM.cm sample.cg &gt; chromatin_enrichment.txt yame summary -m genes.cm sample.cg &gt; gene_enrichment.txt # 4. If needed, unpack for external tools yame unpack -f 5 sample.cg &gt; sample_cov5.txt . Workflow 2: Create Multi-Feature Database . Build comprehensive feature database: . #!/bin/bash # Create comprehensive feature database for hg38 # 1. Prepare reference yame unpack cpg_nocontig.cr | gzip &gt; cpg_ref.bed.gz # 2. Download and process multiple features declare -A features=( [\"ChromHMM_15\"]=\"ChromHMM_15state.bed.gz\" [\"CpG_Islands\"]=\"cpgIslandExt.bed.gz\" [\"Promoters\"]=\"promoters_2kb.bed.gz\" [\"Enhancers\"]=\"enhancers_merged.bed.gz\" [\"TFBS\"]=\"tfbs_combined.bed.gz\" ) # 3. Create individual feature files for name in \"${!features[@]}\"; do file=\"${features[$name]}\" echo \"Processing $name...\" zcat \"$file\" | bedtools sort | \\ bedtools intersect -a cpg_ref.bed.gz -b - -loj -sorted | \\ bedtools groupby -g 1-3 -c 7 -o first | \\ cut -f4 | \\ yame pack -f2 - &gt; \"${name}.cm\" done echo \"Feature files created:\" ls -lh *.cm . Workflow 3: Convert Array Data to CX Format . Convert Illumina array data: . #!/bin/bash # Convert 450k/EPIC array data to CX format # Assuming you have: array_data.txt with columns: ProbeID, Beta # 1. Get array manifest with probe coordinates # manifest.bed format: chr start end ProbeID # 2. Intersect with reference CpGs bedtools intersect -a cpg_ref.bed.gz -b manifest.bed -loj -sorted &gt; probe_cpg_map.bed # 3. Map betas to CpG positions join -1 4 -2 1 -t$'\\t' \\ &lt;(sort -k4,4 probe_cpg_map.bed) \\ &lt;(sort -k1,1 array_data.txt) | \\ sort -k2,2 -k3,3n | \\ cut -f7 | \\ awk '{if ($1==\"\") print \"NA\"; else print $1}' | \\ yame pack -f4 - &gt; array_sample.cg echo \"Array data converted to CX format\" yame info array_sample.cg . ",
     "url": "/YAME/docs/storage.html#practical-workflows",
     
     "relUrl": "/docs/storage.html#practical-workflows"
-  },"159": {
+  },"150": {
     "doc": "1. Storage & Format",
     "title": "Best Practices",
     "content": ". | Always align with reference first bedtools intersect -a cpg_ref.bed.gz -b your_data.bed -sorted -c . | Verify dimensions match # Count reference CpGs zcat cpg_ref.bed.gz | wc -l # Count your data rows wc -l your_data.txt . | Handle missing values properly . | Format 3: Use M=0, U=0 for no coverage | Format 4: Use “NA” for missing values | Format 2: Use “.” for unassigned CpGs | . | . ",
     "url": "/YAME/docs/storage.html#best-practices",
     
     "relUrl": "/docs/storage.html#best-practices"
-  },"160": {
+  },"151": {
     "doc": "1. Storage & Format",
     "title": "1. Storage & Format",
     "content": " ",
     "url": "/YAME/docs/storage.html",
     
     "relUrl": "/docs/storage.html"
-  },"161": {
+  },"152": {
     "doc": "YAME Subcommands",
     "title": "YAME Subcommands",
     "content": "Usage for all YAME subcommands (printed with YAME). Program: yame (Yet Another Methylation tool) - whole genome DNA methylation data management. Version: 0.3.20230904 Contact: Wanding Zhou&lt;wanding.zhou@pennmedicine.upenn.edu&gt; Usage: yame &lt;command&gt; [options] Available commands: pack - Pack data into a cx file. unpack - Unpack data from a cx file. subset - Subset samples from a cx file. rowsub - Subset rows a cx file using an index list file. info - Display basic parameter of the cx file. summary - calculate summary, with or without masks. index - Index samples in a cx file. split - Split multi-sample data into single-sample data. chunk - Chunk data into smaller fragments. chunkchar - Chunk text data into smaller fragments. rowop - Perform operations on rows, e.g., sum binary values. mask - Mask methylation data by setting masked record to M=U=0. dsample - Downsample methylation data by setting unsampled records to M=U=0. ",
     "url": "/YAME/docs/subcommands",
     
     "relUrl": "/docs/subcommands"
-  },"162": {
+  },"153": {
     "doc": "2. Summarize & Encode",
     "title": "2. Summarization of Packed .cx Files",
     "content": "yame summary and yame info provide quick, high-level summaries of .cx files created via yame pack. These tools help users inspect sample names, structural parameters, and feature-level statistics such as enrichment, methylation levels, and coverage. To run a simple summary: . yame info yourfile.cg yame summary yourfile.cg . Both single-sample and multi-sample .cx files are supported. ",
     "url": "/YAME/docs/summarize.html#2-summarization-of-packed-cx-files",
     
     "relUrl": "/docs/summarize.html#2-summarization-of-packed-cx-files"
-  },"163": {
+  },"154": {
     "doc": "2. Summarize & Encode",
     "title": "Overview of What yame summary Computes",
     "content": "For each query sample, YAME reports: . | N_univ — total number of sites considered (universe) | N_query — number of sites present or methylated in the query | N_mask — number of sites in the mask | N_overlap — intersection of query and mask | Log2OddsRatio — an enrichment score | Beta — average methylation or proportion (format dependent) | Depth — approximate sequencing depth (only for formats with M/U counts) | . Mask files may contain multiple masks; each is evaluated independently. ",
     "url": "/YAME/docs/summarize.html#overview-of-what-yame-summary-computes",
     
     "relUrl": "/docs/summarize.html#overview-of-what-yame-summary-computes"
-  },"164": {
+  },"155": {
     "doc": "2. Summarize & Encode",
     "title": "Supported Input Formats",
     "content": "The query .cx file may be in any of the following internal YAME formats: . | Format | Meaning | How Summary Interprets It | . | 0 / 1 | Binary vectors | Presence/absence | . | 2 | State labels | Multi-class state-specific summary | . | 3 | Methylation (M/U counts) | Beta, depth, overlap | . | 6 | Binary with universe bit | Sparse methylation (e.g., single cell) | . Masks (-m) may also be in formats 0, 1, 2, or 6. Format 7 (BED-like coordinates) is ignored by summary. ",
     "url": "/YAME/docs/summarize.html#supported-input-formats",
     
     "relUrl": "/docs/summarize.html#supported-input-formats"
-  },"165": {
+  },"156": {
     "doc": "2. Summarize & Encode",
     "title": "Using Mask Feature Files",
     "content": "Masks allow aggregation of methylation or presence across functional features, e.g.: . | Fixed-size windows | Chromatin states | CpG islands, gene promoters | Custom regions | . Each mask is processed as a separate feature, producing a separate row in the summary output. If no mask is provided, YAME produces a global summary of the entire dataset. ",
     "url": "/YAME/docs/summarize.html#using-mask-feature-files",
     
     "relUrl": "/docs/summarize.html#using-mask-feature-files"
-  },"166": {
+  },"157": {
     "doc": "2. Summarize & Encode",
     "title": "Example: Summarization with a Window Mask File",
     "content": "Single-cell DNA methylomes are sparse, so window bins (e.g., 100 kb) are commonly used. Download the mask file: . wget https://raw.githubusercontent.com/zhou-lab/KYCGKB_mm10/main/Win100k.20220228.cm . Run: . yame summary -m Win100k.20220228.cm single_cell.cg . Example output: . QFile Query MFile Mask N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth single_cell.cg Sample1 Win100k.20220228.cm chr1:30 21867837 1861715 589 48 -0.07 0.688 0.1 single_cell.cg Sample1 Win100k.20220228.cm chr1:31 21867837 1861715 574 36 -0.48 0.917 0.1 . ",
     "url": "/YAME/docs/summarize.html#example-summarization-with-a-window-mask-file",
     
     "relUrl": "/docs/summarize.html#example-summarization-with-a-window-mask-file"
-  },"167": {
+  },"158": {
     "doc": "2. Summarize & Encode",
     "title": "Explanation of Output Columns",
     "content": "1. QFile . The query .cx file. 2. Query . Sample name from the sample index. If missing, YAME assigns numerical IDs. 3. MFile . The mask file used (or \"global\" when no mask is provided). 4. Mask . The name of each mask: . | State label for format 2 | Sample name for binary masks | Key names if -T is used | . 5. N_univ . Number of valid universe sites, depending on format: . | Format 6 uses only universe-bit sites | Other formats use total vector length | . 6. N_query . Number of “present” positions in the query: . | Formats 0/1: value = 1 | Format 3: sites with nonzero M+U | Format 6: universe-bit and set-bit sites | . 7. N_mask . Number of positions included in the mask. 8. N_overlap . Intersection of query and mask. 9. Log2OddsRatio . Enrichment score computed from the 2×2 contingency table of query × mask membership. 10. Beta . Average methylation or binary fraction inside the mask: . | Format 3: mean M/(M+U) | Binary formats: fraction of “1” | Format 6: fraction of SET sites within universe | . 11. Depth . Average sequencing depth (M+U) across mask sites (format 3 only). ",
     "url": "/YAME/docs/summarize.html#explanation-of-output-columns",
     
     "relUrl": "/docs/summarize.html#explanation-of-output-columns"
-  },"168": {
+  },"159": {
     "doc": "2. Summarize & Encode",
     "title": "Special Behaviors",
     "content": "Multiple Masks . If the mask file contains multiple samples, each is processed independently. State Masks (Format 2) . Each state produces a distinct summary row. Universe Subsetting (-u) . Applies an additional universe mask to both query and features. Memory Mode (-M) . Loads all masks into RAM to minimize disk access. Header Suppression (-H) . Removes the header line for scripting convenience. ",
     "url": "/YAME/docs/summarize.html#special-behaviors",
     
     "relUrl": "/docs/summarize.html#special-behaviors"
-  },"169": {
+  },"160": {
     "doc": "2. Summarize & Encode",
     "title": "Command Reference",
     "content": "Usage: yame summary [options] &lt;query.cx&gt; Options: -m FILE Mask feature (.cx) file. May contain multiple masks. -M Load all masks into memory. -u FILE Optional universe .cx file. -H Suppress header output. -q NAME Name to use when query file is '-'. -F Use full file paths in output. -T Always show section names (format 2). -s FILE Sample list overriding the query index. -h Display help. ",
     "url": "/YAME/docs/summarize.html#command-reference",
     
     "relUrl": "/docs/summarize.html#command-reference"
-  },"170": {
+  },"161": {
     "doc": "2. Summarize & Encode",
     "title": "Additional Documentation",
     "content": "See also: . | Feature enrichment guide | Subcommand documentation | . ",
     "url": "/YAME/docs/summarize.html#additional-documentation",
     
     "relUrl": "/docs/summarize.html#additional-documentation"
-  },"171": {
+  },"162": {
     "doc": "2. Summarize & Encode",
     "title": "2. Summarize & Encode",
     "content": " ",
