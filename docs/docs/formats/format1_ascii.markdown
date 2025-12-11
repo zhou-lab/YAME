@@ -1,114 +1,123 @@
 ---
-title: Fmt 1 - ASCII Values
+title: Format 1 – ASCII Values with RLE Compression
 parent: 1. Storage & Format
 nav_order: 1
 ---
 
-# Format 1 – ASCII Values with RLE Compression
+# Format 1 – ASCII Values with RLE (Run-Length Encoding)
 
-Format 1 stores **ASCII per-CpG values** using **run-length encoding (RLE)** for efficient compression.  
-It is ideal when your data consists of **small integers (0-255)** repeated across long stretches of the genome.
+Format 1 stores **single-byte ASCII values** for each CpG, compressed using **run-length encoding (RLE)**.  
+It is the most flexible CX format for encoding *arbitrary categorical or numeric symbols* that can be represented as **one ASCII character** (0–255).
 
-Examples:
+Examples of valid values:
 
-- Per-CpG **count values** (e.g., motif hits, coverage statistics)
-- Fixed **categorical encodings** where numbers repeat often
-- Processed or discretized tracks that map 1 integer → 1 CpG
-- Anything that is not 0/1 (Format 0) and not M/U pairs (Format 3)
+- ASCII digits: `0`, `1`, `2`, …  
+- ASCII letters: `a`, `b`, `A`, `Z`  
+- Punctuation or symbolic codes: `.`, `*`, `+`, `?`  
+- Encoded or discretized values where each state is a **single-byte token**
+
+This format is appropriate whenever the data is:
+
+- **Discrete**, but not limited to binary (Format 0)  
+- **Symbolic**, but not needing full string labels (Format 2)  
+- **Piecewise constant**, allowing large compression via RLE  
 
 ---
 
 ## 1. When to Use Format 1
 
-Use **Format 1** when:
+Use **Format 1** when your per-CpG track:
 
-- You have **single-character** data (`0`, `1`, `2`, `3`, ..., `a`, `b`, `A`, `B`, ...)
-- You expect **long runs of identical values**  
-  (e.g., 0 for most CpGs, intermittent 1’s or 2’s)
-- Storage size matters — Format 1 can give **10–100× compression** for RLE-friendly data
-- You do *not* need:
-  - multiple values per CpG (use Format 3)
+- Represents **one ASCII symbol per CpG**
+- Uses **small alphabets**, leading to long repeated runs  
+  (e.g., most values are `'0'`, `'1'`, `'2'`, or `'.'`)
+- Must remain symbolic rather than numeric
+- Must be efficiently stored and accessed  
+- Does NOT require:
   - floating-point values (use Format 4)
-  - category labels (use Format 2)
+  - multi-byte integers (Format 1 only stores **1 byte**)
+  - arbitrary text labels (use Format 2)
+  - pairs of values (use Format 3)
+
+Typical applications:
+
+- Discretized methylation states (`0`, `1`, `2`, `3`)
+- Coverage tiers (`A`, `B`, `C`, `D`)
+- Peak strength encoded as ASCII values  
+- Custom one-character categorical encodings  
+- Low-memory symbolic genome segmentation
 
 ---
 
 ## 2. Input Requirements
 
-Input must:
+Format 1 accepts **any single ASCII character** per line.
 
-- Contain **one integer per CpG**
-- Be aligned to the reference coordinate file (`.cr`)
-- Match the reference length exactly
-
-Example input (`int_values.txt`):
+Valid examples:
 
 ```text
 0
-0
-0
 1
-1
-0
 2
-2
-2
-2
-1
+a
+b
+A
+.
+*
+?
 ````
 
-Valid values:
+Multi-character strings like `"10"` or `"state1"` are **not allowed** — use Format 2 if you need labels longer than one byte.
 
-* Any non-negative integer (`0`, `1`, `2`, …)
-* Larger integers are allowed but compress best when small and repeated
+Missing values:
 
-Missing values are **not supported** — use Format 4 if you need NA.
+* There is **no NA in Format 1**
+* You may encode missing as `'.'` or `'0'`, depending on your design
 
 ---
 
 ## 3. Packing to Format 1
 
-### 3.1 Pack from a text file
+### 3.1 Pack from a simple ASCII list
 
 ```bash
-yame pack -f1 int_values.txt > integer_track.cg
+yame pack -f1 ascii_values.txt > ascii_track.cg
 ```
 
-or using shorthand:
+Where `ascii_values.txt` contains one character per line.
+
+### 3.2 Convert numeric or discrete BED values to ASCII
+
+Example: discretizing peak intensities into ASCII symbols:
 
 ```bash
-yame pack -f1 int_values.txt > mytrack.cg
+bedtools intersect -a cpg_ref.bed.gz -b peaks.bed -loj -sorted \
+  | awk '{ if ($8==".") print "."; else if ($8<5) print "a"; else print "b"; }' \
+  | yame pack -f1 - > peak_states.cg
 ```
 
----
-
-### 3.2 Create integer tracks from BED (example: count overlapping regions)
+### 3.3 Overlap count → ASCII (integer → ASCII conversion)
 
 ```bash
 bedtools intersect -a cpg_ref.bed.gz -b regions.bed -sorted -c \
   | cut -f4 \
-  | yame pack -f1 - > regions_count.cg
+  | awk '{ printf("%c\n", $1); }' \
+  | yame pack -f1 - > counted.cg
 ```
 
-Explanation:
-
-* `bedtools intersect -c` → count overlaps for each CpG
-* `cut -f4` → extract the count
-* `yame pack -f1` → compress into format 1
-
-If your BED contains multiple types of annotations (e.g., peak strengths), you can convert those into integers before packing.
+Any number **0–255** may be converted to ASCII using `printf("%c")`.
 
 ---
 
 ## 4. Unpacking Format 1
 
-To recover integer values:
+To recover ASCII characters:
 
 ```bash
-yame unpack integer_track.cg | head
+yame unpack ascii_track.cg | head
 ```
 
-Output:
+Output is exactly one character per line:
 
 ```text
 0
@@ -116,120 +125,112 @@ Output:
 0
 1
 1
-0
+.
+.
+a
+a
 2
-2
-2
-2
-1
 ```
 
-Format 1 unpacks **exactly** what was packed (lossless RLE).
+It is **lossless**, even for non-printable bytes.
 
 ---
 
 ## 5. Integration with Other YAME Commands
 
-Although Format 1 is less common than 0/2/3, it integrates with key YAME tools.
-
 ---
 
 ### 5.1 `yame summary`
 
-You can compute summaries over masks:
-
 ```bash
-yame summary -m features.cm integer_track.cg
+yame summary -m feature.cm ascii_track.cg
 ```
 
-Summary statistics for Format 1 include:
+Interprets ASCII data as **integer values 0–255** internally when computing summary statistics:
 
-* `N_query` — number of CpGs with nonzero value
-* `Beta` — **mean integer value** inside each mask
-* `Depth` — unused (always NA)
-* `Log2OddsRatio` — enrichment of nonzero entries in each mask
+* `Beta` = mean of ASCII byte values
+* `N_query` = number of CpGs where value ≠ 0
+* `Log2OddsRatio` treats nonzero values as "hits"
+
+If your encoding uses characters where `'0'` is not the null value, you may want to preprocess.
 
 ---
 
 ### 5.2 `yame rowsub`
 
-Format 1 supports all row subsetting methods:
+Supports all selection modes:
 
 ```bash
-# By index
-yame rowsub -l ids.txt integer_track.cg > subset.cg
-
-# By coordinate list
-yame rowsub -R cpg_nocontig.cr -L CpG_sites.txt integer_track.cg > subset.cg
-
-# By mask
-yame rowsub -m promoter_mask.cm integer_track.cg > promoter_subset.cg
+yame rowsub -m promoters.cm ascii_track.cg > promoters_ascii.cg
+yame rowsub -R cpg.cr -L CpGs.txt ascii_track.cg > subset.cg
 ```
 
 ---
 
 ### 5.3 `yame dsample`
 
-Downsampling for Format 1 uses the rule:
+Downsampling uses the rule:
 
-* Eligible sites = *nonzero* integers
-* Randomly keep `N` of them
-* Remaining sites become `0`
+* **Non-zero ASCII values** = eligible
+* Retain N
+* Others become `'0'` (ASCII zero)
 
 Example:
 
 ```bash
-yame dsample -N 20000 -s 123 int_track.cg > int_track_20k.cg
+yame dsample -N 50000 ascii_track.cg > ascii_50k.cg
 ```
 
 ---
 
 ### 5.4 `yame mask`
 
-You can mask out sites in Format 1 the same as Format 0 or 3:
+Masking replaces values with `'0'`:
 
 ```bash
-yame mask int_track.cg low_quality.cm -o cleaned.cg
+yame mask ascii_track.cg mask.cm -o masked.cg
 ```
-
-Masked CpGs become `0`.
 
 ---
 
-## 6. When Format 1 Is Not Appropriate
+## 6. When NOT to Use Format 1
 
-Choose another format if:
+Avoid Format 1 if:
 
-* You have two values per CpG → use **Format 3**
-* You need floating-point values → use **Format 4**
-* You need NA handling → use **Format 4**
-* You have categorical labels → use **Format 2**
-* You need sparse universe-aware binary representation → use **Format 6**
+| Requirement                | Use Instead  |
+| -------------------------- | ------------ |
+| Values longer than 1 byte  | **Format 2** |
+| Floating-point, NA support | **Format 4** |
+| M/U count pairs            | **Format 3** |
+| Sparse universe + binary   | **Format 6** |
+| Only 0/1 values            | **Format 0** |
+
+Format 1 is best for **compact single-byte symbolic encodings**.
 
 ---
 
 ## 7. Minimal End-to-End Example
 
 ```bash
-# 1. Prepare reference CpGs (once per genome version)
+# 1. Prepare reference CpGs
 yame unpack cpg_nocontig.cr | gzip > cpg_ref.bed.gz
 
-# 2. Compute coverage (example: count overlaps)
-bedtools intersect -a cpg_ref.bed.gz -b regions.bed -sorted -c \
-  | cut -f4 \
-  | yame pack -f1 - > regions_track.cg
+# 2. Encode peak intensity categories as ASCII
+bedtools intersect -a cpg_ref.bed.gz -b peaks.bed -loj -sorted \
+  | awk '{ if ($8==".") print "."; else if ($8<5) print "a"; else print "b"; }' \
+  | yame pack -f1 - > peaks_ascii.cg
 
-# 3. Summarize over genomic features
-yame summary -m ChromHMM.cm regions_track.cg > summary.txt
+# 3. Summarize across annotations
+yame summary -m ChromHMM.cm peaks_ascii.cg > peak_state_enrichment.txt
 
-# 4. Subset to promoter CpGs
-yame rowsub -m promoters.cm regions_track.cg > promoter_track.cg
+# 4. Extract promoter subset
+yame rowsub -m promoters.cm peaks_ascii.cg > promoter_ascii.cg
 
-# 5. Downsample high-intensity bins
-yame dsample -N 5000 regions_track.cg > regions_5k.cg
+# 5. Downsample symbolic data
+yame dsample -N 10000 peaks_ascii.cg > peaks_10k.cg
 ```
 
 ---
 
-Format 1 is a compact, efficient choice whenever your data is **integer-valued and run-length compressible**—a perfect middle ground between dense numeric matrices and coarse binary formats.
+Format 1 provides an efficient, flexible container for **single-byte, symbolic per-CpG encodings**, bridging the gap between simple binary formats and complex state-based annotations.
 
