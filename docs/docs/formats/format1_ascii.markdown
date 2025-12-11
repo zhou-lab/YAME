@@ -1,5 +1,5 @@
 ---
-title: Format 1 – ASCII Values with RLE Compression
+title: Format 1 – ASCII Values
 parent: 1. Storage & Format
 nav_order: 1
 ---
