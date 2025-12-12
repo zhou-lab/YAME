@@ -102,7 +102,7 @@
  *   the original uncompressed representation.
  */
 
-cdata_t fmt4_decompress(cdata_t c) {
+cdata_t fmt4_decompress(const cdata_t c) {
   cdata_t expanded = {0};
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;

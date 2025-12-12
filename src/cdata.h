@@ -58,7 +58,7 @@ typedef struct cdata_t {
   void *aux;
 } cdata_t;
 
-static inline uint64_t cdata_nbytes(cdata_t *c) {
+static inline uint64_t cdata_nbytes(const cdata_t *c) {
   uint64_t n = 0;
   switch(c->fmt) {
   case '0': n = ((c->n+7)>>3); break;
@@ -121,9 +121,9 @@ void convertToFmt0(cdata_t *c);
 
 
 void fmt2_set_aux(cdata_t *c);
-uint8_t* fmt2_get_data(cdata_t *c);
-uint64_t fmt2_get_keys_n(cdata_t *c);
-uint64_t fmt2_get_keys_nbytes(cdata_t *c);
+uint8_t* fmt2_get_data(const cdata_t *c);
+uint64_t fmt2_get_keys_n(const cdata_t *c);
+uint64_t fmt2_get_keys_nbytes(const cdata_t *c);
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
 char* f2_get_string(cdata_t *c, uint64_t i);
 
@@ -147,8 +147,7 @@ static inline cdata_t cdata_duplicate(cdata_t c) {
   return cout;
 }
 
-int fmt7_next_bed(cdata_t *c);
-uint64_t fmt7_data_length(cdata_t *c);
+uint64_t fmt7_data_length(const cdata_t *c);
 cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end);
 cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices);
 cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask);
@@ -171,6 +170,29 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
   c_sliced->unit = c->unit;
 }
 
+/**
+ * @brief A streaming cursor for iterating over row-coordinate records.
+ *
+ * This struct represents the current position in a row-coordinate cdata_t
+ * (format 7, usually a `.cr` file). It does not own any memory; all pointers
+ * refer into the underlying cdata_t::s buffer.
+ *
+ * Fields:
+ *   - index: 1-based row index (i.e., which row in the matrix this record
+ *            corresponds to). Incremented by row_reader_next_loc().
+ *   - chrm : pointer to the chromosome name string inside cdata_t::s.
+ *   - loc  : byte offset into cdata_t::s where this record is stored.
+ *   - value: genomic coordinate (typically 1-based CpG position, "beg1").
+ *
+ * Typical usage:
+ *   row_reader_t rdr = {0};
+ *   while (row_reader_next_loc(&rdr, cr)) {
+ *       // use rdr.chrm, rdr.value, rdr.index, ...
+ *   }
+ *
+ * The helper function row_reader_next_loc() advances this cursor to the next
+ * record and fills these fields accordingly.
+ */
 typedef struct row_reader_t {
   uint64_t index;
   char *chrm;                   // on cdata_t.s
@@ -180,6 +202,25 @@ typedef struct row_reader_t {
 
 KHASH_MAP_INIT_STR(str2int, uint64_t) // Initialize a hashmap with keys as strings and values as uint64_t
 
+/**
+ * @brief Per-chromosome coarse index into a row-coordinate track.
+ *
+ * For each chromosome we construct a coarse-grained index in blocks of
+ * fixed genomic size (2^17 bp). Each entry k in the arrays corresponds to
+ * the first CpG at genomic coordinate >= (k << 17). locs map these block
+ * starts to the positions in the cdata_t::s.
+ *
+ * Fields:
+ *   - locs[k]: byte offset into the original cdata_t::s buffer at which the
+ *              first record for block k (or the next non-empty block) starts.
+ *   - vals[k]: genomic coordinate (1-based) of that record.
+ *   - inds[k]: 1-based row index corresponding to that record.
+ *   - n     : number of blocks currently stored (size of the arrays).
+ *
+ * The arrays grow as we encounter larger coordinates during init_finder().
+ * These arrays do not own the underlying chromosome strings; they only store
+ * offsets and coordinates.
+ */
 typedef struct chromosome_t {
   uint64_t *locs;
   uint64_t *vals;
@@ -187,9 +228,33 @@ typedef struct chromosome_t {
   uint64_t n;
 } chromosome_t;
 
+/**
+ * @brief Global index for fast row lookup by chromosome and coordinate.
+ *
+ * row_finder_t is an in-memory index built from a row-coordinate cdata_t
+ * (typically a format 7 `.cr` file). It supports O(1) chromosome lookup and
+ * O(1) jump to a coarse genomic bin, followed by a short linear scan.
+ *
+ * Fields:
+ *   - chrms: array of chromosome_t structures, one per chromosome seen in
+ *            the coordinate file.
+ *   - n    : number of chromosomes.
+ *   - h    : khash mapping chromosome name (char*) to integer index
+ *            into the chrms[] array.
+ *
+ * Construction:
+ *   row_finder_t fdr = init_finder(cr);
+ *
+ * Query:
+ *   uint64_t row = row_finder_search("chr1", 1234567, &fdr, cr);
+ *   if (row == 0) {} // not found
+ *
+ * Memory:
+ *   Use free_row_finder(&fdr) to release all internal allocations.
+ */
 typedef struct row_finder_t {
   chromosome_t *chrms;
-  int n;
+  int n; // number of chromosomes
   khash_t(str2int) *h; // chromosome string > chromosome_t
 } row_finder_t;
 
@@ -203,7 +268,7 @@ static inline void free_row_finder(row_finder_t *fdr) {
   kh_destroy(str2int, fdr->h);
 }
 
-int row_reader_next_loc(row_reader_t *rdr, cdata_t *c);
+int row_reader_next_loc(row_reader_t *rdr, const cdata_t *c);
 row_finder_t init_finder(cdata_t *cr);
 uint64_t row_finder_search(char *chrm, uint64_t beg1, row_finder_t *fdr, cdata_t *cr);
 

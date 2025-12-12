@@ -235,7 +235,7 @@ void fmt3_compress(cdata_t *c) {
   c->compressed = 1;
 }
 
-static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
+static uint64_t get_data_length(const cdata_t *c, uint8_t *unit) {
   uint8_t nbits = 1; // half unit nbits, M or U.
   uint64_t n = 0;
   for (uint64_t i=0; i < c->n; ) {
@@ -265,7 +265,7 @@ static uint64_t get_data_length(cdata_t *c, uint8_t *unit) {
   return n;
 }
 
-cdata_t fmt3_decompress(cdata_t c) {
+cdata_t fmt3_decompress(const cdata_t c) {
   uint8_t unit = 1;
   uint64_t n0 = get_data_length(&c, &unit);
   cdata_t inflated = {0};

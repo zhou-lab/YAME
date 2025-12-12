@@ -113,7 +113,7 @@ cdata_t* fmt0_read_raw(char *fname, int verbose) {
 }
 
 /* just copy, nothing done */
-cdata_t fmt0_decompress(cdata_t c) {
+cdata_t fmt0_decompress(const cdata_t c) {
   cdata_t expanded = c;
   expanded.s = calloc(cdata_nbytes(&c), 1);
   memcpy(expanded.s, c.s, cdata_nbytes(&c));
@@ -130,7 +130,7 @@ cdata_t fmt0_decompress(cdata_t c) {
  * - Input format is '3': if the M+U is 0, return 0 else 1
  * - Other input formats are not allowed.
  */
-cdata_t fmt3_decompress(cdata_t c);
+cdata_t fmt3_decompress(const cdata_t c);
 void convertToFmt0(cdata_t *c) {
   cdata_t c_out = {0};
   switch (c->fmt) {

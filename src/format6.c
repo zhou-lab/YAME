@@ -143,7 +143,7 @@ void fmt6_compress(cdata_t *c) {
 }
 
 // just copy, nothing else, one can just flip compressed bit if possible
-cdata_t fmt6_decompress(cdata_t c) {
+cdata_t fmt6_decompress(const cdata_t c) {
   cdata_t expanded = {0};
   expanded.s = malloc(cdata_nbytes(&c));
   memcpy(expanded.s, c.s, cdata_nbytes(&c));

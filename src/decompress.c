@@ -20,13 +20,14 @@
 
 #include "cfile.h"
 
-cdata_t fmt0_decompress(cdata_t c);
-cdata_t fmt1_decompress(cdata_t c);
-cdata_t fmt2_decompress(cdata_t c);
-cdata_t fmt3_decompress(cdata_t c);
-cdata_t fmt4_decompress(cdata_t c);
-cdata_t fmt5_decompress(cdata_t c);
-cdata_t fmt6_decompress(cdata_t c);
+cdata_t fmt0_decompress(const cdata_t c);
+cdata_t fmt1_decompress(const cdata_t c);
+cdata_t fmt2_decompress(const cdata_t c);
+cdata_t fmt3_decompress(const cdata_t c);
+cdata_t fmt4_decompress(const cdata_t c);
+cdata_t fmt5_decompress(const cdata_t c);
+cdata_t fmt6_decompress(const cdata_t c);
+cdata_t fmt7_decompress(const cdata_t c);
 
 cdata_t decompress(cdata_t c) {
   switch (c.fmt) {
@@ -37,6 +38,7 @@ cdata_t decompress(cdata_t c) {
   case '4': { return fmt4_decompress(c); }
   case '5': { return fmt5_decompress(c); }
   case '6': { return fmt6_decompress(c); }
+  case '7': { return fmt7_decompress(c); }
   default: wzfatal("Unsupported format for inflation: %c.\n", c.fmt);
   }
   return c; /* shouldn't reach here */

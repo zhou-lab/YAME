@@ -44,6 +44,7 @@ typedef struct cdata_pfmt_t {
   int f7;
 } cdata_pfmt_t;
 
+int fmt7_next_bed(cdata_t *c);
 static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
   switch (c->fmt) {
   case '0': {
@@ -165,7 +166,7 @@ static void print_cdata(cdata_v *cs, cdata_pfmt_t pfmt, char *fname_row) {
   cdata_t *inflated = calloc(kn, sizeof(cdata_t));
   for (k=0; k<kn; ++k) {
     cdata_t *c = ref_cdata_v(cs,k);
-    if (c->fmt == '7') {
+    if (c->fmt == '7') { // inflating format 7 is expensive
       memcpy(inflated+k, c, sizeof(cdata_t));
       inflated[k].s = malloc(c->n);
       memcpy(inflated[k].s, c->s, c->n);

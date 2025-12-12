@@ -28,7 +28,7 @@ row_finder_t init_finder(cdata_t *cr) {
   char *chrm = NULL;
   chromosome_t *chrmt = NULL;
   while (row_reader_next_loc(&rdr, cr)) {
-    if (rdr.chrm != chrm) {
+    if (rdr.chrm != chrm) { // a new chromosome
       chrm = rdr.chrm;
       if (kh_get(str2int, fdr.h, chrm) == kh_end(fdr.h)) { // key doesn't exist
         int ret;

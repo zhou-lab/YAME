@@ -123,6 +123,8 @@ run ../yame pack -f6 input/f6_sparse.tsv output/f6.cx
   printf "chr1\t400\t401\tCpG_4\n"
   printf "chr1\t500\t501\tCpG_5\n"
   printf "chr1\t600\t601\tCpG_6\n"
+  printf "chr2\t500\t501\tCpG_7\n"
+  printf "chr2\t600\t601\tCpG_8\n"
 } > input/f7_coords.bed
 
 echo "[FMT7] pack input/f7_coords.bed -> output/f7.cr"

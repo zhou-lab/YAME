@@ -92,7 +92,7 @@
  * smaller than the original packed-bit layout.
  */
 
-cdata_t fmt1_decompress(cdata_t c) {
+cdata_t fmt1_decompress(const cdata_t c) {
   cdata_t expanded = {0};
   uint64_t i=0, j=0, n=0, m=1<<20;
   uint8_t *s = realloc(expanded.s, m);

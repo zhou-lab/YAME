@@ -108,7 +108,7 @@
  *   i.e. the original uncompressed representation (unit = 1).
  */
 
-cdata_t fmt5_decompress(cdata_t c) {
+cdata_t fmt5_decompress(const cdata_t c) {
   cdata_t expanded = {0};
   uint64_t i = 0, m = 1<<20, n = 0, j = 0;
   uint8_t *s = malloc(m*sizeof(uint8_t));

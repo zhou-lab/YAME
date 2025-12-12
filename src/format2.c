@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cdata.h"
+#include "summary.h"
 
 /** ---- format 2 (state / categorical data) -----
  *
@@ -273,7 +274,7 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   return c;
 }
 
-uint64_t fmt2_get_keys_n(cdata_t *c) {
+uint64_t fmt2_get_keys_n(const cdata_t *c) {
   uint64_t keys_n = 0;
   for (uint64_t i = 0; ; ++i) {
     if (c->s[i] == '\0') {
@@ -289,7 +290,7 @@ uint64_t fmt2_get_keys_n(cdata_t *c) {
   return keys_n;
 }
 
-uint64_t fmt2_get_keys_nbytes(cdata_t *c) {
+uint64_t fmt2_get_keys_nbytes(const cdata_t *c) {
   uint64_t i;
   for (i = 0; ; ++i) {
     if (c->s[i] == '\0' && c->s[i+1] == '\0') {
@@ -301,7 +302,7 @@ uint64_t fmt2_get_keys_nbytes(cdata_t *c) {
 }
 
 // c->n is the total nbytes only when compressed
-static uint64_t fmt2_get_data_nbytes(cdata_t *c) {
+static uint64_t fmt2_get_data_nbytes(const cdata_t *c) {
   if (!c->compressed) {
     fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
     fflush(stderr);
@@ -320,7 +321,7 @@ static uint64_t fmt2_get_data_nbytes(cdata_t *c) {
 }
 
 // assume c is compressed
-static uint8_t fmt2_get_value_byte(cdata_t *c) {
+static uint8_t fmt2_get_value_byte(const cdata_t *c) {
   if (!c->compressed) {
     fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
     fflush(stderr);
@@ -338,7 +339,7 @@ static uint8_t fmt2_get_value_byte(cdata_t *c) {
   return c->s[separator_idx + 2];
 }
 
-uint8_t* fmt2_get_data(cdata_t *c) {
+uint8_t* fmt2_get_data(const cdata_t *c) {
   uint64_t separator_idx = 0;
   for (uint64_t i = 0; ; ++i) {
     if (c->s[i] == '\0' && c->s[i+1] == '\0') {
@@ -366,7 +367,7 @@ void fmt2_compress(cdata_t *c) {
   c->fmt = '2';
 }
 
-cdata_t fmt2_decompress(cdata_t c) {
+cdata_t fmt2_decompress(const cdata_t c) {
   
   cdata_t inflated = {0};
   uint64_t keys_nb = fmt2_get_keys_nbytes(&c);
@@ -438,4 +439,146 @@ void fmt2_set_aux(cdata_t *c) {
   }
   aux->data = fmt2_get_data(c);
   c->aux = aux;
+}
+
+stats_t* summarize1_queryfmt2(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+
+  stats_t *st = NULL;
+  if (c_mask->n == 0) {          // no mask
+    
+    if (!c->aux) fmt2_set_aux(c);
+    f2_aux_t *aux = (f2_aux_t*) c->aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    for (uint64_t i=0; i<c->n; ++i) cnts[f2_get_uint64(c, i)]++;
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c->n;
+      st[k].n_q = cnts[k];
+      st[k].n_m = 0;
+      st[k].n_o = 0;
+      st[k].sm = strdup(sm);
+      if (config->section_name) {
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+        st[k].sq = tmp.s;
+      } else {
+        st[k].sq = strdup(aux->keys[k]);
+      }
+    }
+    free(cnts);
+    
+  } else if (c_mask->fmt <= '1') { // binary mask
+
+    if (!c->aux) fmt2_set_aux(c);
+    f2_aux_t *aux = (f2_aux_t*) c->aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t n_m = 0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      if (FMT0_IN_SET(*c_mask, i)) {
+        n_m++;
+        cnts[f2_get_uint64(c, i)]++;
+      }
+      cnts_q[f2_get_uint64(c, i)]++;
+    }
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c->n;
+      st[k].n_q = cnts_q[k];
+      st[k].n_o = cnts[k];
+      st[k].n_m = n_m;
+      st[k].sm = strdup(sm);
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+      st[k].sq = tmp.s;
+    }
+    free(cnts);
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+
+    if (!c->aux) fmt2_set_aux(c);
+    f2_aux_t *aux = (f2_aux_t*) c->aux;
+    *n_st = aux->nk;
+    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
+    uint64_t n_m = 0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      if (FMT6_IN_UNI(*c_mask,i) && FMT6_IN_SET(*c_mask, i)) {
+        n_m++;
+        cnts[f2_get_uint64(c, i)]++;
+      }
+      cnts_q[f2_get_uint64(c, i)]++;
+    }
+    st = calloc(aux->nk, sizeof(stats_t));
+    for (uint64_t k=0; k<aux->nk; ++k) {
+      st[k].n_u = c->n;
+      st[k].n_q = cnts_q[k];
+      st[k].n_o = cnts[k];
+      st[k].n_m = n_m;
+      st[k].sm = strdup(sm);
+      kstring_t tmp = {0};
+      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+      st[k].sq = tmp.s;
+    }
+    free(cnts);
+    
+  } else if (c_mask->fmt == '2') { // state mask
+
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+
+    if (!c_mask->aux) fmt2_set_aux(c_mask);
+    f2_aux_t *aux_m = (f2_aux_t*) c_mask->aux;
+
+    if (!c->aux) fmt2_set_aux(c);
+    f2_aux_t *aux_q = (f2_aux_t*) c->aux;
+
+    *n_st = aux_m->nk * aux_q->nk;
+    st = calloc((*n_st), sizeof(stats_t));
+    uint64_t *nq = calloc(aux_q->nk, sizeof(uint64_t));
+    uint64_t *nm = calloc(aux_m->nk, sizeof(uint64_t));
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t im = f2_get_uint64(c_mask, i);
+      uint64_t iq = f2_get_uint64(c, i);
+      st[im * aux_q->nk + iq].n_o++;
+      nq[iq]++;
+      nm[im]++;
+    }
+    for (uint64_t im=0; im<aux_m->nk; ++im) {
+      for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
+        stats_t *st1 = &st[im * aux_q->nk + iq];
+        st1->n_o++;
+        st1->n_u = c->n;
+        st1->n_q = nq[iq];
+        st1->n_m = nm[im];
+        if (config->section_name) {
+          kstring_t tmp = {0};
+          ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
+          st1->sm = tmp.s;
+        } else {
+          st1->sm = strdup(aux_m->keys[im]);
+        }
+        if (config->section_name) {
+          kstring_t tmp = {0};
+          ksprintf(&tmp, "%s-%s", sq, aux_q->keys[iq]);
+          st1->sq = tmp.s;
+        } else {
+          st1->sq = strdup(aux_q->keys[iq]);
+        }
+      }
+    }
+    free(nq); free(nm);
+    
+  } else {                      // other masks
+    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  return st;
 }

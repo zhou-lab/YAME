@@ -1,5 +1,5 @@
 ---
-title: Format 1 – ASCII Values
+title: Fmt 1 – ASCII Values
 parent: 1. Storage & Format
 nav_order: 1
 ---

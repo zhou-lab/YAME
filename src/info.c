@@ -34,18 +34,10 @@ static int usage() {
 }
 
 static void cdata_length(cdata_t *c, uint64_t *n, uint8_t *u) {
-  switch(c->fmt) {
-  case '7': {
-    *n = fmt7_data_length(c);
-    *u = 1;
-    break; }
-  default: {
-    cdata_t inflated = decompress(*c);
-    *n = inflated.n;
-    *u = inflated.unit;
-    free(inflated.s);
-    break; }
-  }
+  cdata_t inflated = decompress(*c);
+  *n = inflated.n;
+  *u = inflated.unit;
+  free(inflated.s);
 }
 
 int main_info(int argc, char *argv[]) {

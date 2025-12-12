@@ -155,148 +155,6 @@ static stats_t* summarize1_queryfmt0(
   return st;
 }
 
-static stats_t* summarize1_queryfmt2(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
-
-  stats_t *st = NULL;
-  if (c_mask->n == 0) {          // no mask
-    
-    if (!c->aux) fmt2_set_aux(c);
-    f2_aux_t *aux = (f2_aux_t*) c->aux;
-    *n_st = aux->nk;
-    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
-    for (uint64_t i=0; i<c->n; ++i) cnts[f2_get_uint64(c, i)]++;
-    st = calloc(aux->nk, sizeof(stats_t));
-    for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c->n;
-      st[k].n_q = cnts[k];
-      st[k].n_m = 0;
-      st[k].n_o = 0;
-      st[k].sm = strdup(sm);
-      if (config->section_name) {
-        kstring_t tmp = {0};
-        ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-        st[k].sq = tmp.s;
-      } else {
-        st[k].sq = strdup(aux->keys[k]);
-      }
-    }
-    free(cnts);
-    
-  } else if (c_mask->fmt <= '1') { // binary mask
-
-    if (!c->aux) fmt2_set_aux(c);
-    f2_aux_t *aux = (f2_aux_t*) c->aux;
-    *n_st = aux->nk;
-    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t n_m = 0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      if (FMT0_IN_SET(*c_mask, i)) {
-        n_m++;
-        cnts[f2_get_uint64(c, i)]++;
-      }
-      cnts_q[f2_get_uint64(c, i)]++;
-    }
-    st = calloc(aux->nk, sizeof(stats_t));
-    for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c->n;
-      st[k].n_q = cnts_q[k];
-      st[k].n_o = cnts[k];
-      st[k].n_m = n_m;
-      st[k].sm = strdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
-    }
-    free(cnts);
-
-  } else if (c_mask->fmt == '6') { // binary mask with universe
-
-    if (!c->aux) fmt2_set_aux(c);
-    f2_aux_t *aux = (f2_aux_t*) c->aux;
-    *n_st = aux->nk;
-    uint64_t *cnts = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t *cnts_q = calloc(aux->nk, sizeof(uint64_t));
-    uint64_t n_m = 0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      if (FMT6_IN_UNI(*c_mask,i) && FMT6_IN_SET(*c_mask, i)) {
-        n_m++;
-        cnts[f2_get_uint64(c, i)]++;
-      }
-      cnts_q[f2_get_uint64(c, i)]++;
-    }
-    st = calloc(aux->nk, sizeof(stats_t));
-    for (uint64_t k=0; k<aux->nk; ++k) {
-      st[k].n_u = c->n;
-      st[k].n_q = cnts_q[k];
-      st[k].n_o = cnts[k];
-      st[k].n_m = n_m;
-      st[k].sm = strdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
-    }
-    free(cnts);
-    
-  } else if (c_mask->fmt == '2') { // state mask
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-
-    if (!c_mask->aux) fmt2_set_aux(c_mask);
-    f2_aux_t *aux_m = (f2_aux_t*) c_mask->aux;
-
-    if (!c->aux) fmt2_set_aux(c);
-    f2_aux_t *aux_q = (f2_aux_t*) c->aux;
-
-    *n_st = aux_m->nk * aux_q->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t *nq = calloc(aux_q->nk, sizeof(uint64_t));
-    uint64_t *nm = calloc(aux_m->nk, sizeof(uint64_t));
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t im = f2_get_uint64(c_mask, i);
-      uint64_t iq = f2_get_uint64(c, i);
-      st[im * aux_q->nk + iq].n_o++;
-      nq[iq]++;
-      nm[im]++;
-    }
-    for (uint64_t im=0; im<aux_m->nk; ++im) {
-      for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
-        stats_t *st1 = &st[im * aux_q->nk + iq];
-        st1->n_o++;
-        st1->n_u = c->n;
-        st1->n_q = nq[iq];
-        st1->n_m = nm[im];
-        if (config->section_name) {
-          kstring_t tmp = {0};
-          ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
-          st1->sm = tmp.s;
-        } else {
-          st1->sm = strdup(aux_m->keys[im]);
-        }
-        if (config->section_name) {
-          kstring_t tmp = {0};
-          ksprintf(&tmp, "%s-%s", sq, aux_q->keys[iq]);
-          st1->sq = tmp.s;
-        } else {
-          st1->sq = strdup(aux_q->keys[iq]);
-        }
-      }
-    }
-    free(nq); free(nm);
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
 static stats_t* summarize1_queryfmt3(
   cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
@@ -535,24 +393,27 @@ static stats_t* summarize1_queryfmt6(
   return st;
 }
 
-stats_t* summarize1_queryfmt4(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt2(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt4(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt7(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 
 static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
-  if (c->fmt == '3') {
-    return summarize1_queryfmt3(c, c_mask, n_st, sm, sq, config);
-  } else if (c->fmt == '2') {
-    return summarize1_queryfmt2(c, c_mask, n_st, sm, sq, config);
-  } else if (c->fmt == '0' || c->fmt == '1') {
-    return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
-  } else if (c->fmt == '6') {
-    return summarize1_queryfmt6(c, c_mask, n_st, sm, sq, config);
-  } else if (c->fmt == '4') {
-    return summarize1_queryfmt4(c, c_mask, n_st, sm, sq, config);
-  } else {
-    fprintf(stderr, "[%s:%d] Query format %c unsupported.\n", __func__, __LINE__, c->fmt);
-    fflush(stderr);
-    exit(1);
+
+  switch (c->fmt) {
+  case '0': return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
+  case '1': return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
+  case '2': return summarize1_queryfmt2(c, c_mask, n_st, sm, sq, config);
+  case '3': return summarize1_queryfmt3(c, c_mask, n_st, sm, sq, config);
+  case '4': return summarize1_queryfmt4(c, c_mask, n_st, sm, sq, config);
+  case '6': return summarize1_queryfmt6(c, c_mask, n_st, sm, sq, config);
+  case '7': return summarize1_queryfmt7(c, c_mask, n_st, sm, sq, config);
+  default: wzfatal("[%s:%d] Query format %c unsupported.\n", __func__, __LINE__, c->fmt);
   }
+  stats_t *st = calloc(1, sizeof(stats_t));
+  return st;
 }
 
 static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname_qry, config_t *config) {
@@ -681,10 +542,10 @@ int main_summary(int argc, char *argv[]) {
         fflush(stderr);
         exit(1);
       }
-      if (c_qry.fmt == '7') { // skip format 7
-        free_cdata(&c_qry); c_qry.s = NULL;
-        continue;
-      }
+      /* if (c_qry.fmt == '7') { // skip format 7 */
+      /*   free_cdata(&c_qry); c_qry.s = NULL; */
+      /*   continue; */
+      /* } */
       kstring_t sq = {0};
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
