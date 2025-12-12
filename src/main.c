@@ -24,6 +24,7 @@
 #include <sys/resource.h>
 #include "cfile.h"
 
+// TODO prepare a separate git repo for auto testing
 const int unit_base[40] = {
   0,  1,  1,  4,  4,  8,  8,  0,
   0,  0,  0,  0,  0,  0,  0,  0,
