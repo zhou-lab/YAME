@@ -35,7 +35,10 @@
  *
  * The key section is the same in both compressed and uncompressed form;
  * only the data section changes.
- *
+ * 
+ * The data section of the compressed format is a little different from
+ * format 7 in that it contains a "unit" byte (see below) and used
+ * RLE.
  *
  * Uncompressed (inflated) layout
  * ------------------------------
@@ -74,10 +77,10 @@
  *
  * Bytes after the key section:
  *
- *   [ '\0' ][ value_bytes ][ (value, length) pairs ... ]
+ *   [ '\0' ][ unit ][ (value, length) pairs ... ]
  *
  * where:
- *   - `value_bytes` (1 byte) = number of bytes used to store each value
+ *   - `unit` (1 byte) = number of bytes used to store each value
  *       (chosen from {1,2,3,8} based on max state index)
  *   - each run is:
  *       value  : value_bytes bytes, little-endian encoded integer
@@ -110,8 +113,32 @@
  *   - sets inflated.unit = value_bytes, inflated.n = number of positions
  */
 
-// from position index to term index
+/**
+ * f2_get_uint64()
+ * ----------------
+ * Return the state value at position index `i` for **format 2** (state data).
+ *
+ * Format-2 stores per-position integer states in `c->unit` bytes
+ * (1, 2, 4, or 8), little-endian. Data must be decompressed.
+ * aux->data points to the the non-key part of c->s.
+ *
+ * aux->data is a pointer to where data starts in c->s;
+ *
+ * This function:
+ *   • ensures the inflated buffer exists (fmt2_set_aux if needed)
+ *   • locates entry i in aux->data (offset = i * c->unit)
+ *   • reconstructs the value as a little-endian integer
+ *   • returns it as uint64_t
+ *
+ * Usage:
+ *     uint64_t state = f2_get_uint64(&c, i);
+ *
+ * Notes:
+ *   • Caller must ensure 0 ≤ i < c->n.
+ *   • Works uniformly regardless of underlying integer width.
+ */
 uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
+  assert(!c->compressed);
   if (!c->aux) fmt2_set_aux(c);
   f2_aux_t *aux = (f2_aux_t*) c->aux;
   uint8_t *d = aux->data + c->unit*i;
@@ -121,6 +148,7 @@ uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
 }
 
 char* f2_get_string(cdata_t *c, uint64_t i) {
+  assert(!c->compressed);
   if (!c->aux) fmt2_set_aux(c);
   f2_aux_t *aux = (f2_aux_t*) c->aux;
   uint64_t val = f2_get_uint64(c, i);
@@ -274,6 +302,8 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
   return c;
 }
 
+// TODO better organization and documentation of these
+// this works for both compressed and decompressed data since key sections are shared.
 uint64_t fmt2_get_keys_n(const cdata_t *c) {
   uint64_t keys_n = 0;
   for (uint64_t i = 0; ; ++i) {
@@ -290,6 +320,7 @@ uint64_t fmt2_get_keys_n(const cdata_t *c) {
   return keys_n;
 }
 
+// this works for both compressed and decompressed data since key sections are shared.
 uint64_t fmt2_get_keys_nbytes(const cdata_t *c) {
   uint64_t i;
   for (i = 0; ; ++i) {
@@ -302,7 +333,7 @@ uint64_t fmt2_get_keys_nbytes(const cdata_t *c) {
 }
 
 // c->n is the total nbytes only when compressed
-static uint64_t fmt2_get_data_nbytes(const cdata_t *c) {
+static uint64_t fmt2c_get_data_nbytes(const cdata_t *c) {
   if (!c->compressed) {
     fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
     fflush(stderr);
@@ -321,7 +352,7 @@ static uint64_t fmt2_get_data_nbytes(const cdata_t *c) {
 }
 
 // assume c is compressed
-static uint8_t fmt2_get_value_byte(const cdata_t *c) {
+static uint8_t fmt2c_get_unit(const cdata_t *c) {
   if (!c->compressed) {
     fprintf(stderr, "[%s:%d] Data is uncompressed.\n", __func__, __LINE__);
     fflush(stderr);
@@ -339,6 +370,7 @@ static uint8_t fmt2_get_value_byte(const cdata_t *c) {
   return c->s[separator_idx + 2];
 }
 
+// this works for both compressed and decompressed data since key sections are shared.
 uint8_t* fmt2_get_data(const cdata_t *c) {
   uint64_t separator_idx = 0;
   for (uint64_t i = 0; ; ++i) {
@@ -373,8 +405,8 @@ cdata_t fmt2_decompress(const cdata_t c) {
   uint64_t keys_nb = fmt2_get_keys_nbytes(&c);
   uint8_t *keys = c.s;
   uint8_t *data = fmt2_get_data(&c) + 1; // skip value byte
-  uint64_t data_nbyte = fmt2_get_data_nbytes(&c) - 1;
-  inflated.unit = fmt2_get_value_byte(&c);
+  uint64_t data_nbyte = fmt2c_get_data_nbytes(&c) - 1;
+  inflated.unit = fmt2c_get_unit(&c);
 
   // Iterate over RLE data to calculate total length of decompressed data
   uint64_t dec_data_n = 0;
@@ -415,6 +447,26 @@ cdata_t fmt2_decompress(const cdata_t c) {
   return inflated;
 }
 
+/**
+ * fmt2_set_aux()
+ * --------------
+ * Initialize aux data for **format 2** (state data).
+ *
+ * Format-2 layout in c->s:
+ *   [key section: "state0\0state1\0...\0"][data section...]
+ *
+ * This function:
+ *   • allocates an f2_aux_t
+ *   • records the number of keys (aux->nk)
+ *   • fills aux->keys[] as pointers to each NUL-terminated key string
+ *     in the key section (all pointing into c->s)
+ *   • sets aux->data to the start of the data section via fmt2_get_data()
+ *   • stores aux in c->aux
+ *
+ * It does NOT inflate or copy the data; it only builds convenient pointers
+ * into the existing buffer.  Must be called only once per c (c->aux must
+ * be NULL).
+ */
 void fmt2_set_aux(cdata_t *c) {
   if (c->aux != NULL) {
     fprintf(stderr, "[%s:%d] Aux data exists.\n", __func__, __LINE__);

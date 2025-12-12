@@ -148,9 +148,11 @@
  *
  * Example (conceptual):
  *
- *     uint16_t chr_id;
- *     uint64_t loc;
- *     FMT7_GET_LOC(c->s, i, &chr_id, &loc);   // decode entry i
+ *     uint8_t *locs_beg = NULL;
+ *     char **chrms = NULL; int nchrms = 0;
+ *     fmt7_prep(c, &locs_beg, &chrms, &nchrms);
+ *     uint16_t chr_id = fmt7_get_chr(locs_beg, i);
+ *     uint64_t loc = fmt7_get_chr(locs_beg, loc);
  *
  * The chromosome name corresponding to chr_id is looked up from the leading
  * name block.
@@ -400,7 +402,7 @@ uint64_t fmt7_data_length(const cdata_t *c) {
 
 /**
  * ---------------------------------------------------------------------------
- *  FMT7_SET_LOC / FMT7_GET_LOC
+ *  Decompressed data: FMT7_SET_LOC / fmt7_get_chr() / fmt7_get_loc()
  * ---------------------------------------------------------------------------
  * These helper macros encode and decode a single fixed-width coordinate
  * record in the *decompressed/indexed* fmt7 representation.
@@ -445,8 +447,6 @@ uint64_t fmt7_data_length(const cdata_t *c) {
  *
  * FMT7_SET_LOC never allocates; it assumes buf has at least (i+1)*8 bytes.
  *
- *
- * FMT7_GET_LOC(buf, i, chr_id_out, loc_out)
  * -----------------------------------------
  * Read the (chr_id, loc) pair stored at the i-th slot of `buf`.
  *
@@ -469,11 +469,8 @@ uint64_t fmt7_data_length(const cdata_t *c) {
  *     // Suppose 'p' is the pointer to the packed entry array (after the
  *     // chromosome-name block inside the decompressed fmt7 buffer).
  *
- *     uint16_t chr_id;
- *     uint64_t loc;
- *
- *     // decode entry #123
- *     FMT7_GET_LOC(p, 123, &chr_id, &loc);
+ *     uint16_t chr_id = fmt7_get_chr(p, 123);
+ *     uint64_t loc = fmt7_get_loc(p, 123);
  *     printf("chr_id=%u, loc=%" PRIu64 "\n", chr_id, loc);
  *
  *     // modify and re-encode it
@@ -506,22 +503,18 @@ uint64_t fmt7_data_length(const cdata_t *c) {
     }                                                       \
   } while (0)
 
-#define FMT7_GET_LOC(buf, i, chr_id_out, loc_out)           \
-  do {                                                      \
-    const uint8_t *p = (buf) + ((i) * 8);                   \
-                                                            \
-    /* read chr_id from p[0], p[1] */                       \
-    uint16_t cid =  (uint16_t)p[0] | ((uint16_t)p[1] << 8); \
-    (chr_id_out) = cid;                                    \
-                                                            \
-    /* read 48-bit coordinate from p[2..7] */               \
-    uint64_t pos48 = 0;                                     \
-    for (int k = 0; k < 6; ++k)                             \
-      pos48 |= ((uint64_t)p[2 + k] << (8 * k));             \
-                                                            \
-    (loc_out) = pos48;                                     \
-  } while (0)
+static inline uint16_t fmt7_get_chr(const uint8_t *buf, uint64_t i) {
+  const uint8_t *p = buf + (i * 8);
+  return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
 
+static inline uint64_t fmt7_get_loc(const uint8_t *buf, uint64_t i) {
+  const uint8_t *p = buf + (i * 8);
+  uint64_t pos48 = 0;
+  for (int k = 0; k < 6; ++k)
+    pos48 |= ((uint64_t)p[2 + k] << (8 * k));
+  return pos48;   /* full 48-bit coordinate */
+}
 
 /**
  * @brief Prepare access to an uncompressed/indexed fmt7 cdata_t.
@@ -613,7 +606,8 @@ static void fmt7_prep(const cdata_t c, uint8_t **locs_beg, char ***chrms, int *n
  *       byte 2..7 : 48-bit coordinate (beg1, little-endian)
  *
  * This replaces the old "just memcpy the compressed blob" behavior with
- * a more structured format that can be decoded with FMT7_GET_LOC().
+ * a more structured format that can be decoded with fmt_get_chr()
+ * and fmt_get_loc()
  */
 cdata_t fmt7_decompress(const cdata_t c) {
 
@@ -726,6 +720,9 @@ cdata_t fmt7_decompress(const cdata_t c) {
   return out;
 }
 
+// TODO format 7 compress is needed before we can have slice
+/* void fmt7_compress(cdata_t *c) { */
+/* } */
 
 // beg and end are both 0-based
 cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end) {
@@ -784,8 +781,8 @@ cdata_t fmt7_sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n_indices)
   char *chrm = NULL; uint64_t last = 0;
   uint8_t *s_out = NULL; uint64_t n_out = 0;
   for (uint64_t i=0; i<(uint64_t) n_indices; ++i) {
-    uint16_t ichrm = 0; uint64_t loc = 0;
-    FMT7_GET_LOC(locs_beg, row_indices[i]-1, ichrm, loc);
+    uint16_t ichrm = fmt7_get_chr(locs_beg, row_indices[i]-1);
+    uint64_t loc = fmt7_get_loc(locs_beg, row_indices[i]-1);
     if (!chrm || chrm != chrms[ichrm] || loc < last) {
       if (chrm) fmt7c_append_end(&s_out, &n_out);
       fmt7c_append_chrm(chrms[ichrm], &s_out, &n_out);
@@ -853,8 +850,7 @@ stats_t* summarize1_queryfmt7(
 
     uint64_t* chrm_cnts = calloc(nchrms, sizeof(uint64_t));
     for (uint64_t i=0; i<c->n; ++i) {
-      uint16_t ichr = 0; uint64_t loc = 0;
-      FMT7_GET_LOC(locs_beg, i, ichr, loc);
+      uint16_t ichr = fmt7_get_chr(locs_beg, i);
       chrm_cnts[ichr]++;
     }
 
@@ -875,7 +871,9 @@ stats_t* summarize1_queryfmt7(
         s->sq = strdup(chrms[ichr] ? chrms[ichr] : "");
       }
     }
+    
     free(chrms);
+    free(chrm_cnts);
 
   } else {  /* other mask formats unsupported for fmt7 */
 

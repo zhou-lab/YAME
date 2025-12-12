@@ -32,6 +32,7 @@ typedef struct config_t {
   int64_t isize;
 } config_t;
 
+// TODO: we need better documentation: three ways of rowsub: 1) row index. 2) mask 3) genomic coordinates 4) block by index and size 5) block by beg and end
 static int usage(config_t *config) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: yame rowsub [options] <in.cx>\n");
@@ -180,71 +181,130 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
   return c2;
 }
 
-// beg and end are both 0-based
+/**
+ * sliceToBlock()
+ * ----------------
+ * Extract a contiguous block of uncompressed rows from a cdata_t.
+ *
+ * Given an uncompressed vector `c` (compressed == 0), return a new cdata_t
+ * containing rows [beg, end] (0-based, inclusive).  The output preserves:
+ *     • fmt     (same format as input)
+ *     • unit    (same per-row byte width)
+ *     • compressed = 0
+ *
+ * Behavior:
+ *   • For most formats (unit > 0), this is a simple memcpy of the slice:
+ *
+ *         out.s = c->s + unit*beg  →  unit*(end-beg+1) bytes
+ *
+ *   • For format 2 (state data), the key section must be preserved.
+ *     The output buffer is:
+ *
+ *         [key strings ... '\0'][data slice...]
+ *
+ *     where the key region length is obtained via fmt2_get_keys_nbytes().
+ *
+ * Arguments:
+ *   c    : input cdata_t (must be uncompressed)
+ *   beg  : first row index to keep (0-based)
+ *   end  : last row index to keep (0-based; clipped to n-1)
+ *
+ * Returns:
+ *   A new cdata_t containing just the requested row block.
+ *
+ * Notes:
+ *   • Caller must free the returned cdata_t.s.
+ *   • beg and end refer to logical row indices, not byte offsets.
+ */
 static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
-  if (c->compressed) {
-    fprintf(stderr, "[%s:%d] Cannot slice compressed data.\n", __func__, __LINE__);
-    fflush(stderr);
-    exit(1);
-  }
+  assert(!c->compressed);
   if (end > c->n-1) end = c->n-1; // 0-base
-  if (beg > c->n-1) {
-    fprintf(stderr, "[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, c->n);
-    fflush(stderr);
-    exit(1);
-  }
+  if (beg > c->n-1)
+    wzfatal("[%s:%d] Begin (%"PRIu64") is bigger than the data vector size (%"PRIu64").\n", __func__, __LINE__, beg, c->n);
 
-  cdata_t c2 = {0};
-  c2.unit = c->unit;
-  c2.fmt = c->fmt;
-  if (c2.fmt == '2') {
+  cdata_t c_out = {0};
+  c_out.unit = c->unit;
+  c_out.fmt = c->fmt;
+  if (c_out.fmt == '2') {
     uint64_t keys_nb = fmt2_get_keys_nbytes(c);
-    /* uint64_t nk = fmt2_get_keys_n(c); */
-    c2.s = calloc(1, (end-beg+1)*c2.unit + keys_nb + 1);
-    memcpy(c2.s, c->s, keys_nb + 1);
-    memcpy(c2.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
-    c2.n = end-beg+1;
+    c_out.s = calloc(1, (end-beg+1)*c_out.unit + keys_nb + 1);
+    memcpy(c_out.s, c->s, keys_nb + 1);
+    memcpy(c_out.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
+    c_out.n = end-beg+1;
+    // TODO: format 7 should be merged here, I have a separate fmt7_sliceToBlock
   } else {
-    c2.s = realloc(c2.s, (end-beg+1)*c2.unit);
-    memcpy(c2.s, c->s+c->unit*beg, c->unit*(end-beg+1));
-    c2.n = end-beg+1;
+    c_out.s = realloc(c_out.s, (end-beg+1)*c_out.unit);
+    memcpy(c_out.s, c->s+c->unit*beg, c->unit*(end-beg+1));
+    c_out.n = end-beg+1;
   }
-  c2.compressed = 0;
-  /* c2.aux = c->aux; */
+  c_out.compressed = 0;
   
-  return c2;
+  return c_out;
 }
+
+/* static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) { */
+/*   assert(!c->compressed); */
+/*   if (c->n != c_mask->n) */
+/*     wzfatal("[%s:%d] Mask (N=%"PRIu64") and data (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n); */
+
+/*   uint64_t n = 0; */
+/*   for (uint64_t i=0; i<c->n; ++i) */
+/*     if (FMT0_IN_SET(*c_mask, i)) n++; */
+
+/*   cdata_t c_out = {0}; */
+/*   c_out.unit = c->unit; */
+/*   c_out.s = realloc(c_out.s, n*c_out.unit); */
+/*   c_out.fmt = c->fmt; */
+/*   for (uint64_t i=0, k=0; i<c->n; ++i) { */
+/*     if (FMT0_IN_SET(*c_mask, i)) */
+/*       memcpy(c_out.s+(k++)*c->unit, c->s+i*c->unit, c->unit); */
+/*   } */
+/*   c_out.n = n; */
+/*   c_out.compressed = 0; */
+/*   return c_out; */
+
+/* } */
 
 static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
-  if (c->compressed) {
-    fprintf(stderr, "[%s:%d] Slicing compressed data.\n", __func__, __LINE__);
-    fflush(stderr);
-    exit(1);
-  }
-  if (c->n != c_mask->n) {
-    fprintf(stderr, "[%s:%d] Mask (N=%"PRIu64") and data (N=%"PRIu64") are of different lengths.\n",
-            __func__, __LINE__, c_mask->n, c->n);
-    fflush(stderr);
-    exit(1);
-  }
+  assert(!c->compressed);
+  if (c->n != c_mask->n)
+    wzfatal("[%s:%d] Mask (N=%"PRIu64") and data (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
 
+  /* Count how many rows will be kept */
   uint64_t n = 0;
-  for (uint64_t i=0; i<c->n; ++i)
-    if (c_mask->s[i>>3]&(1<<(i&0x7))) n++;
+  for (uint64_t i = 0; i < c->n; ++i)
+    if (FMT0_IN_SET(*c_mask, i)) n++;
 
-  cdata_t c2 = {0};
-  c2.unit = c->unit;
-  c2.s = realloc(c2.s, n*c2.unit);
-  c2.fmt = c->fmt;
-  for (uint64_t i=0, k=0; i<c->n; ++i) {
-    if (c_mask->s[i>>3]&(1<<(i&0x7)))
-      memcpy(c2.s+(k++)*c->unit, c->s+i*c->unit, c->unit);
+  cdata_t c_out = (cdata_t){0};
+  c_out.unit = c->unit;
+  c_out.fmt  = c->fmt;
+  c_out.compressed = 0;
+  c_out.n = n;  /* number of rows (states), not including key bytes */
+  if (c_out.fmt == '2') {
+    /* layout: [keys...][\0][filtered data rows...] */
+    uint64_t keys_nb = fmt2_get_keys_nbytes(c); // no trailing '\0'
+    c_out.s = calloc(1, keys_nb + 1 + n * c_out.unit);
+    memcpy(c_out.s, c->s, keys_nb + 1); // copy key section + '\0'
+    uint8_t *dst      = c_out.s + keys_nb + 1;
+    uint8_t *src_data = fmt2_get_data(c);  /* start of original data section */
+    for (uint64_t i = 0; i < c->n; ++i) {
+      if (FMT0_IN_SET(*c_mask, i)) {
+        memcpy(dst, src_data + i * c->unit, c->unit);
+        dst += c->unit;
+      }
+    }
+  } else { // all other formats
+    if (n > 0) {
+      c_out.s = malloc(n * c_out.unit);
+      for (uint64_t i = 0, k = 0; i < c->n; ++i)
+        if (FMT0_IN_SET(*c_mask, i))
+          memcpy(c_out.s + (k++) * c->unit, c->s + i * c->unit, c->unit);
+    }
   }
-  c2.n = n;
-  c2.compressed = 0;
-  return c2;
-
+  
+  return c_out;
 }
+
 
 int main_rowsub(int argc, char *argv[]) {
 

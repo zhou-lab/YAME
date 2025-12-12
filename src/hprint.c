@@ -41,6 +41,7 @@ static int usage() {
   return 1;
 }
 
+// TODO hprint should take genomic coordinates and use tview style interactive exploration
 int main_hprint(int argc, char *argv[]) {
 
   int c; int color = 0;

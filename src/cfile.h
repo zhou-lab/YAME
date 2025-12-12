@@ -25,6 +25,11 @@
 #include "snames.h"
 #include "index.h"
 
+/** The header design, 17 bytes
+ *  uint64_t: signature, used for validation
+ *  uint8_t: format (0=vec; 1=rle)
+ *  uint64_t: length (n_cs or n_bytes for rle)
+ */
 /* cfile for reading, see cdata_write for writing */
 typedef struct cfile_t {
   BGZF *fh;

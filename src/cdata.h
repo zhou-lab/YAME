@@ -38,24 +38,69 @@
 
 #define CDSIG 266563789635
 
-typedef struct f2_aux_t {
-  uint64_t nk;                  // num keys
-  char **keys;                  // pointer to keys, doesn't own memory
-  uint8_t *data;                // pointer to data, doesn't own memory
-} f2_aux_t;
-
-/** The header design, 17 bytes
-    uint64_t: signature, used for validation
-    uint8_t: format (0=vec; 1=rle)
-    uint64_t: length (n_cs or n_bytes for rle)
-**/
+/**
+ * cdata_t
+ * --------
+ * Core container for all YAME data formats (0–7).  A cdata_t may hold either
+ * a compressed byte stream (on-disk encoding) or an in-memory, decompressed /
+ * indexed representation depending on `compressed`.
+ *
+ * Fields:
+ *
+ *   s : Pointer to the raw byte buffer.  Interpretation depends on `fmt` and
+ *       whether the content is compressed or decompressed.
+ *
+ *   n : Size of `s`.
+ *       • If compressed  (compressed = 1):  n = number of bytes in the on-disk
+ *         representation.  (Exception: fmt0 stores bit-packed vectors; see below.)
+ *       • If uncompressed (compressed = 0): n = number of data units (typically
+ *         number of CpGs / rows), excluding key bytes.
+ *
+ *   compressed :
+ *       1 → `s` is a compressed stream (formats 0–7 as written on disk).
+ *       0 → `s` is an uncompressed / indexed representation (formats 3,6,7
+ *           after decompression, where each logical unit has fixed width).
+ *
+ *   fmt :
+ *       One-character format code: '0'..'7'.
+ *       Determines the encoding, interpretation of `s`, and the meaning of `unit`.
+ *
+ *   unit :
+ *       Size in bytes of a *single decompressed data unit*.
+ *
+ *       • fmt0, fmt1, fmt6 : bit-packed encodings → unit = 0
+ *       • fmt2, fmt3, fmt4, fmt5 : unit = byte-width of each value (1,2,4,8)
+ *       • fmt7 (decompressed via fmt7_decompress): unit = 8 (fixed 8-byte entries)
+ *
+ *       When compressed = 1, `unit` describes the *intended* size of each
+ *       decompressed item but does not apply to the raw bytes on disk.
+ *
+ *   aux :
+ *       Optional auxiliary pointer, format-specific.  Set on-demand.
+ *       Examples:
+ *         • fmt2: f2_aux_t (keys[] and pointer to state data)
+ *         • fmt3: counters for M/U decoding
+ *         • fmt6: universe bitmask accessors
+ *         • fmt7: row_reader_t for streamed BED iteration
+ *
+ *
+ * Special notes:
+ *   • Format 0: n is the number of bits, stored bit-packed in s[].
+ *   • Format 1: run-length-encoded integer stream; unit=0 and inflation is
+ *               performed by format-specific helpers.
+ *   • Format 7: only the *uncompressed* version has fixed-width entries;
+ *               the compressed on-disk version uses delta-encoding.
+ *
+ * cdata_t is intentionally minimal; decoding, indexing, and slicing are
+ * implemented in the per-format helpers.
+ */
 typedef struct cdata_t {
-  uint8_t *s;
-  uint64_t n; /* number of bytes when compressed, except for fmt 0, which is sub-byte you need the actual length */
-  int compressed;
-  char fmt;
-  uint8_t unit; // how many bytes is needed for each decompressed data unit, use 0 for format 0,1,6
-  void *aux;
+  uint8_t *s;       /* byte buffer */
+  uint64_t n;       /* length in bytes (compressed) or #units (uncompressed) */
+  int compressed;   /* 1=compressed stream, 0=indexed/decompressed */
+  char fmt;         /* format code '0'..'7' */
+  uint8_t unit;     /* size of each decompressed unit (0 for bit-packed fmt0/1/6) */
+  void *aux;        /* optional per-format auxiliary structure */
 } cdata_t;
 
 static inline uint64_t cdata_nbytes(const cdata_t *c) {
@@ -73,6 +118,12 @@ static inline uint64_t cdata_nbytes(const cdata_t *c) {
   }
   return n;
 }
+
+typedef struct f2_aux_t {
+  uint64_t nk;                  // num keys
+  char **keys;                  // pointer to keys, doesn't own memory
+  uint8_t *data;                // pointer to data, doesn't own memory
+} f2_aux_t;
 
 static inline void free_cdata(cdata_t *c) {
   if (c->s) free(c->s);
@@ -118,7 +169,6 @@ void convertToFmt0(cdata_t *c);
 
 #define _FMT0_IN_SET(s, i) ((s)[(i)>>3] & (1u<<((i)&0x7)))
 #define _FMT0_SET(s, i) ((s)[(i)>>3] |= (1u<<((i)&0x7)))
-
 
 void fmt2_set_aux(cdata_t *c);
 uint8_t* fmt2_get_data(const cdata_t *c);
