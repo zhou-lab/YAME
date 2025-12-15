@@ -20,22 +20,94 @@
 
 #include "cfile.h"
 
-static int usage() {
+/**
+ * yame pairwise
+ * =============
+ *
+ * Goal
+ * ----
+ * Generate a differential-methylation "set" track (format 6) by comparing two
+ * format-3 MU vectors site-by-site. The output can be used downstream for
+ * overlap/enrichment or as a mask-like feature set.
+ *
+ * Inputs
+ * ------
+ * - Two format-3 (M/U) cdata records with the same length N.
+ * - If MU2.cx is not provided, the code reads the first two records from MU1.cx.
+ *
+ * Core definitions
+ * ----------------
+ * - mu = f3_get_mu(&c, i) returns packed (M,U) for site i.
+ * - cov(mu)  = MU2cov(mu)  = M + U
+ * - beta(mu) = MU2beta(mu) = M/(M+U)   (double)
+ *
+ * Universe rule (format 6)
+ * ------------------------
+ * A site is considered "valid/measured" only if BOTH samples meet minimum coverage:
+ *
+ *   if cov(mu1) >= min_coverage AND cov(mu2) >= min_coverage:
+ *       site is in universe (FMT6 universe bit = 1)
+ *       set bit is assigned by the direction/effect rule below
+ *   else:
+ *       site remains outside universe (universe bit stays 0; set bit irrelevant)
+ *
+ * Set rule (direction + effect size)
+ * ----------------------------------
+ * For sites passing the universe rule, the output set bit is decided by -H:
+ *
+ *   mode 1 (default): beta1 > beta2 AND (beta1 - beta2) > min_effect
+ *   mode 2           : beta1 < beta2 AND (beta2 - beta1) > min_effect
+ *   mode 3           : "different"
+ *       - if min_effect <= 0: beta1 != beta2
+ *       - else: |beta1 - beta2| > min_effect
+ *
+ * Output
+ * ------
+ * Writes a single compressed format-6 cdata record of length N to stdout or -o.
+ * No index is generated (even with -o) in the current implementation.
+ *
+ * Notes / gotchas
+ * ---------------
+ * - min_effect defaults to 0 (after option parsing), meaning any non-zero beta
+ *   difference can be flagged in mode 3, and only strict inequalities in modes 1/2.
+ * - Comparisons use doubles; exact equality in mode 3 (min_effect <= 0) can be
+ *   sensitive to floating representation (often fine here because beta derives
+ *   from integer ratios, but still a consideration).
+ */
+
+static int usage(void) {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pairwise [options] <MU1.cx> (<MU2.cx>)\n");
-  fprintf(stderr, "Return a format 6 set that represent differential methylation between MU1 and MU2.\n");
-  fprintf(stderr, "If MU2 is not given, use the top 2 samples in MU1.cx.\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame pairwise [options] <MU1.cx> [MU2.cx] > out.cx\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Compute a per-site differential-methylation set between two format-3 (M/U) samples,\n");
+  fprintf(stderr, "  and output it as a single format-6 track (set + universe).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Inputs:\n");
+  fprintf(stderr, "  <MU1.cx>   Format-3 input (M/U counts). The first record is used as sample 1.\n");
+  fprintf(stderr, "  [MU2.cx]   Optional second format-3 input. If omitted, sample 2 is read as the\n");
+  fprintf(stderr, "            SECOND record from MU1.cx (i.e., the top 2 samples in the same file).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Output:\n");
+  fprintf(stderr, "  One format-6 record of length N (same as the inputs).\n");
+  fprintf(stderr, "  Universe: site i is in-universe only if BOTH samples have coverage >= min_cov.\n");
+  fprintf(stderr, "  Set:      site i is set if it passes the direction rule (-H) and effect threshold (-d).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
-  fprintf(stderr, "    -H        1: B1>B2 (default).\n");
-  fprintf(stderr, "              2: B1<B2.\n");
-  fprintf(stderr, "              3: B1!=B2, i.e., 1 and 2 combined.\n");
-  fprintf(stderr, "    -c        minimum coverage (default: 1)\n");
-  fprintf(stderr, "    -d        minimum delta meth level/effect size (default: 0)\n");
-  fprintf(stderr, "    -h        This help\n");
+  fprintf(stderr, "  -o <out.cx>  Write output to file (default: stdout).\n");
+  fprintf(stderr, "  -c <cov>     Minimum coverage (M+U) in BOTH samples to include site in universe (default: 1).\n");
+  fprintf(stderr, "  -d <delta>   Minimum absolute beta difference required to call a site differential (default: 0).\n");
+  fprintf(stderr, "  -H <mode>    Direction mode (default: 1):\n");
+  fprintf(stderr, "              1  beta1 > beta2  (hypermethylated in sample 1)\n");
+  fprintf(stderr, "              2  beta1 < beta2  (hypomethylated  in sample 1)\n");
+  fprintf(stderr, "              3  beta1 != beta2 (any difference; with -d uses |beta1-beta2|>delta)\n");
+  fprintf(stderr, "  -h           Show this help message.\n");
   fprintf(stderr, "\n");
-
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * If you omit MU2.cx, MU1.cx must contain at least two records.\n");
+  fprintf(stderr, "  * The output is a binary set; it does not store the delta magnitude.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
@@ -84,20 +156,29 @@ int main_pairwise(int argc, char *argv[]) {
     uint64_t mu2 = f3_get_mu(&c2, i);
     if (MU2cov(mu1) >= (uint64_t) min_coverage &&
         MU2cov(mu2) >= (uint64_t) min_coverage) {
-      if (direc == 1) {
+      if (direc == 1) { // sample 1 is more methylated than sample 2
         if (MU2beta(mu1) > MU2beta(mu2) &&
-            MU2beta(mu1) - MU2beta(mu2) > min_effect) FMT6_SET1(c_out, i);
-        else FMT6_SET0(c_out, i);
-      } else if (direc == 2) {
+            MU2beta(mu1) - MU2beta(mu2) > min_effect) {
+          FMT6_SET1(c_out, i);
+        } else {
+          FMT6_SET0(c_out, i);
+        }
+      } else if (direc == 2) {  // sample 1 is less methylated than sample 2
         if (MU2beta(mu1) < MU2beta(mu2) &&
-            MU2beta(mu2) - MU2beta(mu1) > min_effect) FMT6_SET1(c_out, i);
-        else FMT6_SET0(c_out, i);
-      } else if (direc == 3) {
+            MU2beta(mu2) - MU2beta(mu1) > min_effect) {
+          FMT6_SET1(c_out, i);
+        } else {
+          FMT6_SET0(c_out, i);
+        }
+      } else if (direc == 3) {  // sample 1 is different from sample 2
         if ((min_effect <= 0 && MU2beta(mu1) != MU2beta(mu2)) ||
             (min_effect > 0 &&
              (MU2beta(mu1) - MU2beta(mu2) > min_effect ||
-              MU2beta(mu2) - MU2beta(mu1) > min_effect))) FMT6_SET1(c_out, i);
-        else FMT6_SET0(c_out, i);
+              MU2beta(mu2) - MU2beta(mu1) > min_effect))) {
+          FMT6_SET1(c_out, i);
+        } else {
+          FMT6_SET0(c_out, i);
+        }
       } else {
         fprintf(stderr, "[%s:%d] -H argument: %d unsupported.\n", __func__, __LINE__, direc);
         fflush(stderr);

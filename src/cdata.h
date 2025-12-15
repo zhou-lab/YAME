@@ -182,6 +182,8 @@ uint64_t f3_get_mu(cdata_t *c, uint64_t i);
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
 #define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 
+// fmt6 as a quaternary
+#define FMT6_2BIT(c, i) (((c).s[i>>2]>>((i&0x3)*2)) & 0x3)
 #define FMT6_IN_SET(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2)))
 #define FMT6_IN_UNI(c, i) ((c).s[i>>2] & (1<<((i&0x3)*2+1)))
 #define FMT6_SET0(c, i) ((c).s[i>>2] = ((c).s[i>>2] & ~(3<<((i&0x3)*2))) | (2<<((i&0x3)*2))) // 10

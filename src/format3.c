@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cdata.h"
+#include "summary.h"
 
 /**
  * Format 3 (M/U counts) storage layout
@@ -309,3 +310,126 @@ cdata_t fmt3_decompress(const cdata_t c) {
   inflated.fmt = '3';
   return inflated;
 }
+
+stats_t* summarize1_queryfmt3(
+  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+
+  stats_t *st = NULL;
+  if (c_mask->n == 0) {            // no mask
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+    double sum_beta = 0.0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t mu = f3_get_mu(c, i);
+      if (mu) {
+        st[0].sum_depth += MU2cov(mu);
+        sum_beta += MU2beta(mu);
+        st[0].n_o++;
+        st[0].n_q++;
+      }}
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf
+    
+  } else if (c_mask->fmt <= '1') { // binary mask
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    double sum_beta = 0.0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t mu = f3_get_mu(c, i);
+      if (mu) st[0].n_q++;
+      if (FMT0_IN_SET(*c_mask, i)) {
+        st[0].n_m++;
+        if (mu) {
+          st[0].sum_depth += MU2cov(mu);
+          st[0].sum_beta += MU2beta(mu);
+          st[0].n_o++;
+        }}}
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
+
+  } else if (c_mask->fmt == '6') { // binary mask with universe
+    
+    *n_st = 1;
+    st = calloc(1, sizeof(stats_t));
+    st[0].n_u = c->n;
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    double sum_beta = 0.0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t mu = f3_get_mu(c, i);
+      if (mu) st[0].n_q++;
+      if (FMT6_IN_UNI(*c_mask, i) && FMT6_IN_SET(*c_mask, i)) {
+        st[0].n_m++;
+        if (mu) {
+          st[0].sum_depth += MU2cov(mu);
+          sum_beta += MU2beta(mu);
+          st[0].n_o++;
+        }}}
+    st[0].sm = strdup(sm);
+    st[0].sq = strdup(sq);
+    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
+    
+  } else if (c_mask->fmt == '2') { // state mask
+    
+    if (c_mask->n != c->n) {
+      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
+      fflush(stderr);
+      exit(1);
+    }
+    if (!c_mask->aux) fmt2_set_aux(c_mask);
+    f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
+    *n_st = aux->nk;
+    st = calloc((*n_st), sizeof(stats_t));
+    uint64_t nq=0;
+    for (uint64_t i=0; i<c->n; ++i) {
+      uint64_t index = f2_get_uint64(c_mask, i);
+      uint64_t mu = f3_get_mu(c, i);
+      if (index >= (*n_st)) {
+        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
+        fflush(stderr);
+        exit(1);
+      }
+      if (mu) {
+        st[index].sum_depth += MU2cov(mu);
+        st[index].sum_beta += MU2beta(mu);
+        st[index].n_o++;
+        nq++;
+      }
+      st[index].n_m++;
+    }
+    for (uint64_t k=0; k < (*n_st); ++k) {
+      st[k].n_q = nq;
+      st[k].n_u = c->n;
+      st[k].beta = st[k].sum_beta / st[k].n_o;
+      if (config->section_name) {
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
+        st[k].sm = tmp.s;
+      } else {
+        st[k].sm = strdup(aux->keys[k]);
+      }
+      st[k].sq = strdup(sq);
+    }
+    
+  } else {                      // other masks
+    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
+    fflush(stderr);
+    exit(1);
+  }
+  return st;
+}
+

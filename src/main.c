@@ -50,7 +50,7 @@ int main_mask(int argc, char *argv[]);
 int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "v1.1.4"
+#define PACKAGE_VERSION "v1.4"
 
 static int usage()
 {

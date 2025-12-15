@@ -22,21 +22,95 @@
 #include <sys/types.h>
 #include "cfile.h"
 
-static int usage() {
+/**
+ * yame binarize
+ * =============
+ *
+ * Goal
+ * ----
+ * Convert format-3 per-site methylation counts (M,U) into format-6 packed
+ * set/universe representation suitable for fast overlap/enrichment operations.
+ *
+ * Format-6 semantics
+ * ------------------
+ * Each genomic position i is encoded by two bits (packed 4 sites per byte):
+ *   - universe bit (U_i): whether this position is considered "measured/valid"
+ *   - set bit      (S_i): whether this position is in the "positive" set
+ *
+ * In YAME macros (see cdata.h):
+ *   FMT6_IN_UNI(c,i) tests universe membership
+ *   FMT6_IN_SET(c,i) tests set membership
+ * and FMT6_SET0/SET1/SET_NA write the corresponding states. :contentReference[oaicite:1]{index=1}
+ *
+ * Universe definition
+ * -------------------
+ * For each site, the input MU is fetched from format-3 (f3_get_mu), and
+ * coverage is MU2cov(mu) = M+U.
+ *
+ *   If (M+U) >= min_cov:
+ *       universe bit is set to 1 (site is included in universe)
+ *   Else:
+ *       universe bit remains 0 (site is NA/outside-universe)
+ *
+ * Set definition (two modes)
+ * --------------------------
+ * After passing universe filter, the set bit is assigned by one of:
+ *
+ *  (1) Beta-threshold mode (default):
+ *      beta = MU2beta(mu) = M/(M+U)
+ *      set=1 if beta > T, else set=0
+ *
+ *  (2) M-count mode (-m Mmin, overrides -t):
+ *      set=1 if M >= Mmin, else set=0
+ *
+ * Multi-sample behavior
+ * ---------------------
+ * The input may contain multiple format-3 records (samples). For each record:
+ *   - decompress in-place
+ *   - build a new format-6 record of the same length
+ *   - compress and write it
+ *
+ * Index propagation
+ * -----------------
+ * If an index exists for the input and -o is provided, the tool generates
+ * a matching index for the output by replaying sample offsets. If output is
+ * stdout, no index is written. :contentReference[oaicite:2]{index=2}
+ */
+
+static int usage(void) {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame binarize [options] <mu.cg>\n");
-  fprintf(stderr, "If Beta>0, then 1, else 0. M+U>0 is used as universe.\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame binarize [options] <mu.cx>\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Convert per-site M/U counts (format 3) into a packed binary-with-universe\n");
+  fprintf(stderr, "  track (format 6).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Input / Output:\n");
+  fprintf(stderr, "  Input : format 3 (.cx) with per-site (M,U) stored as uint64.\n");
+  fprintf(stderr, "  Output: format 6 (.cx), where each site stores two bits:\n");
+  fprintf(stderr, "          - universe bit: 1 if depth>=min_cov, else 0 (NA/outside-universe)\n");
+  fprintf(stderr, "          - set bit:      1 if methylated by rule, else 0\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Binarization rules:\n");
+  fprintf(stderr, "  Default: set=1 if beta > T (beta = M/(M+U)), set=0 otherwise.\n");
+  fprintf(stderr, "  If -m is provided (>0): set=1 if M >= Mmin, else 0 (overrides -t).\n");
+  fprintf(stderr, "  Universe is always defined by coverage: (M+U) >= min_cov.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -t [T]    1 if Beta>T else 0. (default: 0.5).\n");
-  fprintf(stderr, "    -m [T]    1 if M>=T else 0. (default: 0, if >0 will override -t.).\n");
-  fprintf(stderr, "    -c        Minimum depth (M+U) (default: 1).\n");
-  fprintf(stderr, "    -o        output cx file name (format 6). if missing, output to stdout.\n");
-  fprintf(stderr, "    -h        This help\n");
+  fprintf(stderr, "  -t <T>      Beta threshold (default: 0.5).\n");
+  fprintf(stderr, "  -m <Mmin>   M-count threshold (default: 0; if >0 overrides -t).\n");
+  fprintf(stderr, "  -c <cov>    Minimum coverage (M+U) to include a site in universe (default: 1).\n");
+  fprintf(stderr, "  -o <out.cx> Write output to file (default: stdout).\n");
+  fprintf(stderr, "  -h          Show this help message.\n");
   fprintf(stderr, "\n");
-
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * Sites with depth < min_cov remain NA in format 6 (universe bit = 0).\n");
+  fprintf(stderr, "  * If the input has a sample index and -o is used, an output index is written.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
+
 
 int main_binarize(int argc, char *argv[]) {
 
@@ -78,11 +152,7 @@ int main_binarize(int argc, char *argv[]) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
     decompress_in_situ(&c);
-    if (c.fmt != '3') {
-      fprintf(stderr, "[%s:%d] Only format %d files are supported.\n", __func__, __LINE__, c.fmt);
-      fflush(stderr);
-      exit(1);
-    }
+    if (c.fmt != '3') wzfatal("[%s:%d] Only format 3 files are supported (given %c).\n", __func__, __LINE__, c.fmt);
 
     cdata_t c6 = {.fmt = '6', .n = c.n};
     c6.s = calloc((c6.n+3)/4, sizeof(uint8_t));
@@ -113,11 +183,9 @@ int main_binarize(int argc, char *argv[]) {
     int64_t addr = bgzf_tell(cf2.fh);
     cdata_t c_tmp = {0};
     for (int i=0; i< npairs; ++i) {
-      if (!read_cdata2(&cf2, &c_tmp)) {
-        fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
-        fflush(stderr);
-        exit(1);
-      }
+      if (!read_cdata2(&cf2, &c_tmp))
+        wzfatal("[Error] Data is shorter than the sample name list.\n");
+      
       insert_index(idx2, pairs[i].key, addr);
       addr = bgzf_tell(cf2.fh);
     }

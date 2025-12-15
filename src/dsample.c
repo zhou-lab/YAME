@@ -36,10 +36,14 @@ static int usage(void) {
   fprintf(stderr, "    -o [PATH] output .cx file name.\n");
   fprintf(stderr, "              If missing, write to stdout (no index will be written).\n");
   fprintf(stderr, "    -s [int]  seed for random sampling (default: current time).\n");
+  fprintf(stderr, "    -b        After sampling, randomly binarize sampled format 3 (MU)\n");
+  fprintf(stderr, "              rows. Output is still format 3.\n");
   fprintf(stderr, "    -N [int]  number of records to sample/keep per sample (default: 100).\n");
   fprintf(stderr, "              If N >= available records, all available records are kept.\n");
   fprintf(stderr, "    -r [int]  number of downsampled replicates per input sample (default: 1).\n");
   fprintf(stderr, "              Each replicate is independently re-sampled.\n");
+  fprintf(stderr, "    -p [str]  replicate sample name prefix [default: None].\n");
+  fprintf(stderr, "              If given, the out sample name is: [sname]-[pre]-[rep_id].\n");
   fprintf(stderr, "    -h        this help.\n");
   fprintf(stderr, "\n");
 
@@ -85,9 +89,11 @@ static void fisher_yates_shuffle_select(uint64_t *array, uint64_t N, uint64_t K)
  * `indices` and `to_include` are workspace buffers:
  *   - indices: length >= cout->n
  *   - to_include: bitset with at least ceil(cout->n/8) bytes
+ *   - f3_rand_binarize: whether to binarize unmasked rows randomly
  */
 cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
-                     uint64_t *indices, uint8_t *to_include) {
+                     uint64_t *indices, uint8_t *to_include,
+                     int f3_rand_binarize) {
   // copy and expand into cout
   // decompress(c, cout);
   assert(c->compressed == 0);
@@ -119,9 +125,18 @@ cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
 
   // Mask out everything not selected
   for (uint64_t i = 0; i < cout.n; ++i) {
-    if (f3_get_mu(&cout, i) && !_FMT0_IN_SET(to_include, i)) {
-      // set M=U=0
-      f3_set_mu(&cout, i, 0, 0);
+    uint64_t mu = f3_get_mu(&cout, i);
+    if (mu) {
+      if (_FMT0_IN_SET(to_include, i)) {
+        if (f3_rand_binarize) {
+          if (rand() > MU2beta(mu))
+            f3_set_mu(&cout, i, 1, 0);
+          else
+            f3_set_mu(&cout, i, 0, 1);
+        }
+      } else {
+        f3_set_mu(&cout, i, 0, 0); // set M=U=0
+      }
     }
   }
   return cout;
@@ -181,6 +196,8 @@ cdata_t dsample_fmt6(cdata_t *c, uint64_t N,
  * - fname_out:  output .cx filename; if NULL, no index is written.
  * - n_in:       number of input samples read.
  * - n_rep:      number of replicates per input sample.
+ * - rep_prefix: the prefix to add to the output sample name
+ *               ([sname]-[rep_prefix]-[rep_id])
  *
  * When an input index exists, its keys are used as the base names; otherwise
  * we fall back to 0-based numeric sample IDs. Replicates are suffixed with
@@ -189,7 +206,7 @@ cdata_t dsample_fmt6(cdata_t *c, uint64_t N,
 static void write_index_with_rep(char *fname,
                                  char *fname_out,
                                  int64_t n_in,
-                                 int n_rep) {
+                                 int n_rep, char *rep_prefix) {
   
   if (!fname_out) return; // cannot index stdout
 
@@ -248,6 +265,10 @@ static void write_index_with_rep(char *fname,
         int n = snprintf(NULL, 0, "%s", base);
         s = (char *)malloc(n + 1);
         snprintf(s, n + 1, "%s", base);
+      } else if (rep_prefix) {
+        int n = snprintf(NULL, 0, "%s-%s-%d", base, rep_prefix, j);
+        s = (char *)malloc(n + 1);
+        snprintf(s, n + 1, "%s-%s-%d", base, rep_prefix, j);
       } else {
         int n = snprintf(NULL, 0, "%s-%d", base, j);
         s = (char *)malloc(n + 1);
@@ -290,11 +311,15 @@ int main_dsample(int argc, char *argv[]) {
   uint64_t N = 100;
   int n_rep = 1;
   char *fname_out = NULL;
-  while ((c = getopt(argc, argv, "o:r:s:N:h"))>=0) {
+  char *rep_prefix = NULL;
+  int f3_rand_binarize = 0;
+  while ((c = getopt(argc, argv, "o:r:s:p:bN:h"))>=0) {
     switch (c) {
     case 'o': fname_out = strdup(optarg); break;
     case 'r': n_rep = atoi(optarg); break;
     case 's': seed = (unsigned) strtoul(optarg, NULL, 10); break;
+    case 'p': rep_prefix = strdup(optarg); break;
+    case 'b': f3_rand_binarize = 1; break;
     case 'N': N = strtoul(optarg, NULL, 10); break;
     case 'h': return usage(); break;
     default:
@@ -356,7 +381,7 @@ int main_dsample(int argc, char *argv[]) {
 
       switch (c_in.fmt) {
       case '3':
-        c_out = dsample_fmt3(&c_in, N, indices, to_include);
+        c_out = dsample_fmt3(&c_in, N, indices, to_include, f3_rand_binarize);
         break;
       case '6':
         c_out = dsample_fmt6(&c_in, N, indices, to_include);
@@ -382,7 +407,7 @@ int main_dsample(int argc, char *argv[]) {
   bgzf_close(fp_out);
 
   /* Only attempt to write an index when we actually wrote to a regular file. */
-  write_index_with_rep(fname, fname_out, n_samples, n_rep);
+  write_index_with_rep(fname, fname_out, n_samples, n_rep, rep_prefix);
   if (fname_out) free(fname_out);
    
   return 0;

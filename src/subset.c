@@ -20,6 +20,90 @@
 
 #include "cfile.h"
 
+/*
+ * yame subset
+ * ===========
+ *
+ * Overview
+ * --------
+ * This subcommand has two distinct modes:
+ *
+ *   (A) Sample subsetting (default): subset a multi-sample .cx by sample name.
+ *   (B) Format-2 state subsetting (-s): convert a single fmt2 state vector into
+ *       one binary (fmt0) track per requested state term.
+ *
+ * The requested names can be provided as trailing command-line arguments or
+ * via -l <list.txt> (one name per line). If no names are provided, the default
+ * is to take head/tail samples from the input index (see below).
+ *
+ *
+ * Mode A: subset_samples()
+ * -----------------------
+ * Purpose:
+ *   Extract specific samples (cdata records) from a .cx stream by name.
+ *
+ * Requirements:
+ *   The input must be indexed (.cxi). The index maps sample name -> BGZF byte offset.
+ *   Without an index, random access via bgzf_seek() is not possible, so the code
+ *   errors out.
+ *
+ * Name selection:
+ *   - If snames.n > 0 (explicit list), use that list in the given order.
+ *   - Else, build a list from the input index:
+ *       * if tail > 0: take last  tail samples
+ *       * else:        take first head samples (head defaults to 1 if < 1)
+ *
+ * Extraction:
+ *   For each requested sample name:
+ *     - lookup offset = getIndex(idx, name)
+ *     - bgzf_seek(cf.fh, offset, SEEK_SET)
+ *     - read_cdata2(&cf, &c)
+ *     - cdata_write1(fp_out, &c)
+ *
+ * Output indexing:
+ *   If -o is provided (writing to a file), we generate an output index by
+ *   re-reading the output file sequentially and recording bgzf_tell() offsets
+ *   for each emitted record, keyed by the corresponding sample name.
+ *   If output is stdout, no index is written.
+ *
+ *
+ * Mode B: subset_fmt2_states()  [enabled by -s]
+ * ------------------------------------------------
+ * Purpose:
+ *   Given a single format-2 (state) dataset, produce a separate binary (fmt0)
+ *   mask for each requested term/state name.
+ *
+ * Input expectations:
+ *   - Reads ONE cdata record from the input stream and requires c.fmt == '2'.
+ *   - The fmt2 record is decompressed (decompress_in_situ).
+ *   - fmt2_set_aux() is called if needed to populate aux->keys[] (the list of
+ *     state labels/terms).
+ *
+ * Term resolution:
+ *   For each requested term name:
+ *     - scan aux->keys[] to find a unique matching key index (i_term)
+ *     - error if missing or if multiple matches occur
+ *
+ * Mask creation:
+ *   Creates a fmt0 output vector c0 with length c.n (same number of rows as input).
+ *   For each row ii:
+ *     - if f2_get_uint64(&c, ii) == i_term, set bit ii in c0
+ *   Writes c0 as one output record per requested term.
+ *
+ * Output indexing:
+ *   If -o is used, an output index is written mapping term name -> record offset,
+ *   using the same “re-read output file and bgzf_tell() offsets” approach.
+ *
+ *
+ * Practical notes / gotchas
+ * -------------------------
+ * - In default sample-subset mode, the tool is fundamentally index-driven.
+ * - In -s mode, the term list is taken from the fmt2 key dictionary (aux->keys),
+ *   and the output contains *multiple* fmt0 records (one per requested term).
+ * - If you pass both explicit names and -H/-T, the explicit list wins because
+ *   snames.n is non-zero and head/tail logic is skipped.
+ */
+
 void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
   cdata_t c = read_cdata1(&cf);
   decompress_in_situ(&c);
@@ -167,21 +251,46 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_out, 
   }
 }
 
-static int usage() {
+static int usage(void) {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame subset [options] <in.cx> [<sample1> <sample2> ...]\n");
-  fprintf(stderr, "If -o <out.cx>, an index will also be generated. Otherwise, output .cx to stdout without index.\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame subset [options] <in.cx> [sample1 sample2 ...] > out.cx\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Subset a multi-sample .cx by sample names (requires an index), or\n");
+  fprintf(stderr, "  (with -s) convert a format-2 state track into one binary track per state.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Modes:\n");
+  fprintf(stderr, "  (A) Sample subsetting (default):\n");
+  fprintf(stderr, "      Select named samples from <in.cx> and emit them in the given order.\n");
+  fprintf(stderr, "      Requires <in.cx>.cxi index.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  (B) Subset format-2 states (-s):\n");
+  fprintf(stderr, "      Interpret <in.cx> as a single format-2 dataset (must be fmt2).\n");
+  fprintf(stderr, "      For each requested state name, emit one format-0 bitset where\n");
+  fprintf(stderr, "      bit=1 iff row state == that term.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Input sample list:\n");
+  fprintf(stderr, "  Provide sample names either:\n");
+  fprintf(stderr, "    * as trailing arguments on the command line, OR\n");
+  fprintf(stderr, "    * via -l <list.txt> (one name per line).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
-  fprintf(stderr, "    -l        Path to the sample list. Ignored if sample names are provided on the command line.\n");
-  fprintf(stderr, "    -s        Filter format 2 <in.cx> instead of samples in files. Output format 0.\n");
-  fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the total number of samples.\n");
-  fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the total number of samples. Requires index.\n");
-  fprintf(stderr, "    -h        This help\n");
+  fprintf(stderr, "  -o <out.cx>  Write output to a file. If provided, an output index (.cxi)\n");
+  fprintf(stderr, "              is also generated. If omitted, writes to stdout (no index).\n");
+  fprintf(stderr, "  -l <list>    Path to sample/state list. Ignored if names are provided as\n");
+  fprintf(stderr, "              trailing command-line arguments.\n");
+  fprintf(stderr, "  -s           Format-2 state filtering mode (output format 0; one record per term).\n");
+  fprintf(stderr, "  -H <N>       If no names are provided, take the first N samples from the input index.\n");
+  fprintf(stderr, "  -T <N>       If no names are provided, take the last  N samples from the input index.\n");
+  fprintf(stderr, "  -h           Show this help message.\n");
   fprintf(stderr, "\n");
-
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * -H/-T only apply when you did NOT provide an explicit name list.\n");
+  fprintf(stderr, "  * -T requires an index (same as default sample subsetting).\n");
+  fprintf(stderr, "  * In -s mode, the input is expected to be a single fmt2 record; the output\n");
+  fprintf(stderr, "    contains one fmt0 record per requested term/state.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 

@@ -548,6 +548,7 @@ stats_t* summarize1_queryfmt2(
       st[k].sq = tmp.s;
     }
     free(cnts);
+    free(cnts_q);
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
 
@@ -576,6 +577,7 @@ stats_t* summarize1_queryfmt2(
       st[k].sq = tmp.s;
     }
     free(cnts);
+    free(cnts_q);
     
   } else if (c_mask->fmt == '2') { // state mask
 

@@ -28,377 +28,133 @@
 #include "snames.h"
 #include "summary.h"
 
-static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame summary [options] <query.cm>\n");
-  fprintf(stderr, "Query should be of format 0,1,2,3, can be a multi-sample set.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -m        Mask feature (.cx) file, can be multi-sample.\n");
-  fprintf(stderr, "              If '-', the whole sample will bed kept in memory, same as -M.\n");
-  fprintf(stderr, "    -M        All masks will be loaded to memory. This save disk IO.\n");
-  fprintf(stderr, "    -u        Optional universe set as a .cx file. If given, the masks and queries are both subset.\n");
-  fprintf(stderr, "    -H        Suppress header printing.\n");
-  fprintf(stderr, "    -q        The backup query file name if the query file name is '-'.\n");
-  fprintf(stderr, "    -F        Use full feature/query file name instead of base name.\n");
-  fprintf(stderr, "    -T        State features always show section names.\n");
-  fprintf(stderr, "    -s        Sample list provided to override the query index file. Only applies to the first query.\n");
-  fprintf(stderr, "    -h        This help.\n");
-  fprintf(stderr, "\n");
+/**
+ * yame summary
+ * ============
+ *
+ * Goal
+ * ----
+ * Produce per-sample summary statistics for a query CX record, optionally
+ * against one or more mask CX records. This is designed for fast “feature-set”
+ * overlap/enrichment reporting on packed methylation formats. :contentReference[oaicite:1]{index=1}
+ *
+ * Inputs
+ * ------
+ * - Query file(s): one or more .cx streams. Each record is treated as one query
+ *   sample. Query formats supported are routed by summarize1():
+ *     fmt 0/1: binary presence/absence (fmt 1 is treated like binary query)
+ *     fmt 2:   categorical/state data (keys + integer-coded states)
+ *     fmt 3:   MU counts (depth and beta available)
+ *     fmt 4:   float vector (summary handler may compute beta-like metrics)
+ *     fmt 6:   2-bit packed (set + universe) summary
+ *     fmt 7:   rows/coordinates (summary handler may be implemented separately)
+ *
+ * - Mask file (optional, -m): may contain multiple records (mask samples).
+ *   For each query sample, we compute summaries against every mask sample.
+ *
+ * Mask loading strategy
+ * ---------------------
+ * If the mask BGZF stream is seekable, we re-seek to the beginning for each
+ * query sample (lowest memory). If it is unseekable, or if -M is requested,
+ * all mask records are read and prepared once into RAM. :contentReference[oaicite:2]{index=2}
+ *
+ * Preparation of query/mask records
+ * ---------------------------------
+ * prepare_mask() normalizes “mask-like operations”:
+ *   - fmt 0/1 are converted to fmt 0 bitset (convertToFmt0)
+ *   - fmt >= 2 are decompressed in-place (decompress2)
+ * This ensures summarize1_* can assume consistent in-memory representation.
+ *
+ * What gets reported (one output row per reported category)
+ * ---------------------------------------------------------
+ * The output row schema is:
+ *   QFile, Query, MFile, Mask, N_univ, N_query, N_mask, N_overlap,
+ *   Log2OddsRatio, Beta, Depth
+ *
+ * Definitions:
+ * - N_univ:   the universe size used for the test (may be constrained by fmt6 universe).
+ * - N_query:  size of query set (or per-state count for fmt2 queries).
+ * - N_mask:   size of mask set (or per-state count for fmt2 masks).
+ * - N_overlap:|query ∩ mask| (or per-state overlap counts).
+ * - Log2OddsRatio:
+ *     log2( (n_mm * n_pp) / (n_mp * n_pm) ) where:
+ *       n_pp = N_overlap
+ *       n_mp = N_query - N_overlap
+ *       n_pm = N_mask  - N_overlap
+ *       n_mm = N_univ - N_query - N_mask + N_overlap
+ *   If no mask is provided, this column prints NA.
+ * - Beta:
+ *   For MU-based summaries (fmt3 / fmt6), Beta is the mean methylation (or fraction)
+ *   as implemented in the corresponding summarize1_queryfmt*.
+ * - Depth:
+ *   When available, reports mean depth over masked sites (or over universe when no mask).
+ *
+ * State (fmt2) naming
+ * -------------------
+ * For fmt2 data, rows may be emitted per state key. With -T, the state key is
+ * appended/prefixed so outputs remain unique and interpretable even when
+ * state names repeat across sections.
+ *
+ * Stdin naming
+ * ------------
+ * When the query filename is '-' (stdin), -q supplies a human-readable name
+ * for the QFile column (otherwise it would be '-' and not traceable).
+ */
 
+static int usage(void) {
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame summary [options] <query.cx> [query2.cx ...]\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Summarize a query feature set (or per-state composition) and optionally\n");
+  fprintf(stderr, "  its overlap/enrichment against one or more masks.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Input:\n");
+  fprintf(stderr, "  <query.cx> may contain one or multiple samples (records). Supported query\n");
+  fprintf(stderr, "  formats: 0/1 (binary), 2 (state), 3 (MU counts), 4 (float),\n");
+  fprintf(stderr, "           6 (set+universe), 7 (genomic coordinates).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Masking:\n");
+  fprintf(stderr, "  -m <mask.cx>   Optional mask feature file (can be multi-sample).\n");
+  fprintf(stderr, "                 If provided, every query sample is summarized against every\n");
+  fprintf(stderr, "                 mask sample (cartesian product).\n");
+  fprintf(stderr, "  -M             Load all masks into memory (faster when mask file is on slow IO).\n");
+  fprintf(stderr, "                 Also auto-enabled when the mask stream is unseekable.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Naming / output formatting:\n");
+  fprintf(stderr, "  -H             Suppress the header line.\n");
+  fprintf(stderr, "  -F             Use full paths in QFile/MFile (default: basename only).\n");
+  fprintf(stderr, "  -T             Always include section/state names in output labels when\n");
+  fprintf(stderr, "                 summarizing format-2 (state) data.\n");
+  fprintf(stderr, "  -s <list.txt>  Override query sample names using a plain-text list.\n");
+  fprintf(stderr, "                 Only applies to the first query file.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Stdin helpers:\n");
+  fprintf(stderr, "  -q <name>      Backup query file name used only when <query.cx> is '-'.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Other:\n");
+  fprintf(stderr, "  -6             Treat format-6 query as 2bit quaternary than set/universe.\n");
+  fprintf(stderr, "  -h             Show this help message.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Output columns:\n");
+  fprintf(stderr, "  QFile  Query  MFile  Mask  N_univ  N_query  N_mask  N_overlap  Log2OddsRatio  Beta  Depth\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * For state masks (format 2), summary is emitted per state key (one row per key).\n");
+  fprintf(stderr, "  * When no mask is given, Mask is reported as 'global'.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
-static stats_t* summarize1_queryfmt0(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+/* fprintf(stderr, "    -u        Optional universe set as a .cx file. If given, the masks and queries are both subset.\n"); */
 
-  stats_t *st = NULL;
-  if (c_mask->n == 0) {          // no mask
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
-    st[0].n_q = bit_count(c[0]);
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    
-  } else if (c_mask->fmt <= '1') { // binary mask
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
-    st[0].n_q = bit_count(c[0]);
-    st[0].n_m = bit_count(c_mask[0]);
-    cdata_t tmp = {0};
-    tmp.s = malloc((c->n>>3)+1); tmp.n = c->n;
-    memcpy(tmp.s, c->s, (c->n>>3)+1);
-    for (uint64_t i=0; i<(tmp.n>>3)+1; ++i) tmp.s[i] &= c_mask->s[i];
-    st[0].n_o = bit_count(tmp);
-    free(tmp.s);
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-
-  } else if (c_mask->fmt == '6') { // binary mask with universe
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    
-    *n_st = 1;
-    stats_t st1 = {0};
-    for (uint64_t i=0; i<c->n; ++i) {
-      if (FMT6_IN_UNI(*c_mask, i)) {
-        st1.n_u++;
-        int in_q = FMT0_IN_SET(*c, i);
-        int in_m = FMT6_IN_SET(*c_mask, i);
-        if (in_q) st1.n_q++;
-        if (in_m) st1.n_m++;
-        if (in_q && in_m) st1.n_o++;
-      }
-    }
-    st = calloc(1, sizeof(stats_t));
-    st[0] = st1;
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-
-  } else if (c_mask->fmt == '2') { // state mask
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    if (!c_mask->aux) fmt2_set_aux(c_mask);
-    f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
-    *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t nq=0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t index = f2_get_uint64(c_mask, i);
-      if (index >= (*n_st)) {
-        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
-        fflush(stderr);
-        exit(1);
-      }
-      if (FMT0_IN_SET(*c, i)) {
-        st[index].n_o++;
-        nq++;
-      }
-      st[index].n_m++;
-    }
-    for (uint64_t k=0; k < (*n_st); ++k) {
-      st[k].n_q = nq;
-      st[k].n_u = c->n;
-      if (config->section_name) {
-        kstring_t tmp = {0};
-        ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
-        st[k].sm = tmp.s;
-      } else {
-        st[k].sm = strdup(aux->keys[k]);
-      }
-      st[k].sq = strdup(sq);
-    }
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
-static stats_t* summarize1_queryfmt3(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
-
-  stats_t *st = NULL;
-  if (c_mask->n == 0) {            // no mask
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
-    double sum_beta = 0.0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t mu = f3_get_mu(c, i);
-      if (mu) {
-        st[0].sum_depth += MU2cov(mu);
-        sum_beta += MU2beta(mu);
-        st[0].n_o++;
-        st[0].n_q++;
-      }}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = sum_beta / st[0].n_o; // may have Inf
-    
-  } else if (c_mask->fmt <= '1') { // binary mask
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    double sum_beta = 0.0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t mu = f3_get_mu(c, i);
-      if (mu) st[0].n_q++;
-      if (FMT0_IN_SET(*c_mask, i)) {
-        st[0].n_m++;
-        if (mu) {
-          st[0].sum_depth += MU2cov(mu);
-          st[0].sum_beta += MU2beta(mu);
-          st[0].n_o++;
-        }}}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
-
-  } else if (c_mask->fmt == '6') { // binary mask with universe
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    st[0].n_u = c->n;
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    double sum_beta = 0.0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t mu = f3_get_mu(c, i);
-      if (mu) st[0].n_q++;
-      if (FMT6_IN_UNI(*c_mask, i) && FMT6_IN_SET(*c_mask, i)) {
-        st[0].n_m++;
-        if (mu) {
-          st[0].sum_depth += MU2cov(mu);
-          sum_beta += MU2beta(mu);
-          st[0].n_o++;
-        }}}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
-    
-  } else if (c_mask->fmt == '2') { // state mask
-    
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    if (!c_mask->aux) fmt2_set_aux(c_mask);
-    f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
-    *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t nq=0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t index = f2_get_uint64(c_mask, i);
-      uint64_t mu = f3_get_mu(c, i);
-      if (index >= (*n_st)) {
-        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
-        fflush(stderr);
-        exit(1);
-      }
-      if (mu) {
-        st[index].sum_depth += MU2cov(mu);
-        st[index].sum_beta += MU2beta(mu);
-        st[index].n_o++;
-        nq++;
-      }
-      st[index].n_m++;
-    }
-    for (uint64_t k=0; k < (*n_st); ++k) {
-      st[k].n_q = nq;
-      st[k].n_u = c->n;
-      st[k].beta = st[k].sum_beta / st[k].n_o;
-      if (config->section_name) {
-        kstring_t tmp = {0};
-        ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
-        st[k].sm = tmp.s;
-      } else {
-        st[k].sm = strdup(aux->keys[k]);
-      }
-      st[k].sq = strdup(sq);
-    }
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
-static stats_t* summarize1_queryfmt6(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
-
-  stats_t *st = NULL;
-  if (c_mask->n == 0) {          // no mask
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    for (uint64_t i=0; i<c->n; ++i) {
-      if (FMT6_IN_UNI(*c,i)) {
-        st[0].n_u++;
-        if (FMT6_IN_SET(*c,i)) st[0].n_q++;
-      }
-    }
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = (double) st[0].n_q / st[0].n_u;
-    
-  } else if (c_mask->fmt <= '1') { // binary mask
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    for (size_t i=0; i<c->n; ++i) {
-      if (FMT6_IN_UNI(*c,i)) {
-        st[0].n_u++;
-        int in_q = FMT6_IN_SET(*c,i);
-        int in_m = FMT0_IN_SET(*c_mask,i);
-        if (in_q) st[0].n_q++;
-        if (in_m) st[0].n_m++;
-        if (in_q && in_m) st[0].n_o++;
-      }
-    }
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = (double) st[0].n_o / st[0].n_m;
-
-  } else if (c_mask->fmt == '6') { // binary mask with universe
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    
-    *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
-    for (size_t i=0; i<c->n; ++i) {
-      if (FMT6_IN_UNI(*c,i) && FMT6_IN_UNI(*c_mask, i)) {
-        st[0].n_u++;
-        int in_q = FMT6_IN_SET(*c,i);
-        int in_m = FMT6_IN_SET(*c_mask,i);
-        if (in_q) st[0].n_q++;
-        if (in_m) st[0].n_m++;
-        if (in_q && in_m) st[0].n_o++;
-      }
-    }
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
-    st[0].beta = (double) st[0].n_o / st[0].n_m;
-
-  } else if (c_mask->fmt == '2') { // state mask
-
-    if (c_mask->n != c->n) {
-      fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
-      fflush(stderr);
-      exit(1);
-    }
-    if (!c_mask->aux) fmt2_set_aux(c_mask);
-    f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
-    *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
-    uint64_t nq = 0, nu = 0;
-    for (uint64_t i=0; i<c->n; ++i) {
-      uint64_t index = f2_get_uint64(c_mask, i);
-      if (index >= (*n_st)) {
-        fprintf(stderr, "[%s:%d] State data is corrupted.\n", __func__, __LINE__);
-        fflush(stderr);
-        exit(1);
-      }
-      if (FMT6_IN_UNI(*c,i)) {
-        nu++;
-        if (FMT6_IN_SET(*c,i)) {
-          nq++;
-          st[index].n_o++;
-        }
-        st[index].n_m++;
-      }
-    }
-    for (uint64_t k=0; k < (*n_st); ++k) {
-      st[k].n_q = nq;
-      st[k].n_u = nu;
-      if (config->section_name) {
-        kstring_t tmp = {0};
-        ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
-        st[k].sm = tmp.s;
-      } else {
-        st[k].sm = strdup(aux->keys[k]);
-      }
-      st[k].sq = strdup(sq);
-      st[k].beta = (double) st[k].n_o / st[k].n_m;
-    }
-    
-  } else {                      // other masks
-    fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);
-    fflush(stderr);
-    exit(1);
-  }
-  return st;
-}
-
-stats_t* summarize1_queryfmt2(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
-stats_t* summarize1_queryfmt4(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
-stats_t* summarize1_queryfmt7(
-  cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt0(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt2(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt4(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt6(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+stats_t* summarize1_queryfmt7(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 
 static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
@@ -479,10 +235,11 @@ static void prepare_mask(cdata_t *c) {
 int main_summary(int argc, char *argv[]) {
   int c;
   config_t config = {0};
-  while ((c = getopt(argc, argv, "m:u:MHFTs:q:h"))>=0) {
+  while ((c = getopt(argc, argv, "m:u:MHFTs:6q:h"))>=0) {
     switch (c) {
     case 'm': config.fname_mask = strdup(optarg); break;
     case 'M': config.in_memory = 1; break;
+    case '6': config.f6_as_2bit = 1; break;
     case 'H': config.no_header = 1; break;
     case 'F': config.full_name = 1; break;
     case 'T': config.section_name = 1; break;

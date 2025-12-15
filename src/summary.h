@@ -41,6 +41,7 @@ typedef struct config_t {
   int section_name;
   int in_memory;
   int no_header;
+  int f6_as_2bit;   // if format 6 should be interpreted as a 2-bit quaternary instead of set/universe?
   char *fname_mask;
   char *fname_snames;
   char *fname_qry_stdin;

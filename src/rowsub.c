@@ -24,6 +24,67 @@
 #include "cfile.h"
 #include "cdata.h"
 
+/**
+ * yame rowsub
+ * ===========
+ *
+ * Goal
+ * ----
+ * Extract a subset of rows from each dataset (cdata record) in an input .cx stream,
+ * writing the resulting .cx stream to stdout.
+ *
+ * "Rows" correspond to vector positions in each cdata record:
+ *   - For fmt 0/1/6: rows are bit/2-bit positions
+ *   - For fmt 3/4:   rows are fixed-width units (unit bytes per row)
+ *   - For fmt 2:     rows are state entries, but fmt2 has a key section that must be preserved
+ *   - For fmt 7:     rows are coordinate entries; slicing uses fmt7_sliceTo* helpers
+ *
+ * Selection modes
+ * ---------------
+ * rowsub supports several ways to specify which rows to keep:
+ *
+ * (A) Explicit row indices list (-l)
+ *   - Input file: one integer [index1] per line (1-based).
+ *   - No sorting required; order is preserved.
+ *   - Applied via sliceToIndices() (or fmt7_sliceToIndices for fmt7).
+ *
+ * (B) Coordinate list resolved through a row coordinate table (-R + -L)
+ *   - -R supplies a format-7 "row coordinate dataset" that maps rows to coordinates.
+ *   - -L supplies a list of coordinates, one per line: "chrm_beg1".
+ *   - We resolve each coordinate to a row index using row_finder_search(), then slice.
+ *   - -1 optionally prepends the subsetted coordinate dataset as the first output record.
+ *
+ * (C) Binary mask (-m)
+ *   - Mask must be fmt 0/1; it is converted to fmt0 bitset.
+ *   - Keep rows where mask bit is 1.
+ *   - For fmt2, output preserves the key section and filters only the data section
+ *     (see sliceToMask()).
+ *
+ * (D/E) Contiguous block (-B or -I)
+ *   - -B: keep a range by absolute indices: beg0 and optional end1 (exclusive, 1-based).
+ *   - -I: keep a block by blockIndex0 and optional blockSize; computes beg0/end0.
+ *   - If neither is provided, defaults are config.beg/config.end.
+ *
+ * Precedence
+ * ----------
+ * If multiple selection mechanisms are provided, rowsub behaves as:
+ *   explicit indices (-l / -L) > mask (-m) > block (-B / -I / default).
+ * This is implemented by checking row_indices first, then c_mask, then block slicing.
+ *
+ * Format-specific slicing
+ * -----------------------
+ * - Non-fmt7 data are decompressed first (cdata_t c2 = decompress(c)), sliced in memory,
+ *   then re-compressed before writing.
+ * - fmt2 requires preserving the key section when slicing blocks or masks:
+ *     [keys...][\\0][filtered data rows...]
+ * - fmt7 records are handled via fmt7_sliceToIndices / fmt7_sliceToMask / fmt7_sliceToBlock.
+ *
+ * Output
+ * ------
+ * Writes a valid .cx stream to stdout. Caller can redirect to a file.
+ * No index is written by this subcommand.
+ */
+
 typedef struct config_t {
   char *fname_rindex;
   uint64_t beg;
@@ -32,26 +93,56 @@ typedef struct config_t {
   int64_t isize;
 } config_t;
 
-// TODO: we need better documentation: three ways of rowsub: 1) row index. 2) mask 3) genomic coordinates 4) block by index and size 5) block by beg and end
+// rowsub supports multiple mutually-exclusive row selection modes.
+// Precedence in code is: -l/-L (explicit indices) > -m (mask) > -B/-I (block) > default block.
 static int usage(config_t *config) {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame rowsub [options] <in.cx>\n");
-  fprintf(stderr, "This function outputs to stdout.\n");
-  fprintf(stderr, "The 0 in [beg0] below means 0-based. Similarly, [beg1], [end1], [index1], etc.\n");
-  fprintf(stderr, "The number in (), e.g., [blockIndex0]_(blockSize), is optional with a default.\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame rowsub [options] <in.cx> > out.cx\n");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -l [PATH] rows in a plain text of [index1] on each row. index1: 1-based. No sorting requirement.\n");
-  fprintf(stderr, "    -L [PATH] rows in a plain text of [chrm]_[beg1] on each row. Requires -R. No sorting requirement.\n");
-  fprintf(stderr, "    -R [PATH] row coordinates to use. Required by -L.\n");
-  fprintf(stderr, "    -1        The row coordinate (from -R) will be added to output as the first dataset.\n");
-  fprintf(stderr, "    -m [PATH] rows in a mask file (format 1 or 2).\n");
-  fprintf(stderr, "    -B [STR]  a row index range [rowIndexBeg0]_(rowIndexEnd1). By default, rowIndexEnd1=rowIndexBeg0+1.\n");
-  fprintf(stderr, "    -I [STR]  a row index range [blockIndex0]_(blockSize). By default, blockSize=%"PRIu64".\n", config->isize);
-  fprintf(stderr, "    -h        This help\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Subset (slice) rows from each dataset (record) in a CX stream.\n");
+  fprintf(stderr, "  Output is always written to stdout.\n");
   fprintf(stderr, "\n");
-
+  fprintf(stderr, "Row selection modes (choose one):\n");
+  fprintf(stderr, "  (A) Explicit row indices (1-based list):\n");
+  fprintf(stderr, "      -l <idx.txt>     One [index1] per line (1-based). Order preserved; no sorting required.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  (B) Explicit genomic coordinates via row coordinate table (format 7):\n");
+  fprintf(stderr, "      -R <rows.cx>     Row coordinate dataset (format 7; e.g. BED-like coordinates).\n");
+  fprintf(stderr, "      -L <coord.txt>   One [chrm]_[beg1] per line (1-based beg). Requires -R.\n");
+  fprintf(stderr, "                       Order preserved; no sorting required.\n");
+  fprintf(stderr, "      -1               If -R is provided, emit the subsetted row coordinates as the FIRST dataset.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  (C) Mask-based filtering (binary mask):\n");
+  fprintf(stderr, "      -m <mask.cx>     Mask file (format 0/1 only). Rows with bit=1 are kept.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  (D) Contiguous block by absolute row range (0-based):\n");
+  fprintf(stderr, "      -B <beg0>[_<end1>]\n");
+  fprintf(stderr, "         Keep rows in [beg0, end0] where end0 = end1-1.\n");
+  fprintf(stderr, "         If <end1> is omitted, keep a single row at beg0.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  (E) Contiguous block by block index and size (0-based):\n");
+  fprintf(stderr, "      -I <blockIndex0>[_<blockSize>]\n");
+  fprintf(stderr, "         Keep rows:\n");
+  fprintf(stderr, "           beg0 = blockIndex0 * blockSize\n");
+  fprintf(stderr, "           end0 = (blockIndex0+1)*blockSize - 1\n");
+  fprintf(stderr, "         If <blockSize> is omitted, default blockSize=%"PRIu64".\n", (uint64_t)config->isize);
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Other options:\n");
+  fprintf(stderr, "  -h               Show this help message.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Index conventions:\n");
+  fprintf(stderr, "  - '0' suffix means 0-based (beg0, blockIndex0).\n");
+  fprintf(stderr, "  - '1' suffix means 1-based (index1, beg1, end1).\n");
+  fprintf(stderr, "  - For -B, end is provided as end1 (exclusive, 1-based), internally converted to end0.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * For format 2 (state data), the key section is preserved when slicing.\n");
+  fprintf(stderr, "  * Format 7 (row coordinates) is sliced with fmt7_* helpers.\n");
+  fprintf(stderr, "  * If multiple selection options are given, the effective precedence is:\n");
+  fprintf(stderr, "      -l/-L  >  -m  >  -B/-I  >  default.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
@@ -314,7 +405,7 @@ int main_rowsub(int argc, char *argv[]) {
   int c; char *fname_row = NULL; char *fname_mask = NULL;
   char *fname_rnindex = NULL; int add_row_coordinates = 0;
   char *B_option = NULL, *I_option = NULL;
-  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:vh"))>=0) {
+  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:h"))>=0) {
     switch (c) {
     case '1': add_row_coordinates = 1; break;
     case 'R': fname_row = strdup(optarg); break;
