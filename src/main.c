@@ -50,34 +50,53 @@ int main_mask(int argc, char *argv[]);
 int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "v1.4"
+#define PACKAGE_VERSION "v1.5"
 
-static int usage()
+static int usage(void)
 {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Program: yame (Yet Another Methylation Encoder) - whole genome DNA methylation data management.\n");
+  fprintf(stderr, "yame (Yet Another Methylation Encoder)\n");
+  fprintf(stderr, "Whole-genome DNA methylation data management using CX formats.\n");
   fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
-  fprintf(stderr, "Contact: Wanding Zhou<wanding.zhou@pennmedicine.upenn.edu>\n\n");
-  fprintf(stderr, "Usage:   yame <command> [options]\n\n");
-  fprintf(stderr, "Available commands:\n");
-  fprintf(stderr, "     pack         - Pack data into a cx file.\n");
-  fprintf(stderr, "     unpack       - Unpack data from a cx file.\n");
-  fprintf(stderr, "     hprint       - Print data horizontally (format 6).\n");
-  fprintf(stderr, "     subset       - Subset samples or terms from a cx file.\n");
-  fprintf(stderr, "     rowsub       - Subset rows a cx file using an index list file.\n");
-  fprintf(stderr, "     info         - Display basic parameter of the cx file.\n");
-  fprintf(stderr, "     summary      - calculate summary, with or without masks.\n");
-  fprintf(stderr, "     index        - Index samples in a cx file.\n");
-  fprintf(stderr, "     split        - Split multi-sample data into single-sample data.\n");
-  fprintf(stderr, "     pairwise     - Pairwise differential methylation calling.\n");
-  fprintf(stderr, "     chunk        - Chunk data into smaller fragments.\n");
-  fprintf(stderr, "     chunkchar    - Chunk text data into smaller fragments.\n");
-  fprintf(stderr, "     rowop        - Perform operations on rows, e.g., sum binary values.\n");
-  fprintf(stderr, "     mask         - Mask methylation data by setting masked record to M=U=0.\n");
-  fprintf(stderr, "     binarize     - Binarize methylation data by methylation level (beta).\n");
-  fprintf(stderr, "     dsample      - Downsample methylation data (works with fmt 3 or 6).\n");
+  fprintf(stderr, "Contact: Wanding Zhou <wanding.zhou@pennmedicine.upenn.edu>\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame <command> [options] [args]\n");
   fprintf(stderr, "\n");
 
+  fprintf(stderr, "Core I/O:\n");
+  fprintf(stderr, "  pack         Pack text/bed-like inputs into a .cx stream\n");
+  fprintf(stderr, "  unpack       Unpack a .cx stream back to text\n");
+  fprintf(stderr, "  hprint       Horizontal printing (primarily format 6)\n");
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Indexing / file management:\n");
+  fprintf(stderr, "  index        Create/refresh a sample index for a .cx file\n");
+  fprintf(stderr, "  split        Split a multi-sample .cx into single-sample files\n");
+  fprintf(stderr, "  info         Show basic metadata/parameters of a .cx file\n");
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Subsetting / chunking:\n");
+  fprintf(stderr, "  subset       Subset samples from a .cx (or terms from format 2 with -s)\n");
+  fprintf(stderr, "  rowsub       Subset rows by index list / mask / coordinates / block range\n");
+  fprintf(stderr, "  chunk        Chunk binary CX into smaller fragments\n");
+  fprintf(stderr, "  chunkchar    Chunk text data into smaller fragments\n");
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Summaries / comparisons:\n");
+  fprintf(stderr, "  summary      Summarize query features, optionally against masks\n");
+  fprintf(stderr, "  pairwise     Call pairwise differential methylation (fmt3 -> fmt6)\n");
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Transforms / utilities:\n");
+  fprintf(stderr, "  binarize     Convert fmt3 (M/U) to fmt6 (set+universe) by beta/M threshold\n");
+  fprintf(stderr, "  mask         Mask methylation data (e.g., set M=U=0 for masked sites)\n");
+  fprintf(stderr, "  dsample      Downsample methylation data (fmt3 or fmt6)\n");
+  fprintf(stderr, "  rowop        Row-wise operations (e.g., sum / combine binary tracks)\n");
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Run 'yame <command> -h' for command-specific options and details.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
