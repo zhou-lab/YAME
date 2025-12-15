@@ -190,7 +190,9 @@ stats_t* summarize1_queryfmt0(
     *n_st = 1;
     st = calloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
+    st[0].n_m = c->n;
     st[0].n_q = bit_count(c[0]);
+    st[0].n_o = st[0].n_q;
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
     
