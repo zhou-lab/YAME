@@ -98,7 +98,7 @@ static int usage(void) {
   fprintf(stderr, "  Universe is always defined by coverage: (M+U) >= min_cov.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -t <T>      Beta threshold (default: 0.5).\n");
+  fprintf(stderr, "  -t <Tmin>   Beta threshold (default: 0.5).\n");
   fprintf(stderr, "  -m <Mmin>   M-count threshold (default: 0; if >0 overrides -t).\n");
   fprintf(stderr, "  -c <cov>    Minimum coverage (M+U) to include a site in universe (default: 1).\n");
   fprintf(stderr, "  -o <out.cx> Write output to file (default: stdout).\n");
@@ -114,13 +114,13 @@ static int usage(void) {
 
 int main_binarize(int argc, char *argv[]) {
 
-  int c; double T = 0.5; uint64_t min_cov = 1;
+  int c; double Tmin = 0.5; uint64_t min_cov = 1;
   uint64_t Mmin = 0;
   char *fname_out = NULL;
   while ((c = getopt(argc, argv, "o:t:m:c:h"))>=0) {
     switch (c) {
     case 'o': fname_out = strdup(optarg); break;
-    case 't': T = atof(optarg); break;
+    case 't': Tmin = atof(optarg); break;
     case 'm': Mmin = atoi(optarg); break;
     case 'c': min_cov = atoi(optarg); break;
     case 'h': return usage(); break;
@@ -163,7 +163,7 @@ int main_binarize(int argc, char *argv[]) {
           if ((mu>>32) >= Mmin) FMT6_SET1(c6, i);
           else FMT6_SET0(c6, i);
         } else {                /* binarize by Beta */
-          if (MU2beta(mu)>T) FMT6_SET1(c6, i);
+          if (MU2beta(mu) >= Tmin) FMT6_SET1(c6, i);
           else FMT6_SET0(c6, i);
         }
       }

@@ -23,6 +23,15 @@
 #include "cfile.h"
 #include "snames.h"
 
+typedef struct config_rowop_t {
+  double beta0; // lower threshold
+  double beta1; // higher threshold
+  unsigned mincov;
+  double beta_threshold;   // default to 0.5
+  int cometh_window;
+  int verbose;
+} config_rowop_t;
+
 static int usage() {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out>\n");
@@ -48,6 +57,8 @@ static int usage() {
   fprintf(stderr, "    -w        Number of neighboring CGs for cometh (default: 5).\n");
   fprintf(stderr, "    -c        Minimum sequencing depth for rowops (default 1).\n");
   fprintf(stderr, "    -b        beta value threshold used in binstring (default 0.5).\n");
+  fprintf(stderr, "    -p        beta value lower threshold in binasum (default: 0.4).\n");
+  fprintf(stderr, "    -q        beta value upper threshold in binasum (default: 0.6).\n");
   fprintf(stderr, "    -v        Verbose mode\n");
   fprintf(stderr, "    -h        Display this help message\n\n");
 
@@ -76,21 +87,23 @@ static void binasumFmt1(cdata_t *cout, cdata_t *c) {
   }
 }
 
-static void binasumFmt3(cdata_t *cout, cdata_t *c, unsigned mincov) {
+static void binasumFmt3(cdata_t *cout, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
-    uint64_t mu0 = f3_get_mu(c, i);
-    if (!mu0) continue; // 0-0 is skipped
-    if (((mu0>>32) + (mu0<<32>>32)) < mincov) continue;
-    uint64_t mu = f3_get_mu(cout, i);
-    if ((mu0>>32) > (mu0<<32>>32)) {
-      f3_set_mu(cout, i, ((mu>>32)+1), (mu<<32>>32));
-    } else {
-      f3_set_mu(cout, i, (mu>>32), ((mu<<32>>32)+1));
+    uint64_t mu = f3_get_mu(c, i);
+    if (!mu) continue; // 0-0 is skipped
+    if (MU2cov(mu) < cfg->mincov) continue;
+
+    double beta = MU2beta(mu);
+    uint64_t mu_out = f3_get_mu(cout, i);
+    if (beta > cfg->beta1) {
+      f3_set_mu(cout, i, ((mu_out>>32)+1), (mu_out<<32>>32));
+    } else if (beta < cfg->beta0) {
+      f3_set_mu(cout, i, (mu_out>>32), ((mu_out<<32>>32)+1));
     }
   }
 }
 
-static cdata_t rowop_binasum(cfile_t cf, unsigned mincov) {
+static cdata_t rowop_binasum(cfile_t cf, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   cdata_t cout = {0};
   if (c.n == 0) return cout;    // nothing in cfile
@@ -119,7 +132,7 @@ static cdata_t rowop_binasum(cfile_t cf, unsigned mincov) {
     switch (fmt) {
     case '0': binasumFmt0(&cout, &c2); break;
     case '1': binasumFmt1(&cout, &c2); break;
-    case '3': binasumFmt3(&cout, &c2, mincov); break;
+    case '3': binasumFmt3(&cout, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -179,21 +192,22 @@ static cdata_t rowop_musum(cfile_t cf) {
   return cout;
 }
 
-static void meanFmt3(uint32_t *cnts, double *fracs, cdata_t *c, unsigned mincov) {
+static void meanFmt3(
+  uint32_t *cnts, double *fracs, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
     if (!mu0) continue; // 0-0 is skipped
-    if (((mu0>>32) + (mu0<<32>>32)) < mincov) continue;
+    if (((mu0>>32) + (mu0<<32>>32)) < cfg->mincov) continue;
     uint64_t M = mu0>>32;
     uint64_t U = (mu0<<32>>32);
-    if (M+U >= mincov) {
+    if (M+U >= cfg->mincov) {
       fracs[i] += (double) M / (M+U);
       cnts[i]++;
     }
   }
 }
 
-static void rowop_mean(cfile_t cf, char *fname_out, unsigned mincov) {
+static void rowop_mean(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return;    // nothing in cfile
   uint64_t n = cdata_n(&c);
@@ -206,7 +220,7 @@ static void rowop_mean(cfile_t cf, char *fname_out, unsigned mincov) {
     cdata_t c2 = decompress(c);
     
     switch (c.fmt) {
-    case '3': meanFmt3(cnts, fracs, &c2, mincov); break;
+    case '3': meanFmt3(cnts, fracs, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -233,14 +247,14 @@ static void rowop_mean(cfile_t cf, char *fname_out, unsigned mincov) {
   if (fname_out) fclose(out);
 }
 
-static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, unsigned mincov) {
+static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
     if (!mu0) continue; // 0-0 is skipped
-    if (((mu0>>32) + (mu0<<32>>32)) < mincov) continue;
+    if (((mu0>>32) + (mu0<<32>>32)) < cfg->mincov) continue;
     uint64_t M = mu0>>32;
     uint64_t U = (mu0<<32>>32);
-    if (M+U >= mincov) {
+    if (M+U >= cfg->mincov) {
       double x = (double) M / (M+U);
       sum[i] += x;
       sum_sq[i] += x * x;
@@ -252,7 +266,7 @@ static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, u
 
 // the following doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
-static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
+static void rowop_std(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
 
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return; // nothing in cfile, output nothing
@@ -267,7 +281,7 @@ static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
     cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
-    case '3': sumsqFmt3(cnts, sum, sum_sq, &c2, mincov); break;
+    case '3': sumsqFmt3(cnts, sum, sum_sq, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -295,7 +309,7 @@ static void rowop_std(cfile_t cf, char *fname_out, unsigned mincov) {
   if (fname_out) fclose(out);
 }
 
-static void rowop_binstring(cfile_t cf, char *fname_out, double beta_threshold) {
+static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return;    // nothing in cfile
   uint64_t n = cdata_n(&c);
@@ -318,7 +332,7 @@ static void rowop_binstring(cfile_t cf, char *fname_out, double beta_threshold) 
       for (uint64_t i=0; i<c2.n; ++i) {
         uint64_t mu = f3_get_mu(&c2, i);
         /* if ((mu>>32) > (mu<<32>>32)) { */
-        if (mu && ((double) (mu>>32) / ((mu>>32)+(mu<<32>>32)) > beta_threshold)) {
+        if (mu && ((double) (mu>>32) / ((mu>>32)+(mu<<32>>32)) > cfg->beta_threshold)) {
           binstring[(k>>3)*n+i] |= (1<<(k&0x7));
         }
       }
@@ -346,9 +360,10 @@ static void rowop_binstring(cfile_t cf, char *fname_out, double beta_threshold) 
   if (fname_out) fclose(out);
 }
 
-void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_window, int verbose) {
+void rowop_cometh(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
 
   uint64_t *cnts = NULL; uint64_t ncnts = 0;
+  int cometh_window = cfg->cometh_window;
   for (uint64_t k=0; ;++k) {
     cdata_t c0 = read_cdata1(&cf);
     if (c0.n == 0) break;
@@ -364,7 +379,7 @@ void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_windo
         uint64_t M = mu>>32; uint64_t U = (mu<<32>>32);
         uint64_t mu1 = f3_get_mu(&c, j);
         uint64_t M1 = mu1>>32; uint64_t U1 = (mu1<<32>>32);
-        if (M+U >= mincov && M1+U1 >= mincov) {
+        if (M+U >= cfg->mincov && M1+U1 >= cfg->mincov) {
           // also skip intermediate values too close to 0.5
           double b = M/(M+U); double b1 = M1/(M1+U1);
           if (fabs(b - 0.5) >= 0.2 || fabs(b1 - 0.5) >= 0.2) {
@@ -385,7 +400,7 @@ void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_windo
     for (uint64_t j=0; j<(unsigned) cometh_window; ++j) {
       uint64_t data = cnts[i*cometh_window+j];
       fputc('\t', out);
-      if (verbose) {
+      if (cfg->verbose) {
         fprintf(out, "%"PRIu64"-%"PRIu64"-%"PRIu64"-%"PRIu64,
                 data>>(16*3), data<<(16)>>(16*3), data<<(16*2)>>(16*3), data<<(16*3)>>(16*3));
       } else {
@@ -400,17 +415,25 @@ void rowop_cometh(cfile_t cf, char *fname_out, unsigned mincov, int cometh_windo
 
 int main_rowop(int argc, char *argv[]) {
 
-  int c, verbose = 0;
-  unsigned mincov = 1;
-  double beta_threshold = 0.5;   // default to 0.5
-  char *op = NULL; int cometh_window = 5;
-  while ((c = getopt(argc, argv, "vo:c:b:w:h"))>=0) {
+  int c;
+  config_rowop_t config = {
+    .beta0 = 0.4,
+    .beta1 = 0.6,
+    .mincov = 1,
+    .beta_threshold = 0.5,
+    .cometh_window = 5,
+    .verbose = 0};
+    
+  char *op = NULL;
+  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:h"))>=0) {
     switch (c) {
-    case 'v': verbose = 1; break;
     case 'o': op = strdup(optarg); break;
-    case 'c': mincov = atoi(optarg); break;
-    case 'b': beta_threshold = atof(optarg); break;
-    case 'w': cometh_window = atoi(optarg); break;
+    case 'p': config.beta0 = atof(optarg); break;
+    case 'q': config.beta1 = atof(optarg); break;
+    case 'c': config.mincov = atoi(optarg); break;
+    case 'b': config.beta_threshold = atof(optarg); break;
+    case 'w': config.cometh_window = atoi(optarg); break;
+    case 'v': config.verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -429,21 +452,21 @@ int main_rowop(int argc, char *argv[]) {
   cfile_t cf = open_cfile(fname);
   cdata_t cout = {0};
   if (!op || strcmp(op, "binasum") == 0) { // default
-    cout = rowop_binasum(cf, mincov);
-    cdata_write(fname_out, &cout, "wb", verbose);
+    cout = rowop_binasum(cf, &config);
+    cdata_write(fname_out, &cout, "wb", config.verbose);
     free(cout.s);
   } else if (strcmp(op, "mean") == 0) {
-    rowop_mean(cf, fname_out, mincov);
+    rowop_mean(cf, fname_out, &config);
   } else if (strcmp(op, "std") == 0) {
-    rowop_std(cf, fname_out, mincov);
+    rowop_std(cf, fname_out, &config);
   } else if (strcmp(op, "musum") == 0) {
     cout = rowop_musum(cf);
-    cdata_write(fname_out, &cout, "wb", verbose);
+    cdata_write(fname_out, &cout, "wb", config.verbose);
     free(cout.s);
   } else if (strcmp(op, "binstring") == 0) {
-    rowop_binstring(cf, fname_out, beta_threshold);
+    rowop_binstring(cf, fname_out, &config);
   } else if (strcmp(op, "cometh") == 0) {
-    rowop_cometh(cf, fname_out, mincov, cometh_window, verbose);
+    rowop_cometh(cf, fname_out, &config);
   } else {
     fprintf(stderr, "[%s:%d] Unsupported operation: %s\n", __func__, __LINE__, op);
     fflush(stderr);

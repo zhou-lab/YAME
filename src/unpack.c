@@ -1,3 +1,23 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+/**
+ * This file is part of YAME.
+ *
+ * Copyright (C) 2021-present Wanding Zhou
+ *
+ * YAME is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * YAME is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with YAME.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
@@ -6,42 +26,140 @@
 #include "vector.h"
 #include "snames.h"
 
-static int usage() {
-  fprintf(stderr, "\nUsage: yame unpack [options] <in.cx> [[sample 1], [sample 2], ...]\n\n");
+/**
+ * yame unpack
+ * ===========
+ *
+ * Goal
+ * ----
+ * Convert selected CX records into a tab-delimited table on stdout:
+ *   - each output line corresponds to one row position i
+ *   - each output column corresponds to one selected cdata record (sample)
+ * Optionally prepend a coordinate column derived from a separate row-coordinate dataset (-R),
+ * or print coordinates directly when the selected dataset is format 7.
+ *
+ * Sample selection
+ * ----------------
+ * The tool loads a vector of records (cdata_v *cs) using the following priority:
+ *
+ *   1) If an index exists and snames.n > 0:
+ *        cs = read_cdata_with_snames(&cf, idx, &snames)
+ *   2) Else if -a:
+ *        cs = read_cdata_all(&cf)
+ *   3) Else if -H N:
+ *        cs = read_cdata_from_head(&cf, N)
+ *   4) Else if -T N (requires index):
+ *        cs = read_cdata_from_tail(&cf, idx, N)
+ *   5) Else:
+ *        cs = read_cdata_from_head(&cf, 1)
+ *
+ * Random access requirement
+ * -------------------------
+ * Selecting by explicit sample names or selecting from tail requires random access,
+ * which in turn requires an input index (.cxi), unless the input is stdin.
+ *
+ * Coordinates / left column (-R / format 7)
+ * -----------------------------------------
+ * - If -R is provided, a separate CX record is read as cr and printed as the first
+ *   column(s) for every row i (print_cdata1(&cr, i, pfmt)).
+ * - If the first selected dataset is format 7, unpack treats column 1 as coordinates
+ *   (col1_is_row_index) and prints coordinates from that dataset.
+ * - Coordinate formatting is controlled by pfmt.ref (-r):
+ *     0: chrm beg0 end1
+ *     1: chrm beg0 end0
+ *     else: chrm_beg1
+ *
+ * Value printing (print_cdata1)
+ * -----------------------------
+ * Printing is format-specific:
+ * - fmt0: bit (0/1)
+ * - fmt1: raw byte/ASCII value
+ * - fmt2: state label string (f2_get_string)
+ * - fmt3: controlled by pfmt.data (-f):
+ *     0 : print packed MU uint64
+ *    <0 : print "M<TAB>U"
+ *    >0 : print beta; "NA" if cov < pfmt.data or cov==0
+ * - fmt4: float; negative values printed as NA
+ * - fmt5: ternary; value 2 printed as NA
+ * - fmt6: ALSO controlled by pfmt.data (-f):
+ *    <0 : print "value<TAB>universe" (e.g., 1<tab>1 / 0<tab>1 / NA<tab>0)
+ *     0 : print 0/1, NA coded as '2'
+ *    >0 : print raw 2-bit code (FMT6_2BIT)
+ * - fmt7: prints coordinates via row_reader_t (fmt7_next_bed), not a scalar value.
+ *
+ * Chunked printing (-c / -s)
+ * --------------------------
+ * In chunk mode, unpack repeatedly decompresses each selected record, slices a contiguous
+ * row block of size s, and prints it. This reduces peak memory compared to inflating the
+ * full vector. Format 7 chunking is not supported (explicitly rejected).
+ *
+ * Header printing (-C)
+ * --------------------
+ * If -C is requested, unpack prints a header line. When sample names were not explicitly
+ * provided, it derives names from the input index (requires .cxi). If a coordinate column
+ * is printed (either via -R or fmt7), the header includes the coordinate field names.
+ *
+ * Unit override (-u)
+ * ------------------
+ * Sets c->unit for each selected record before decompression (0=auto-infer).
+ * Allowed values are {0,1,2,4,6,8}; smaller units reduce memory but may be lossy.
+ */
 
-  fprintf(stderr, "Options:\n");
-
-  fprintf(stderr, "    -a        Process all samples\n");
-  fprintf(stderr, "    -C        Output column names\n");
-  fprintf(stderr, "    -R [PATH] Row coordinate .cr file name.\n");
-  fprintf(stderr, "    -r        0: Row coordinate output in chrm-beg0-end1 (default, for cg).\n");
-  fprintf(stderr, "              1: Row coordinate output in chrm-beg0-end0 (for allc).\n");
-  fprintf(stderr, "              2 and other: Row coordinate output in chrm_beg1.\n");
-  fprintf(stderr, "    -l [PATH] Path to the sample list. Ignored if sample names are provided on the command line.\n");
-  fprintf(stderr, "    -H [N]    Process N samples from the start of the list, where N is less than or equal to the\n");
-  fprintf(stderr, "              total number of samples.\n");
-  fprintf(stderr, "    -T [N]    Process N samples from the end of the list, where N is less than or equal to the\n");
-  fprintf(stderr, "              total number of samples. Requires index.\n");
-  fprintf(stderr, "    -m [int]  0: [NA/0/1]\t[0/1]. 2nd column indicates universe.\n");
-  fprintf(stderr, "              1: [2/0/1]. NA is coded by 2.\n");
-  fprintf(stderr, "    -f [N]    Display format for data format 3. Options are:\n");
-  fprintf(stderr, "                   N == 0: Compound MU\n");
-  fprintf(stderr, "                   N <  0: M<tab>U\n");
-  fprintf(stderr, "                   N >  0: Fraction (with number for the min coverage)\n");
-  fprintf(stderr, "    -c        Enable chunk process\n");
-  fprintf(stderr, "    -s        Chunk size (default is 1M)\n");
-  fprintf(stderr, "    -u [int]  number of bytes for each unit data while inflated. Lower number needs less memory\n");
-  fprintf(stderr, "              efficient but could be lossier. Can only be 1-8.\n");
-  fprintf(stderr, "              0 means this will be inferred from data.\n");
-  fprintf(stderr, "    -h        Display this help message.\n\n");
-
+static int usage(void) {
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame unpack [options] <in.cx> [sample1 sample2 ...]\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Print selected records from a .cx file as a tab-delimited table.\n");
+  fprintf(stderr, "  Each output row is a genomic row index; each output column is a selected sample/record.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Sample selection (default: first record):\n");
+  fprintf(stderr, "  -a            Output all records in the file.\n");
+  fprintf(stderr, "  -l <list>     Sample list file (one name per line).\n");
+  fprintf(stderr, "                Ignored if sample names are provided as trailing arguments.\n");
+  fprintf(stderr, "  -H <N>        Output the first N samples.\n");
+  fprintf(stderr, "  -T <N>        Output the last  N samples (requires index).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Row coordinates (optional first column):\n");
+  fprintf(stderr, "  -R <rows.cx>  Row coordinate dataset (CX; typically format 7).\n");
+  fprintf(stderr, "  -r <mode>     Coordinate print mode (default: 0):\n");
+  fprintf(stderr, "                0: chrm<tab>beg0<tab>end1   (cg-style)\n");
+  fprintf(stderr, "                1: chrm<tab>beg0<tab>end0   (allc-style)\n");
+  fprintf(stderr, "                else: chrm_beg1\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Output formatting:\n");
+  fprintf(stderr, "  -C            Print a header line (column names).\n");
+  fprintf(stderr, "  -u <bytes>    Inflated unit-size override (0=auto; allowed: 1,2,4,6,8).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Value printing (-f):\n");
+  fprintf(stderr, "  -f <N>        Print mode for certain formats (default: 0):\n");
+  fprintf(stderr, "                For format 3 (MU):\n");
+  fprintf(stderr, "                  N == 0 : print packed MU (uint64)\n");
+  fprintf(stderr, "                  N  < 0 : print M<tab>U (two columns)\n");
+  fprintf(stderr, "                  N  > 0 : print beta; print NA if cov < N or cov==0\n");
+  fprintf(stderr, "                For format 6 (set+universe):\n");
+  fprintf(stderr, "                  N == 0 : print 0/1, NA coded as '2'\n");
+  fprintf(stderr, "                  N  < 0 : print value<tab>universe  (e.g., 1<tab>1, 0<tab>1, NA<tab>0)\n");
+  fprintf(stderr, "                  N  > 0 : print raw 2-bit code (FMT6_2BIT)\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Chunked printing:\n");
+  fprintf(stderr, "  -c            Enable chunked printing (reduces peak memory).\n");
+  fprintf(stderr, "  -s <rows>     Chunk size in rows (default: 1000000).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Other:\n");
+  fprintf(stderr, "  -h            Show this help message.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Notes:\n");
+  fprintf(stderr, "  * Selecting by sample name or using -T requires an index (.cxi) unless reading from stdin.\n");
+  fprintf(stderr, "  * Chunking does not support format 7 datasets.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
 typedef struct cdata_pfmt_t {
-  int f3;
-  int f6;
-  int f7;
+  int data;
+  int ref;
 } cdata_pfmt_t;
 
 int fmt7_next_bed(cdata_t *c);
@@ -61,14 +179,14 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
   }
   case '3': {
     uint64_t mu = f3_get_mu(c, i);
-    if (pfmt.f3 == 0)
+    if (pfmt.data == 0)
       fprintf(stdout, "%"PRIu64"", mu);
-    else if (pfmt.f3 < 0)
+    else if (pfmt.data < 0)
       fprintf(stdout, "%"PRIu64"\t%"PRIu64"",mu>>32, mu<<32>>32);
     else {
       uint64_t M = mu>>32;
       uint64_t U = mu<<32>>32;
-      if ((M==0 && U==0) || (M+U) < (uint64_t) pfmt.f3) fputs("NA", stdout);
+      if ((M==0 && U==0) || (M+U) < (uint64_t) pfmt.data) fputs("NA", stdout);
       else fprintf(stdout, "%1.3f", (double) M/(M+U));
     }
     break;
@@ -90,18 +208,28 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
     break;
   }
   case '6': {
-    if (pfmt.f6 == 0) {
-      if ((c->s[i/4]>>(2*(i%4)+1))&1) {
-        fprintf(stdout, "%u\t1", ((c->s[i/4]>>(2*(i%4)))&1));
+    if (pfmt.data < 0) {
+      if (FMT6_IN_UNI(*c, i)) {
+        if (FMT6_IN_SET(*c, i)) {
+          fputs("1\t1", stdout);
+        } else {
+          fputs("0\t1", stdout);
+        }
       } else {
         fputs("NA\t0", stdout);
       }
-    } else if (pfmt.f6 == 1) {
-      if ((c->s[i/4]>>(2*(i%4)+1))&1) {
-        fputc('0'+((c->s[i/4]>>(2*(i%4)))&1), stdout);
+    } else if (pfmt.data == 0) {
+      if (FMT6_IN_UNI(*c, i)) {
+        if (FMT6_IN_SET(*c, i)) {
+          fputc('1', stdout);
+        } else {
+          fputc('0', stdout);
+        }
       } else {
         fputc('2', stdout);
       }
+    } else {
+      fputc('0'+FMT6_2BIT(*c, i), stdout);
     }
     break;
   }
@@ -118,9 +246,9 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
       fflush(stderr);
       exit(1);
     }
-    if (pfmt.f7 == 0) {
+    if (pfmt.ref == 0) {
       fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value+1);
-    } else if (pfmt.f7 == 1) {
+    } else if (pfmt.ref == 1) {
       fprintf(stdout, "%s\t%"PRIu64"\t%"PRIu64"", rdr->chrm, rdr->value-1, rdr->value);
     } else {
       fprintf(stdout, "%s_%"PRIu64"", rdr->chrm, rdr->value);
@@ -209,7 +337,7 @@ int main_unpack(int argc, char *argv[]) {
   uint8_t unit = 0; // default: auto-inferred
   int print_column_names = 0;
   char *fname_row = NULL;
-  while ((c = getopt(argc, argv, "cs:l:H:T:m:f:u:CR:r:ah"))>=0) {
+  while ((c = getopt(argc, argv, "cs:l:H:T:f:u:CR:r:ah"))>=0) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
@@ -219,10 +347,9 @@ int main_unpack(int argc, char *argv[]) {
     case 'u': unit = atoi(optarg); break;
     case 'C': print_column_names = 1; break;
     case 'R': fname_row = strdup(optarg); break;
-    case 'r': pfmt.f7 = atoi(optarg); break;
-    case 'm': pfmt.f6 = atoi(optarg); break;
+    case 'r': pfmt.ref = atoi(optarg); break;
     case 'a': read_all = 1; break;
-    case 'f': pfmt.f3 = atoi(optarg); break;
+    case 'f': pfmt.data = atoi(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -311,8 +438,8 @@ int main_unpack(int argc, char *argv[]) {
       }
     }
     if (fname_row || col1_is_row_index) {
-      if (pfmt.f7 == 0) fputs("chrm\tbeg0\tend1", stdout);
-      else if (pfmt.f7 == 1) fputs("chrm\tbeg0\tend0", stdout);
+      if (pfmt.ref == 0) fputs("chrm\tbeg0\tend1", stdout);
+      else if (pfmt.ref == 1) fputs("chrm\tbeg0\tend0", stdout);
       else fputs("chrm_beg1", stdout);
     }
     for (int i=0; i<snames.n; ++i) {

@@ -343,7 +343,6 @@ stats_t* summarize1_queryfmt3(
       fflush(stderr);
       exit(1);
     }
-    double sum_beta = 0.0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t mu = f3_get_mu(c, i);
       if (mu) st[0].n_q++;
@@ -356,7 +355,7 @@ stats_t* summarize1_queryfmt3(
         }}}
     st[0].sm = strdup(sm);
     st[0].sq = strdup(sq);
-    st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
+    st[0].beta = st[0].sum_beta / st[0].n_o; // may have Inf when n_o == 0
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
     

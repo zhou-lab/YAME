@@ -50,6 +50,12 @@ static int usage(void) {
   return 1;
 }
 
+static double random_zero_to_one() {
+  // rand() returns an integer in the range [0, RAND_MAX]
+  // Casting to double ensures floating-point division
+  return (double)rand() / ((double) RAND_MAX + 1.0);
+}
+
 /**
  * Select K unique indices (filled before the function) using a
  * partial Fisher–Yates shuffle.
@@ -67,7 +73,7 @@ static void fisher_yates_shuffle_select(uint64_t *array, uint64_t N, uint64_t K)
   for (uint64_t i = 0; i < K; ++i) {
     /* Scale rand() into [0, N-i) using double arithmetic to avoid
        out-of-range j and reduce bias compared to naive modulo. */
-    double r = (double)rand() / ((double)RAND_MAX + 1.0);
+    double r = random_zero_to_one();
     uint64_t range = N - i;
     uint64_t offset = (uint64_t)(r * (double)range);
     uint64_t j = i + offset; // j in [i, N-1]
@@ -129,7 +135,7 @@ cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
     if (mu) {
       if (_FMT0_IN_SET(to_include, i)) {
         if (f3_rand_binarize) {
-          if (rand() > MU2beta(mu))
+          if (random_zero_to_one() < MU2beta(mu))
             f3_set_mu(&cout, i, 1, 0);
           else
             f3_set_mu(&cout, i, 0, 1);
