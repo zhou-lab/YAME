@@ -23,6 +23,96 @@
 #include "cfile.h"
 #include "snames.h"
 
+/**
+ * yame rowop
+ * ==========
+ *
+ * Overview
+ * --------
+ * rowop applies row-wise aggregation across multiple records (samples) in a CX file.
+ * The input file is read sequentially record-by-record. Most operations require:
+ *   - consistent format across records
+ *   - consistent row dimension N across records
+ *
+ * Operations (-o; default = "binasum")
+ * -----------------------------------
+ *
+ * 1) binasum  (CX output; fmt3)
+ *    Purpose:
+ *      Convert per-sample values into per-row sample counts:
+ *        M = #samples called methylated
+ *        U = #samples called unmethylated
+ *      (these are counts of samples, not read-depth counts).
+ *
+ *    Input formats:
+ *      - fmt0: bitset. If bit=1 -> M++, else U++.
+ *      - fmt1: ASCII '0'/'1'. If nonzero -> M++, else U++.
+ *      - fmt3: MU counts. For each sample and row:
+ *          * skip if mu==0 (M=U=0) or cov < mincov
+ *          * compute beta = M/(M+U)
+ *          * if beta > beta1 => M++
+ *            else if beta < beta0 => U++
+ *            else ignored (ambiguous / intermediate methylation)
+ *
+ *    Options used:
+ *      -c mincov, -p beta0, -q beta1
+ *
+ * 2) musum  (CX output; fmt3)
+ *    Purpose:
+ *      Sum MU sequencing counts across samples.
+ *    Input:
+ *      fmt3 only.
+ *    Behavior:
+ *      For each row, add sample M and U into output (skip mu==0).
+ *
+ * 3) stat  (text output; fmt3)
+ *    Purpose:
+ *      Compute per-row statistics across samples using beta values.
+ *    Input:
+ *      fmt3 only.
+ *    Filters:
+ *      skip mu==0 and cov < mincov.
+ *    Output columns (tab-delimited):
+ *      count    mean_beta    sd_beta    b0max    b1min
+ *    Definitions:
+ *      - count: number of samples contributing to this row
+ *      - mean_beta: average beta across contributing samples
+ *      - sd_beta: standard deviation of beta across contributing samples
+ *      - b0max: max(beta) among samples with beta < 0.5 (0 if none)
+ *      - b1min: min(beta) among samples with beta > 0.5 (1 if none)
+ *    Implementation:
+ *      Uses sum(beta) and sum(beta^2) to compute sd via sqrt(E[x^2]-E[x]^2).
+ *
+ * 4) binstring  (text output; fmt3)
+ *    Purpose:
+ *      Emit a row-wise binary string across samples. Each character corresponds
+ *      to a sample in file order: '1' if beta > beta_threshold else '0'.
+ *    Input:
+ *      fmt3 only.
+ *    Notes:
+ *      Current implementation does not apply mincov (only checks mu!=0).
+ *
+ * 5) cometh  (text output; fmt3)
+ *    Purpose:
+ *      Summarize co-methylation between each row i and its neighbors (i+1..i+W),
+ *      aggregated across samples.
+ *    Input:
+ *      fmt3 only.
+ *    Filters:
+ *      - requires cov >= mincov for both sites
+ *      - skips intermediate methylation near 0.5 (|beta-0.5| < 0.2) by default logic
+ *    Output:
+ *      First column: 1-based row index.
+ *      Then W columns (neighbor offsets). Each cell packs four 16-bit counters
+ *      (UU, UM, MU, MM) into a uint64_t. With -v, prints lanes as "UU-UM-MU-MM".
+ *
+ * I/O
+ * ---
+ * - <in.cx> is required.
+ * - [out] is optional; if omitted, text ops write to stdout and CX ops write to stdout
+ *   (via cdata_write with fname_out == NULL).
+ */
+
 typedef struct config_rowop_t {
   double beta0; // lower threshold
   double beta1; // higher threshold
@@ -32,36 +122,59 @@ typedef struct config_rowop_t {
   int verbose;
 } config_rowop_t;
 
-static int usage() {
+static int usage(void) {
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame rowop [options] <in.cx> <out>\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -o        Operations (choose one):\n");
-  fprintf(stderr, "              binasum     Sum binarized data to M and U (format 3).\n");
-  fprintf(stderr, "                          Can also take format 0 or 1 binary data.\n");
-  fprintf(stderr, "                          Output: new cx file.\n");
-  fprintf(stderr, "              musum       Sum M and U separately (format 3).\n");
-  fprintf(stderr, "                          Output: new cx file.\n");
-  fprintf(stderr, "              mean        Mean beta and counts of data points (format 3).\n");
-  fprintf(stderr, "                          Output: plain text (two columns).\n");
-  fprintf(stderr, "              std         Standard deviation. Requires format 3 cx.\n");
-  fprintf(stderr, "                          Output: plain text (std, counts).\n");
-  fprintf(stderr, "              binstring   Binarize data to row-wise string (format 3).\n");
-  fprintf(stderr, "                          Output: plain text file with binary strings.\n");
-  fprintf(stderr, "              cometh      Co-methylation of neighboring CGs.\n");
-  fprintf(stderr, "                          Output: plain text in uint64_t U0U1-U0M1-M0U1-M0M1,\n");
-  fprintf(stderr, "                          U0U2-U0M2-M0U2-M0M2, etc. '0' is target CG,\n");
-  fprintf(stderr, "                          followed by 1, 2, etc for neighboring CGs.\n");
-  fprintf(stderr, "                          Each pair occupies 16 bits. For visual, use -v.\n");
-  fprintf(stderr, "                          Intermediate methylations (0.3-0.7) are excluded.\n");
-  fprintf(stderr, "    -w        Number of neighboring CGs for cometh (default: 5).\n");
-  fprintf(stderr, "    -c        Minimum sequencing depth for rowops (default 1).\n");
-  fprintf(stderr, "    -b        beta value threshold used in binstring (default 0.5).\n");
-  fprintf(stderr, "    -p        beta value lower threshold in binasum (default: 0.4).\n");
-  fprintf(stderr, "    -q        beta value upper threshold in binasum (default: 0.6).\n");
-  fprintf(stderr, "    -v        Verbose mode\n");
-  fprintf(stderr, "    -h        Display this help message\n\n");
-
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame rowop [options] <in.cx> [out]\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Purpose:\n");
+  fprintf(stderr, "  Row-wise operations across multiple records (samples) in a CX file.\n");
+  fprintf(stderr, "  Some operations write a new .cx; others write tab-delimited text.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Operation:\n");
+  fprintf(stderr, "  -o <op>      Operation name (default: binasum)\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "CX-output operations:\n");
+  fprintf(stderr, "  binasum      Summarize per-sample calls into per-row sample counts (M/U) as format 3.\n");
+  fprintf(stderr, "              Input:\n");
+  fprintf(stderr, "                fmt0 : bitset, 1->M, 0->U\n");
+  fprintf(stderr, "                fmt1 : ASCII '0'/'1', nonzero->M, zero->U\n");
+  fprintf(stderr, "                fmt3 : MU; uses beta thresholds -p/-q, skips ambiguous betas\n");
+  fprintf(stderr, "              Output: one fmt3 record (M=#methylated samples, U=#unmethylated samples).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  musum        Sum MU sequencing counts across samples.\n");
+  fprintf(stderr, "              Input: fmt3 only. Output: one fmt3 record.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Text-output operations:\n");
+  fprintf(stderr, "  stat         Per-row statistics across samples.\n");
+  fprintf(stderr, "              Input: fmt3 only.\n");
+  fprintf(stderr, "              Output columns:\n");
+  fprintf(stderr, "                count  mean_beta  sd_beta  b0max  b1min\n");
+  fprintf(stderr, "              where b0max is max(beta<0.5) and b1min is min(beta>0.5).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  binstring    Row-wise 0/1 string across samples using a single beta threshold.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  cometh       Neighbor co-methylation summary within a window (packed 4-way counts).\n");
+  fprintf(stderr, "              With -v, prints four 16-bit lanes as UU-UM-MU-MM per neighbor offset.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Common filters:\n");
+  fprintf(stderr, "  -c <mincov>  Minimum coverage (M+U) for a sample/row to contribute (default: 1).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "binasum (fmt3 input) thresholds:\n");
+  fprintf(stderr, "  -p <beta0>   Call unmethylated if beta < beta0 (default: 0.4)\n");
+  fprintf(stderr, "  -q <beta1>   Call methylated   if beta > beta1 (default: 0.6)\n");
+  fprintf(stderr, "              Betas in [beta0, beta1] are ignored for that sample/row.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "binstring threshold:\n");
+  fprintf(stderr, "  -b <beta>    Call methylated if beta > threshold (default: 0.5)\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "cometh options:\n");
+  fprintf(stderr, "  -w <W>       Neighbor window size (default: 5)\n");
+  fprintf(stderr, "  -v           Verbose output (cometh prints UU-UM-MU-MM instead of packed uint64)\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Other:\n");
+  fprintf(stderr, "  -h           Show this help message.\n");
+  fprintf(stderr, "\n");
   return 1;
 }
 
@@ -192,62 +305,7 @@ static cdata_t rowop_musum(cfile_t cf) {
   return cout;
 }
 
-static void meanFmt3(
-  uint32_t *cnts, double *fracs, cdata_t *c, config_rowop_t *cfg) {
-  for (uint64_t i=0; i<c->n; ++i) {
-    uint64_t mu0 = f3_get_mu(c, i);
-    if (!mu0) continue; // 0-0 is skipped
-    if (((mu0>>32) + (mu0<<32>>32)) < cfg->mincov) continue;
-    uint64_t M = mu0>>32;
-    uint64_t U = (mu0<<32>>32);
-    if (M+U >= cfg->mincov) {
-      fracs[i] += (double) M / (M+U);
-      cnts[i]++;
-    }
-  }
-}
-
-static void rowop_mean(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
-  cdata_t c = read_cdata1(&cf);
-  if (c.n == 0) return;    // nothing in cfile
-  uint64_t n = cdata_n(&c);
-  uint32_t *cnts = calloc(n, sizeof(uint32_t));
-  double *fracs = calloc(n, sizeof(double));
-  
-  for (uint64_t k=0; ; ++k) {
-    if (k) c = read_cdata1(&cf); // skip 1st cdata
-    if (c.n == 0) break;
-    cdata_t c2 = decompress(c);
-    
-    switch (c.fmt) {
-    case '3': meanFmt3(cnts, fracs, &c2, cfg); break;
-    default: {
-      fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
-      fflush(stderr);
-      exit(1);
-    }}
-
-    free(c.s); free(c2.s);
-  }
-
-  FILE *out;
-  if (fname_out) {
-    out = fopen(fname_out, "w");
-  } else {
-    out = stdout;
-  }
-  for (uint64_t i=0; i<n; ++i) {
-    if (!cnts[i]) {
-      fputs("NA\t0\n", out);
-    } else {
-      fprintf(out, "%1.3f\t%d\n", fracs[i] / cnts[i], cnts[i]);
-    }
-  }
-  free(cnts); free(fracs);
-  if (fname_out) fclose(out);
-}
-
-static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, config_rowop_t *cfg) {
+static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, double *b0max, double *b1min, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
     if (!mu0) continue; // 0-0 is skipped
@@ -259,14 +317,16 @@ static void sumsqFmt3(uint32_t *cnts, double *sum, double *sum_sq, cdata_t *c, c
       sum[i] += x;
       sum_sq[i] += x * x;
       cnts[i]++;
+      if (x < 0.5 && x > b0max[i]) b0max[i] = x;
+      if (x > 0.5 && x < b1min[i]) b1min[i] = x;
     }
   }
 }
 
 
-// the following doesn't work for large numbers but should be ok for meth levels
+// the following standard deviation doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
-static void rowop_std(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
+static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
 
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return; // nothing in cfile, output nothing
@@ -274,6 +334,9 @@ static void rowop_std(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   uint32_t *cnts = calloc(n, sizeof(uint32_t));
   double *sum = calloc(n, sizeof(double));
   double *sum_sq = calloc(n, sizeof(double));
+  double *b0max = calloc(n, sizeof(double));
+  double *b1min = calloc(n, sizeof(double));
+  for (uint64_t i = 0; i < n; ++i) b1min[i] = 1.0;
   
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -281,7 +344,7 @@ static void rowop_std(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
-    case '3': sumsqFmt3(cnts, sum, sum_sq, &c2, cfg); break;
+    case '3': collect_stat_fmt3(cnts, sum, sum_sq, b0max, b1min, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -297,15 +360,19 @@ static void rowop_std(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   } else {
     out = stdout;
   }
+  fputs("count\tmean_beta\tsd_beta\tb0max\tb1min\n", out);
   for (uint64_t i=0; i<n; ++i) {
     if (!cnts[i]) {
-      fputs("NA\t0\n", out);
+      fputs("0\tNA\tNA\tNA\tNA\n", out);
     } else {
       double mean = sum[i] / cnts[i];
-      fprintf(out, "%1.3f\t%d\n", sqrt((sum_sq[i] / cnts[i]) - mean * mean), cnts[i]);
+      double sd = sqrt((sum_sq[i] / cnts[i]) - mean * mean);
+      fprintf(out, "%u\t%1.3f\t%1.3f\t%1.3f\t%1.3f\n", cnts[i], mean, sd, b0max[i], b1min[i]);
     }
   }
-  free(cnts); free(sum_sq); free(sum);
+  free(cnts);
+  free(sum_sq);
+  free(sum);
   if (fname_out) fclose(out);
 }
 
@@ -455,10 +522,8 @@ int main_rowop(int argc, char *argv[]) {
     cout = rowop_binasum(cf, &config);
     cdata_write(fname_out, &cout, "wb", config.verbose);
     free(cout.s);
-  } else if (strcmp(op, "mean") == 0) {
-    rowop_mean(cf, fname_out, &config);
-  } else if (strcmp(op, "std") == 0) {
-    rowop_std(cf, fname_out, &config);
+  } else if (strcmp(op, "stat") == 0) {
+    rowop_stat(cf, fname_out, &config);
   } else if (strcmp(op, "musum") == 0) {
     cout = rowop_musum(cf);
     cdata_write(fname_out, &cout, "wb", config.verbose);
