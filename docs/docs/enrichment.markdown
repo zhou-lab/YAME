@@ -84,7 +84,7 @@ Test enrichment against genomic features using the `-m` option:
 yame summary -m feature.cm yourfile.cg > enrichment_results.txt
 ```
 
-**Feature files** (`.cm` format) are available from KYCG and include:
+**Feature files** (`.cm` format) are available from KYCG [hg38 knowledgebase](https://github.com/zhou-lab/KYCGKB_hg38) [mm10 knowledgebase](https://github.com/zhou-lab/KYCGKB_mm10) and include:
 - Chromatin states (ChromHMM, Roadmap Epigenomics)
 - Histone modifications (ChIP-seq peaks)
 - Transcription factor binding sites
@@ -93,7 +93,7 @@ yame summary -m feature.cm yourfile.cg > enrichment_results.txt
 - CpG islands and shores
 - Repetitive elements
 
-You can also create custom feature files using [`yame pack`]({% link docs/storage.markdown %}).
+You can replace feature.cm with any of the available feature files (`.cm`) provided in the repo, or you can also create custom feature files using [`yame pack`]({% link docs/storage.markdown %}).
 
 ---
 
