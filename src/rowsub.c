@@ -261,14 +261,25 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
   }
   cdata_t c2 = {0};
   c2.unit = c->unit;
-  c2.s = realloc(c2.s, n*c2.unit);
   c2.fmt = c->fmt;
-  int64_t i;
-  for (i=0; i<n; ++i) {
-    memcpy(c2.s+c2.unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
-  }
   c2.n = n;
   c2.compressed = 0;
+
+  if (c->fmt == '6') {
+    // Format 6: 2 bits per position, packed 4 positions per byte
+    uint64_t out_nbytes = (n + 3) >> 2;  // ceiling(n / 4)
+    c2.s = calloc(1, out_nbytes);
+    for (int64_t i = 0; i < n; ++i) {
+      uint64_t src_i = row_indices[i] - 1;  // convert to 0-based
+      uint8_t val = (c->s[src_i >> 2] >> ((src_i & 0x3) * 2)) & 0x3;
+      c2.s[i >> 2] |= val << ((i & 0x3) * 2);
+    }
+  } else {
+    c2.s = realloc(c2.s, n*c2.unit);
+    for (int64_t i = 0; i < n; ++i) {
+      memcpy(c2.s+c2.unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
+    }
+  }
   return c2;
 }
 
@@ -323,6 +334,18 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
     memcpy(c_out.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
     c_out.n = end-beg+1;
     // TODO: format 7 should be merged here, I have a separate fmt7_sliceToBlock
+  } else if (c_out.fmt == '6') {
+    // Format 6: 2 bits per position, packed 4 positions per byte
+    // Need to extract bits from arbitrary positions and repack
+    uint64_t n_out = end - beg + 1;
+    uint64_t out_nbytes = (n_out + 3) >> 2;  // ceiling(n_out / 4)
+    c_out.s = calloc(1, out_nbytes);
+    for (uint64_t i = 0; i < n_out; ++i) {
+      uint64_t src_i = beg + i;
+      uint8_t val = (c->s[src_i >> 2] >> ((src_i & 0x3) * 2)) & 0x3;
+      c_out.s[i >> 2] |= val << ((i & 0x3) * 2);
+    }
+    c_out.n = n_out;
   } else {
     c_out.s = realloc(c_out.s, (end-beg+1)*c_out.unit);
     memcpy(c_out.s, c->s+c->unit*beg, c->unit*(end-beg+1));
@@ -382,6 +405,19 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
       if (FMT0_IN_SET(*c_mask, i)) {
         memcpy(dst, src_data + i * c->unit, c->unit);
         dst += c->unit;
+      }
+    }
+  } else if (c_out.fmt == '6') {
+    // Format 6: 2 bits per position, packed 4 positions per byte
+    if (n > 0) {
+      uint64_t out_nbytes = (n + 3) >> 2;  // ceiling(n / 4)
+      c_out.s = calloc(1, out_nbytes);
+      for (uint64_t i = 0, k = 0; i < c->n; ++i) {
+        if (FMT0_IN_SET(*c_mask, i)) {
+          uint8_t val = (c->s[i >> 2] >> ((i & 0x3) * 2)) & 0x3;
+          c_out.s[k >> 2] |= val << ((k & 0x3) * 2);
+          k++;
+        }
       }
     }
   } else { // all other formats
