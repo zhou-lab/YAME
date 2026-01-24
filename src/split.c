@@ -45,14 +45,17 @@ int main_split(int argc, char *argv[]) {
     }
   }
 
-  if (optind + 2 > argc) { 
+  if (optind + 1 > argc) { 
     usage(); 
     wzfatal("Please supply input file.\n");
   }
 
   cfile_t cf = open_cfile(argv[optind++]);
-  char *prefix = argv[optind];
-
+  char *prefix = NULL;
+  if (optind + 1 == argc) {
+    prefix = argv[optind];
+  }
+  
   char **snames = NULL; int snames_n = 0;
   if (fname_snames) {
     gzFile fh = wzopen(fname_snames, 1);
@@ -76,11 +79,21 @@ int main_split(int argc, char *argv[]) {
     if (c.n == 0) break;
     char *tmp = NULL;
     if (snames_n) {
-      tmp = malloc(strlen(prefix)+strlen(snames[i])+1000);
-      sprintf(tmp, "%s%s.cx", prefix, snames[i]);
+      if (prefix) {
+        tmp = malloc(strlen(prefix)+strlen(snames[i])+1000);
+        sprintf(tmp, "%s%s.cx", prefix, snames[i]);
+      } else {
+        tmp = malloc(strlen(snames[i])+1000);
+        sprintf(tmp, "%s.cx", snames[i]);
+      }
     } else {
-      tmp = malloc(strlen(prefix) + 1000);
-      sprintf(tmp, "%s_split_%i.cx", prefix, i+1);
+      if (prefix) {
+        tmp = malloc(strlen(prefix) + 1000);
+        sprintf(tmp, "%s_split_%i.cx", prefix, i+1);
+      } else {
+        tmp = malloc(1000);
+        sprintf(tmp, "split_%i.cx", i+1);
+      }
     }
     cdata_write(tmp, &c, "wb", verbose);
     free(tmp);
