@@ -30,6 +30,7 @@ static int usage() {
   fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
   fprintf(stderr, "    -c        contextualize binary input to format 6 using '1's in mask.\n");
   fprintf(stderr, "              if format 3 is used as mask, then use M+U>0 (coverage).\n");
+  fprintf(stderr, "              implicit for format 6 input (output is always format 6).\n");
   fprintf(stderr, "    -v        reverse the mask (default is to mask '1's, if -v will mask '0's).\n");
   fprintf(stderr, "    -h        This help\n");
   fprintf(stderr, "\n");
@@ -52,6 +53,16 @@ void mask_fmt0(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
     c->s[i] &= ~c_mask.s[i];
   }
   /* cdata_compress(&c); */
+  cdata_write1(fp_out, c);
+}
+
+void mask_fmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
+  for (uint64_t i = 0; i < c->n; ++i) {
+    if (!FMT6_IN_UNI(*c, i) || !FMT0_IN_SET(c_mask, i)) {
+      FMT6_SET_NA(*c, i);
+    }
+  }
+  cdata_compress(c);
   cdata_write1(fp_out, c);
 }
 
@@ -130,6 +141,8 @@ int main_mask(int argc, char *argv[]) {
       } else {
         mask_fmt0(&c, c_mask, fp_out);
       }
+    } else if (c.fmt == '6') {
+      mask_fmt6(&c, c_mask, fp_out);
     } else {
       fprintf(stderr, "[%s:%d] Only format %d files are supported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
