@@ -98,7 +98,7 @@ typedef struct config_t {
 static int usage(config_t *config) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame rowsub [options] <in.cx> > out.cx\n");
+  fprintf(stderr, "  yame rowsub [options] in.cx >out.cx\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Purpose:\n");
   fprintf(stderr, "  Subset (slice) rows from each dataset (record) in a CX stream.\n");
