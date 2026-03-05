@@ -48,8 +48,9 @@ int main_index(int argc, char *argv[]);
 int main_mask(int argc, char *argv[]);
 int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
+int main_perturb(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "v1.8"
+#define PACKAGE_VERSION "v1.9"
 
 static int usage(void)
 {
@@ -89,8 +90,11 @@ static int usage(void)
 
   fprintf(stderr, "Transforms / utilities:\n");
   fprintf(stderr, "  binarize     Convert fmt3 (M/U) to fmt6 (set+universe) by beta/M threshold\n");
-  fprintf(stderr, "  mask         Mask methylation data (e.g., set M=U=0 for masked sites)\n");
-  fprintf(stderr, "  dsample      Downsample methylation data (fmt3 or fmt6)\n");
+  fprintf(stderr, "  mask         Invalidate specific CpG sites using an external mask file\n");
+  fprintf(stderr, "               (deterministic, file-driven: controls *which* sites are valid)\n");
+  fprintf(stderr, "  dsample      Randomly subsample N covered CpG sites, masking the rest\n");
+  fprintf(stderr, "               (stochastic, rate-driven: reduces site count and effective coverage)\n");
+  fprintf(stderr, "  perturb      Randomly flip 0/1 bits in fmt0 or fmt6 (noise injection)\n");
   fprintf(stderr, "  rowop        Row-wise operations (e.g., sum / combine binary tracks)\n");
   fprintf(stderr, "\n");
 
@@ -118,6 +122,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "mask") == 0) ret = main_mask(argc-1, argv+1);
   else if (strcmp(argv[1], "binarize") == 0) ret = main_binarize(argc-1, argv+1);
   else if (strcmp(argv[1], "dsample") == 0) ret = main_dsample(argc-1, argv+1);
+  else if (strcmp(argv[1], "perturb") == 0) ret = main_perturb(argc-1, argv+1);
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
     return 1;
