@@ -29,6 +29,8 @@ Your input must be:
 - Exactly **one line per CpG**
 - Each line containing **0** or **1**
 
+> **Note:** Any value other than `0` (e.g. `2`, `3`, or any count > 1) is treated as `1` during packing. The check is simply whether the line starts with the character `0`. This means `bedtools intersect -c` output (which produces counts ≥ 0) can be piped directly without pre-binarization.
+
 Example input (`binary_data.txt`):
 
 ```text
@@ -41,7 +43,7 @@ Example input (`binary_data.txt`):
 
 Interpretation:
 
-* `1` → presence, methylated, peak overlap, or “TRUE”
+* `1` (or any non-zero value) → presence, methylated, peak overlap, or “TRUE”
 * `0` → absence, unmethylated, no peak, or “FALSE”
 
 There is **no NA value** in format 0. Use Format 4 or 6 if you need NA or universe masking.

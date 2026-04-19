@@ -15,6 +15,8 @@ Options:
               (b) Binary data. Format default to 0 or 1 depending on size:
                   0 - 1 byte for 8 binary CpGs
                   1 - Value (1 byte) + Run-Length Encoding (RLE) (2 bytes)
+                  Any non-zero input value (2, 3, counts from bedtools, etc.)
+                  is treated as 1. Only lines starting with '0' become 0.
               (s) State data. Format default to 2:
                   2 - State text + Index RLE (Best for chromatin states).
                       Use format 0 for sequence context.
