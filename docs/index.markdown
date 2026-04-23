@@ -40,7 +40,7 @@ YAME (Yet Another Methylation Encoder) is designed for efficient sequence-level 
 - **[Subset Rows]({% link docs/sample.markdown %})** - Extract samples and regions
 - **[Aggregate Row-wise]({% link docs/rowop.markdown %})** - Merge pseudobulks and perform calculations
 - **[Combine, Split & Index]({% link docs/sample.markdown %})** - Handle multi-sample datasets
-- **[Mask Data]({% link docs/dsample.markdown %})** - Test methods at different sparsity levels
+- **[Mask & Perturb Data]({% link docs/dsample.markdown %})** - Downsample, mask, and inject noise for benchmarking
 
 ## Installation
 

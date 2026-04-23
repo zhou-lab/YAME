@@ -149,9 +149,31 @@ An alternative R implementation is also available in the YAME GitHub repository 
 
 ---
 
-## Built-in Differential Calling
+## Converting M/U Counts to a Binary Set
 
-YAME includes a built-in pairwise differential methylation caller:
+When your data is in format 3 (M/U counts), it must be converted to format 6 (set/universe) before enrichment testing. YAME provides two commands for this, depending on your goal.
+
+### Binarize by threshold (`yame binarize`)
+
+`yame binarize` converts per-site M/U counts into a binary methylation call using a beta or count threshold:
+
+```bash
+yame binarize -t 0.5 -c 1 input.cg -o binary.cg
+```
+
+**Parameters:**
+- `-t <Tmin>` — beta threshold; sites with beta > T are called methylated (default: 0.5)
+- `-m <Mmin>` — M-count threshold; if >0, overrides `-t` and calls methylated if M ≥ Mmin
+- `-c <cov>` — minimum coverage (M+U) to include a site in the universe (default: 1)
+- `-o` — output file name
+
+Sites below the coverage threshold are set to NA (universe bit = 0). The resulting format 6 file can be used directly in `yame summary` for enrichment testing.
+
+For full options run `yame binarize -h`.
+
+### Differential calling between two samples (`yame pairwise`)
+
+`yame pairwise` produces a format 6 set representing sites that are differentially methylated between two samples:
 
 ```bash
 yame pairwise -H 1 -c 10 \
@@ -167,10 +189,12 @@ yame pairwise -H 1 -c 10 \
 
 **Directionality options for `-H`:**
 - `1` - Hypermethylated in first sample
-- `-1` - Hypomethylated in first sample  
+- `-1` - Hypomethylated in first sample
 - `0` - Either direction
 
 The output `.cg` file can be directly used for enrichment testing as described above.
+
+For full options run `yame pairwise -h`.
 
 ---
 

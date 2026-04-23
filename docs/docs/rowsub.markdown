@@ -303,11 +303,6 @@ For additional details:
   yame chunkchar -h
   ```
   
-* See full subcommand documentation:
-
-  * [**rowsub help page**]({% link docs/subcommands/YAME_rowsub.markdown %})
-  * [**chunk help page**]({% link docs/subcommands/YAME_chunk.markdown %})
-  * [**chunkchar help page**]({% link docs/subcommands/YAME_chunkchar.markdown %})
 
 ---
 

@@ -180,28 +180,8 @@ Removes the header line for scripting convenience.
 
 ---
 
-# Command Reference
-
-```
-Usage: yame summary [options] <query.cx>
-
-Options:
-  -m FILE     Mask feature (.cx) file. May contain multiple masks.
-  -M          Load all masks into memory.
-  -u FILE     Optional universe .cx file.
-  -H          Suppress header output.
-  -q NAME     Name to use when query file is '-'.
-  -F          Use full file paths in output.
-  -T          Always show section names (format 2).
-  -s FILE     Sample list overriding the query index.
-  -h          Display help.
-```
-
----
-
 # Additional Documentation
 
 See also:
 
 * [**Feature enrichment guide**]({% link docs/enrichment.markdown %})
-* [**Subcommand documentation**]({% link docs/subcommands/YAME_summary.markdown %})

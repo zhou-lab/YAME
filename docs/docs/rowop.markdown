@@ -244,7 +244,4 @@ For detailed usage:
 yame rowop -h
 ```
 
-Subcommand documentation:
-
-* [**rowop help page**]({% link docs/subcommands/YAME_rowop.markdown %})
 

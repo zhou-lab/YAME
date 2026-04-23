@@ -1,14 +1,15 @@
 ---
-title: 7. Mask Data
+title: 7. Mask & Perturb Data
 nav_order: 7
 ---
 
-# 7. Downsampling & Masking Methylation Sites
+# 7. Downsampling, Masking & Noise Injection
 
-YAME provides tools to **control sparsity** and **apply masks** to methylation data:
+YAME provides tools to **control sparsity**, **apply masks**, and **inject noise** into methylation data:
 
 - `yame dsample` — randomly downsample sites to simulate lower coverage or sparsity.
 - `yame mask` — apply a binary mask to zero out sites or convert a binary format into a contextualized format 6.
+- `yame perturb` — randomly flip methylation bits to inject noise for benchmarking and sensitivity testing.
 
 These functions are especially useful for benchmarking methods at different sparsity levels, building controlled simulation datasets, or restricting analyses to a specific universe of CpGs.
 
@@ -115,9 +116,6 @@ For more help with `dsample`, run:
 ```bash
 yame dsample -h
 ```
-
-or see the
-[**dsample help page**]({% link docs/subcommands/YAME_dsample.markdown %}).
 
 ---
 
@@ -240,6 +238,53 @@ For more help with `mask`, run:
 yame mask -h
 ```
 
-or see the
-[**mask help page**]({% link docs/subcommands/YAME_mask.markdown %}).
+---
+
+## 7.3 Noise Injection with `yame perturb`
+
+`yame perturb` randomly flips methylation bits in format 0 or format 6 data with a specified probability. It is designed for benchmarking and sensitivity testing — for example, measuring how much label noise a method can tolerate before its accuracy degrades.
+
+### 7.3.1 What `perturb` Does (Format 0 vs Format 6)
+
+* **Format 0 (binary bit vector)**
+  * Every bit (0 or 1) is independently flipped with probability `p`.
+
+* **Format 6 (universe-bit binary)**
+  * Only in-universe sites are eligible for flipping.
+  * NA sites (universe bit = 0) are left unchanged.
+
+### 7.3.2 Key Options
+
+```bash
+yame perturb [options] <in.cx>
+```
+
+Options:
+
+* `-p [float]` — fraction of sites to flip, in [0, 1] (default: `0.05`).
+* `-s [int]` — random seed (default: current time). Use a fixed seed for reproducibility.
+* `-o [PATH]` — output `.cx` file (default: stdout).
+
+### 7.3.3 Typical Use Cases
+
+* **Method robustness benchmarking**
+  Apply increasing levels of noise (`-p 0.01`, `0.05`, `0.10`, ...) to a known ground truth and measure how quickly downstream results degrade.
+
+* **Sensitivity analysis**
+  Test whether a classifier or enrichment result is driven by a small number of highly informative sites, or is robust to random perturbation.
+
+* **Controlled simulation**
+  Combine with `dsample` (for sparsity) and `perturb` (for noise) to build fully parameterized simulation datasets.
+
+Example: inject 10% noise into a format 6 single-cell file with a fixed seed:
+
+```bash
+yame perturb -p 0.10 -s 42 input.cg > noisy.cg
+```
+
+For more help with `perturb`, run:
+
+```bash
+yame perturb -h
+```
 

@@ -164,9 +164,7 @@ yame split -s sample_list.txt input.cx prefix_
 
 This preserves sample naming and ensures the `prefix_<sample>.cx` files correspond correctly.
 
-For more help:
-
-* [**split help page**]({% link docs/subcommands/YAME_split.markdown %})
+For more help, run `yame split -h`.
 
 ---
 
@@ -217,9 +215,7 @@ yame subset -s -l state_list.txt -o states.cx chromatin_states.cx
 
 This produces one binary vector per selected state.
 
-For more help:
-
-* [**subset help page**]({% link docs/subcommands/YAME_subset.markdown %})
+For more help, run `yame subset -h`.
 
 ---
 
