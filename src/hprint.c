@@ -54,6 +54,7 @@ static int usage(void) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "  -c            ANSI color output\n");
+  fprintf(stderr, "  -g            Granular output: 0-9 deciles instead of H/M/L\n");
   fprintf(stderr, "  -R <ref.cr>   Reference coordinate file (format 7)\n");
   fprintf(stderr, "  -r <region>   Genomic region: chr16  or  chr16:10000000-10100000\n");
   fprintf(stderr, "  -l <int>      Sample label column width (default: 20)\n");
@@ -230,13 +231,38 @@ static void print_ruler(const char *chrm, uint64_t *pos, uint64_t n_cols,
   free(buf);
 }
 
-/* Emit a single H/M/L character (with optional color) for a beta in [0,1]. */
-static void print_hml(double b, int color) {
-  char ch         = b > 0.67 ? 'H' : b > 0.33 ? 'M' : 'L';
-  const char *col = b > 0.67 ? ANSI_HIGH : b > 0.33 ? ANSI_MED : ANSI_LOW;
-  if (color) fputs(col, stdout);
-  fputc(ch, stdout);
-  if (color) fputs(ANSI_RESET, stdout);
+/* Emit a single H/M/L character or 0-9 decile (with optional color) for a beta in [0,1]. */
+static void print_beta(double b, int color, int granular) {
+  if (granular) {
+    int decile = (int)(b * 10.0);
+    if (decile > 9) decile = 9;
+    if (decile < 0) decile = 0;
+
+    if (color) {
+      /* Blue-White-Red spectrum using ANSI 256 colors */
+      static const char *colors[] = {
+        "\x1b[38;5;21m",  /* 0: deep blue */
+        "\x1b[38;5;27m",  /* 1 */
+        "\x1b[38;5;33m",  /* 2 */
+        "\x1b[38;5;39m",  /* 3 */
+        "\x1b[38;5;45m",  /* 4: light blue */
+        "\x1b[38;5;231m", /* 5: white */
+        "\x1b[38;5;224m", /* 6: light red/pink */
+        "\x1b[38;5;217m", /* 7 */
+        "\x1b[38;5;210m", /* 8 */
+        "\x1b[38;5;196m"  /* 9: deep red */
+      };
+      fputs(colors[decile], stdout);
+    }
+    fputc('0' + decile, stdout);
+    if (color) fputs(ANSI_RESET, stdout);
+  } else {
+    char ch         = b > 0.67 ? 'H' : b > 0.33 ? 'M' : 'L';
+    const char *col = b > 0.67 ? ANSI_HIGH : b > 0.33 ? ANSI_MED : ANSI_LOW;
+    if (color) fputs(col, stdout);
+    fputc(ch, stdout);
+    if (color) fputs(ANSI_RESET, stdout);
+  }
 }
 
 /* Decode one fmt3 record at byte *ip in the compressed stream s[].
@@ -267,7 +293,7 @@ static inline uint64_t fmt3_next(const uint8_t *s, uint64_t *ip,
  * H/M/L/. directly — zero intermediate allocation. */
 static void stream_fmt3_region(const cdata_t *c,
                                 uint64_t first_row, uint64_t last_row,
-                                uint64_t win_size, uint64_t n_cols, int color) {
+                                uint64_t win_size, uint64_t n_cols, int color, int granular) {
   uint64_t i = 0, row = 0, pM = 0, pU = 0, prem = 0;
   double   wsum = 0.0;
   uint64_t wvalid = 0, wpos = 0, wemit = 0;
@@ -293,7 +319,7 @@ static void stream_fmt3_region(const cdata_t *c,
       wpos += t; cnt -= t;
       if (wpos == win_size) {
         if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
-        else             print_hml(wsum / wvalid, color);
+        else             print_beta(wsum / wvalid, color, granular);
         wemit++; wsum = 0.0; wvalid = 0; wpos = 0;
       }
     }
@@ -301,7 +327,7 @@ static void stream_fmt3_region(const cdata_t *c,
   }
   if (wpos > 0 && wemit < n_cols) {
     if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
-    else             print_hml(wsum / wvalid, color);
+    else             print_beta(wsum / wvalid, color, granular);
   }
 }
 
@@ -310,7 +336,7 @@ static void stream_fmt3_region(const cdata_t *c,
  * per chromosome — zero intermediate allocation. */
 static void stream_fmt3_genome(const cdata_t *c,
                                 const chrom_info_t *ch, int n_chroms,
-                                uint64_t win_size, int color) {
+                                uint64_t win_size, int color, int granular) {
   uint64_t i = 0, row = 0, pM = 0, pU = 0, prem = 0;
 
   for (int ci = 0; ci < n_chroms; ci++) {
@@ -340,7 +366,7 @@ static void stream_fmt3_genome(const cdata_t *c,
         if (wpos == win_size) {
           if (wemit < ch[ci].n_cols) {
             if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
-            else             print_hml(wsum / wvalid, color);
+            else             print_beta(wsum / wvalid, color, granular);
             wemit++;
           }
           wsum = 0.0; wvalid = 0; wpos = 0;
@@ -350,18 +376,18 @@ static void stream_fmt3_genome(const cdata_t *c,
     }
     if (wpos > 0 && wemit < ch[ci].n_cols) {
       if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
-      else             print_hml(wsum / wvalid, color);
+      else             print_beta(wsum / wvalid, color, granular);
     }
   }
 }
 
+
 /*
  * Print one sample row in windowed mode.
  * Each output column is the average beta over win_size consecutive sites.
- * Uses H/M/L/. for all formats (since values are now fractions, not binary).
  */
 static void print_region_sample_windowed(cdata_t *c, uint64_t start_idx, uint64_t n_sites,
-                                          uint64_t win_size, uint64_t n_cols, int color) {
+                                          uint64_t win_size, uint64_t n_cols, int color, int granular) {
   for (uint64_t j = 0; j < n_cols; ++j) {
     uint64_t i0 = start_idx + j * win_size;
     uint64_t i1 = i0 + win_size;
@@ -397,33 +423,41 @@ static void print_region_sample_windowed(cdata_t *c, uint64_t start_idx, uint64_
       fputc('.', stdout);
       if (color) fputs(ANSI_RESET, stdout);
     } else {
-      print_hml(sum / valid, color);
+      print_beta(sum / valid, color, granular);
     }
   }
 }
 
 /* Print one sample row in region mode, dispatching by format. */
-static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites, int color) {
+static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites, int color, int granular) {
   for (uint64_t i = start_idx; i < start_idx + n_sites; ++i) {
 
     if (c->fmt == '6') {
       if (!FMT6_IN_UNI(*c, i)) {
         if (color) fputs(ANSI_NA,     stdout);
         fputs(CH_NA,     stdout);
+        if (color) fputs(ANSI_RESET, stdout);
+      } else if (granular) {
+        print_beta(FMT6_IN_SET(*c, i) ? 1.0 : 0.0, color, 1);
       } else if (FMT6_IN_SET(*c, i)) {
         if (color) fputs(ANSI_METH,   stdout);
         fputs(CH_METH,   stdout);
+        if (color) fputs(ANSI_RESET, stdout);
       } else {
         if (color) fputs(ANSI_UNMETH, stdout);
         fputs(CH_UNMETH, stdout);
+        if (color) fputs(ANSI_RESET, stdout);
       }
-      if (color) fputs(ANSI_RESET, stdout);
 
     } else if (c->fmt == '0') {
-      int v = FMT0_IN_SET(*c, i) ? 1 : 0;
-      if (color) fputs(v ? ANSI_METH : ANSI_UNMETH, stdout);
-      fputc(v ? '1' : '0', stdout);
-      if (color) fputs(ANSI_RESET, stdout);
+      double b = FMT0_IN_SET(*c, i) ? 1.0 : 0.0;
+      if (granular) {
+        print_beta(b, color, 1);
+      } else {
+        if (color) fputs(b > 0.5 ? ANSI_METH : ANSI_UNMETH, stdout);
+        fputc(b > 0.5 ? '1' : '0', stdout);
+        if (color) fputs(ANSI_RESET, stdout);
+      }
 
     } else if (c->fmt == '4') {
       float v;
@@ -431,13 +465,10 @@ static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites
       if (v < 0.0f) {
         if (color) fputs(ANSI_NA, stdout);
         fputs(CH_NA, stdout);
+        if (color) fputs(ANSI_RESET, stdout);
       } else {
-        char ch         = v > 0.67f ? 'H' : v > 0.33f ? 'M' : 'L';
-        const char *col = v > 0.67f ? ANSI_HIGH : v > 0.33f ? ANSI_MED : ANSI_LOW;
-        if (color) fputs(col, stdout);
-        fputc(ch, stdout);
+        print_beta((double)v, color, granular);
       }
-      if (color) fputs(ANSI_RESET, stdout);
 
     } else {
       fputc('?', stdout);
@@ -446,18 +477,20 @@ static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites
 }
 
 
+
 /* ------------------------------------------------------------------ */
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
 
 int main_hprint(int argc, char *argv[]) {
   int c;
-  int color = 0, label_w = 20, tick_every = 10, max_cols = 80;
+  int color = 0, label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
   char *fname_cr = NULL, *region = NULL;
 
-  while ((c = getopt(argc, argv, "cR:r:l:t:w:h")) >= 0) {
+  while ((c = getopt(argc, argv, "cgR:r:l:t:w:h")) >= 0) {
     switch (c) {
     case 'c': color      = 1;              break;
+    case 'g': granular   = 1;              break;
     case 'R': fname_cr   = strdup(optarg); break;
     case 'r': region     = strdup(optarg); break;
     case 'l': label_w    = atoi(optarg);   break;
@@ -541,7 +574,7 @@ int main_hprint(int argc, char *argv[]) {
       fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
 
       if (cin.fmt == '3') {
-        stream_fmt3_region(&cin, first_row - 1, last_row - 1, win_size, n_cols, color);
+        stream_fmt3_region(&cin, first_row - 1, last_row - 1, win_size, n_cols, color, granular);
       } else {
         decompress_in_situ(&cin);
         if (last_row > cin.n)
@@ -549,9 +582,9 @@ int main_hprint(int argc, char *argv[]) {
                   "(%"PRIu64"). This should not happen if dimensions match.\n",
                   first_row, last_row, cin.n);
         if (win_size > 1)
-          print_region_sample_windowed(&cin, first_row - 1, n_pos, win_size, n_cols, color);
+          print_region_sample_windowed(&cin, first_row - 1, n_pos, win_size, n_cols, color, granular);
         else
-          print_region_sample(&cin, first_row - 1, n_pos, color);
+          print_region_sample(&cin, first_row - 1, n_pos, color, granular);
       }
       fputc('\n', stdout);
       free_cdata(&cin);
@@ -619,7 +652,7 @@ int main_hprint(int argc, char *argv[]) {
       fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
 
       if (cin.fmt == '3') {
-        stream_fmt3_genome(&cin, ch, n_chroms, win_size, color);
+        stream_fmt3_genome(&cin, ch, n_chroms, win_size, color, granular);
       } else {
         decompress_in_situ(&cin);
         for (int ci = 0; ci < n_chroms; ci++) {
@@ -627,9 +660,9 @@ int main_hprint(int argc, char *argv[]) {
             wzfatal("[hprint] Chromosome %s rows exceed data size. "
                     "Dimensions should have matched.\n", ch[ci].chrm);
           if (win_size > 1)
-            print_region_sample_windowed(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, win_size, ch[ci].n_cols, color);
+            print_region_sample_windowed(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, win_size, ch[ci].n_cols, color, granular);
           else
-            print_region_sample(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, color);
+            print_region_sample(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, color, granular);
         }
       }
       fputc('\n', stdout);
