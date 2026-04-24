@@ -179,7 +179,6 @@ char* f2_get_string(cdata_t *c, uint64_t i);
 
 void     f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
 uint64_t f3_get_mu(cdata_t *c, uint64_t i);
-cdata_t  fmt3_decompress_range(const cdata_t *c, uint64_t beg, uint64_t end);
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
 #define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 

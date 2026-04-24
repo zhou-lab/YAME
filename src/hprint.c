@@ -239,6 +239,122 @@ static void print_hml(double b, int color) {
   if (color) fputs(ANSI_RESET, stdout);
 }
 
+/* Decode one fmt3 record at byte *ip in the compressed stream s[].
+ * Advances *ip. Returns number of rows covered; sets *M and *U.
+ * Zero-runs have M=U=0 and nrows > 1; non-zero records have nrows = 1. */
+static inline uint64_t fmt3_next(const uint8_t *s, uint64_t *ip,
+                                  uint64_t *M, uint64_t *U) {
+  uint8_t type = s[*ip] & 0x3;
+  if (type == 0) {
+    uint16_t v; memcpy(&v, s + *ip, 2);
+    *ip += 2; *M = 0; *U = 0;
+    return (uint64_t)(v >> 2);
+  }
+  if (type == 1) {
+    *M = s[*ip] >> 5; *U = (s[*ip] >> 2) & 0x7; *ip += 1;
+  } else if (type == 2) {
+    uint16_t v; memcpy(&v, s + *ip, 2);
+    uint64_t mv = (uint64_t)(v >> 2); *U = mv & 0x7f; *M = mv >> 7; *ip += 2;
+  } else {
+    uint64_t v; memcpy(&v, s + *ip, 8);
+    uint64_t mv = v >> 2; *U = mv & 0x7fffffff; *M = mv >> 31; *ip += 8;
+  }
+  return 1;
+}
+
+/* Single-pass fmt3 region printer.
+ * Walks the compressed stream once; accumulates windowed averages and emits
+ * H/M/L/. directly — zero intermediate allocation. */
+static void stream_fmt3_region(const cdata_t *c,
+                                uint64_t first_row, uint64_t last_row,
+                                uint64_t win_size, uint64_t n_cols, int color) {
+  uint64_t i = 0, row = 0, pM = 0, pU = 0, prem = 0;
+  double   wsum = 0.0;
+  uint64_t wvalid = 0, wpos = 0, wemit = 0;
+
+  while (wemit < n_cols && (prem > 0 || i < c->n)) {
+    if (prem == 0) { if (i >= c->n) break; prem = fmt3_next(c->s, &i, &pM, &pU); }
+    if (row < first_row) {
+      uint64_t skip = first_row - row;
+      if (skip >= prem) { row += prem; prem = 0; continue; }
+      row += skip; prem -= skip;
+    }
+    if (row > last_row) break;
+
+    uint64_t avail = last_row - row + 1;
+    uint64_t take  = prem < avail ? prem : avail;
+    int      cov   = (pM + pU > 0);
+    double   beta  = cov ? (double)pM / (pM + pU) : 0.0;
+
+    uint64_t cnt = take;
+    while (cnt > 0) {
+      uint64_t wleft = win_size - wpos, t = cnt < wleft ? cnt : wleft;
+      if (cov) { wsum += (double)t * beta; wvalid += t; }
+      wpos += t; cnt -= t;
+      if (wpos == win_size) {
+        if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
+        else             print_hml(wsum / wvalid, color);
+        wemit++; wsum = 0.0; wvalid = 0; wpos = 0;
+      }
+    }
+    row += take; prem -= take;
+  }
+  if (wpos > 0 && wemit < n_cols) {
+    if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
+    else             print_hml(wsum / wvalid, color);
+  }
+}
+
+/* Single-pass fmt3 genome printer.
+ * One forward scan covers all chromosomes in order; emits windowed H/M/L/.
+ * per chromosome — zero intermediate allocation. */
+static void stream_fmt3_genome(const cdata_t *c,
+                                const chrom_info_t *ch, int n_chroms,
+                                uint64_t win_size, int color) {
+  uint64_t i = 0, row = 0, pM = 0, pU = 0, prem = 0;
+
+  for (int ci = 0; ci < n_chroms; ci++) {
+    uint64_t cstart = ch[ci].first_row - 1, cend = ch[ci].last_row - 1;
+    double   wsum = 0.0;
+    uint64_t wvalid = 0, wpos = 0, wemit = 0;
+
+    while (row <= cend && (prem > 0 || i < c->n)) {
+      if (prem == 0) { if (i >= c->n) break; prem = fmt3_next(c->s, &i, &pM, &pU); }
+      if (row < cstart) {
+        uint64_t skip = cstart - row;
+        if (skip >= prem) { row += prem; prem = 0; continue; }
+        row += skip; prem -= skip;
+      }
+      if (row > cend) break;
+
+      uint64_t avail = cend - row + 1;
+      uint64_t take  = prem < avail ? prem : avail;
+      int      cov   = (pM + pU > 0);
+      double   beta  = cov ? (double)pM / (pM + pU) : 0.0;
+
+      uint64_t cnt = take;
+      while (cnt > 0) {
+        uint64_t wleft = win_size - wpos, t = cnt < wleft ? cnt : wleft;
+        if (cov) { wsum += (double)t * beta; wvalid += t; }
+        wpos += t; cnt -= t;
+        if (wpos == win_size) {
+          if (wemit < ch[ci].n_cols) {
+            if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
+            else             print_hml(wsum / wvalid, color);
+            wemit++;
+          }
+          wsum = 0.0; wvalid = 0; wpos = 0;
+        }
+      }
+      row += take; prem -= take;
+    }
+    if (wpos > 0 && wemit < ch[ci].n_cols) {
+      if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
+      else             print_hml(wsum / wvalid, color);
+    }
+  }
+}
+
 /*
  * Print one sample row in windowed mode.
  * Each output column is the average beta over win_size consecutive sites.
@@ -265,11 +381,6 @@ static void print_region_sample_windowed(cdata_t *c, uint64_t start_idx, uint64_
       for (uint64_t i = i0; i < i1; ++i) {
         sum += FMT0_IN_SET(*c, i) ? 1.0 : 0.0;
         valid++;
-      }
-    } else if (c->fmt == '3') {
-      for (uint64_t i = i0; i < i1; ++i) {
-        uint64_t mu = f3_get_mu(c, i);
-        if (MU2cov(mu) > 0) { sum += MU2beta(mu); valid++; }
       }
     } else if (c->fmt == '4') {
       for (uint64_t i = i0; i < i1; ++i) {
@@ -312,20 +423,6 @@ static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites
       int v = FMT0_IN_SET(*c, i) ? 1 : 0;
       if (color) fputs(v ? ANSI_METH : ANSI_UNMETH, stdout);
       fputc(v ? '1' : '0', stdout);
-      if (color) fputs(ANSI_RESET, stdout);
-
-    } else if (c->fmt == '3') {
-      uint64_t mu = f3_get_mu(c, i);
-      if (MU2cov(mu) == 0) {
-        if (color) fputs(ANSI_NA, stdout);
-        fputs(CH_NA, stdout);
-      } else {
-        double b = MU2beta(mu);
-        char ch         = b > 0.67 ? 'H' : b > 0.33 ? 'M' : 'L';
-        const char *col = b > 0.67 ? ANSI_HIGH : b > 0.33 ? ANSI_MED : ANSI_LOW;
-        if (color) fputs(col, stdout);
-        fputc(ch, stdout);
-      }
       if (color) fputs(ANSI_RESET, stdout);
 
     } else if (c->fmt == '4') {
@@ -440,36 +537,23 @@ int main_hprint(int argc, char *argv[]) {
       cdata_t cin = read_cdata1(&cf);
       if (cin.n == 0) { free_cdata(&cin); break; }
 
-      cdata_t *p_cdata;
-      uint64_t slice_start, slice_n;
-      cdata_t  c_tmp = {0};
+      const char *label = (si < snames.n) ? snames.s[si] : "";
+      fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
 
       if (cin.fmt == '3') {
-        /* partial decompress: scan only to last_row, never alloc the full array */
-        c_tmp = fmt3_decompress_range(&cin, first_row - 1, last_row - 1);
-        p_cdata = &c_tmp;
-        slice_start = 0;
-        slice_n = c_tmp.n;
+        stream_fmt3_region(&cin, first_row - 1, last_row - 1, win_size, n_cols, color);
       } else {
         decompress_in_situ(&cin);
         if (last_row > cin.n)
           wzfatal("[hprint] Region rows %"PRIu64"-%"PRIu64" exceed data size "
                   "(%"PRIu64"). This should not happen if dimensions match.\n",
                   first_row, last_row, cin.n);
-        p_cdata = &cin;
-        slice_start = first_row - 1;
-        slice_n = n_pos;
+        if (win_size > 1)
+          print_region_sample_windowed(&cin, first_row - 1, n_pos, win_size, n_cols, color);
+        else
+          print_region_sample(&cin, first_row - 1, n_pos, color);
       }
-
-      const char *label = (si < snames.n) ? snames.s[si] : "";
-      fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
-      if (win_size > 1)
-        print_region_sample_windowed(p_cdata, slice_start, slice_n, win_size, n_cols, color);
-      else
-        print_region_sample(p_cdata, slice_start, slice_n, color);
       fputc('\n', stdout);
-
-      if (cin.fmt == '3') free_cdata(&c_tmp);
       free_cdata(&cin);
       si++;
     }
@@ -531,38 +615,22 @@ int main_hprint(int argc, char *argv[]) {
       cdata_t cin = read_cdata1(&cf);
       if (cin.n == 0) { free_cdata(&cin); break; }
 
-      int is_fmt3 = (cin.fmt == '3');
-      if (!is_fmt3) decompress_in_situ(&cin);
-
       const char *label = (si < snames.n) ? snames.s[si] : "";
       fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
 
-      for (int ci = 0; ci < n_chroms; ci++) {
-        cdata_t *p_cdata;
-        uint64_t slice_start, slice_n;
-        cdata_t  c_tmp = {0};
-
-        if (is_fmt3) {
-          c_tmp = fmt3_decompress_range(&cin, ch[ci].first_row - 1,
-                                               ch[ci].last_row  - 1);
-          p_cdata = &c_tmp;
-          slice_start = 0;
-          slice_n = c_tmp.n;
-        } else {
+      if (cin.fmt == '3') {
+        stream_fmt3_genome(&cin, ch, n_chroms, win_size, color);
+      } else {
+        decompress_in_situ(&cin);
+        for (int ci = 0; ci < n_chroms; ci++) {
           if (ch[ci].last_row > cin.n)
             wzfatal("[hprint] Chromosome %s rows exceed data size. "
                     "Dimensions should have matched.\n", ch[ci].chrm);
-          p_cdata = &cin;
-          slice_start = ch[ci].first_row - 1;
-          slice_n = ch[ci].n_cpgs;
+          if (win_size > 1)
+            print_region_sample_windowed(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, win_size, ch[ci].n_cols, color);
+          else
+            print_region_sample(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, color);
         }
-
-        if (win_size > 1)
-          print_region_sample_windowed(p_cdata, slice_start, slice_n, win_size, ch[ci].n_cols, color);
-        else
-          print_region_sample(p_cdata, slice_start, slice_n, color);
-
-        if (is_fmt3) free_cdata(&c_tmp);
       }
       fputc('\n', stdout);
       free_cdata(&cin);
