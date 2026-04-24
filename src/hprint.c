@@ -53,7 +53,7 @@ static int usage(void) {
   fprintf(stderr, "  (neither)         Legacy full-dataset dump (fmt6 only).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -c            ANSI color output\n");
+  fprintf(stderr, "  -c            Disable ANSI color output (default: color on)\n");
   fprintf(stderr, "  -g            Granular output: 0-9 deciles instead of H/M/L\n");
   fprintf(stderr, "  -R <ref.cr>   Reference coordinate file (format 7)\n");
   fprintf(stderr, "  -r <region>   Genomic region: chr16  or  chr16:10000000-10100000\n");
@@ -484,12 +484,12 @@ static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites
 
 int main_hprint(int argc, char *argv[]) {
   int c;
-  int color = 0, label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
+  int color = 1, label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
   char *fname_cr = NULL, *region = NULL;
 
   while ((c = getopt(argc, argv, "cgR:r:l:t:w:h")) >= 0) {
     switch (c) {
-    case 'c': color      = 1;              break;
+    case 'c': color      = 0;              break;
     case 'g': granular   = 1;              break;
     case 'R': fname_cr   = strdup(optarg); break;
     case 'r': region     = strdup(optarg); break;
