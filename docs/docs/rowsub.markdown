@@ -1,6 +1,6 @@
 ---
-title: 4. Subset Rows
-nav_order: 4
+title: 5. Subset Rows
+nav_order: 5
 ---
 
 # 4. Subsetting Rows in a Packed `.cx` File

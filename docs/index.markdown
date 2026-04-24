@@ -36,6 +36,7 @@ YAME (Yet Another Methylation Encoder) is designed for efficient sequence-level 
 
 - **[Storage & Format]({% link docs/storage.markdown %})** - Working with CX formats
 - **[Summarize & Encode]({% link docs/summarize.markdown %})** - Calculate statistics and aggregations
+- **[Visualization]({% link docs/hprint.markdown %})** - High-level and detailed visual inspection
 - **[Test Enrichment]({% link docs/enrichment.markdown %})** - Test methylation enrichment across genomic features
 - **[Subset Rows]({% link docs/sample.markdown %})** - Extract samples and regions
 - **[Aggregate Row-wise]({% link docs/rowop.markdown %})** - Merge pseudobulks and perform calculations

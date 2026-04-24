@@ -1,6 +1,6 @@
 ---
-title: 3. Test Enrichment
-nav_order: 3
+title: 4. Test Enrichment
+nav_order: 4
 ---
 
 # 3. Enrichment Testing with YAME

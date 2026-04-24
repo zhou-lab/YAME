@@ -1,6 +1,6 @@
 ---
-title: 7. Mask & Perturb Data
-nav_order: 7
+title: 8. Mask & Perturb Data
+nav_order: 8
 ---
 
 # 7. Downsampling, Masking & Noise Injection

@@ -1,6 +1,6 @@
 ---
-title: 5. Aggregate Row-wise
-nav_order: 5
+title: 6. Aggregate Row-wise
+nav_order: 6
 ---
 
 # 5. Row-wise Aggregation of Methylation Sites

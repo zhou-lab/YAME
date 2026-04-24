@@ -1,6 +1,6 @@
 ---
-title: 6. Combine, Split & Index
-nav_order: 6
+title: 7. Combine, Split & Index
+nav_order: 7
 ---
 
 # 6. Combine, Split & Index
