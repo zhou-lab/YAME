@@ -241,7 +241,8 @@ static uint64_t get_data_length(const cdata_t *c, uint8_t *unit) {
   uint64_t n = 0;
   for (uint64_t i=0; i < c->n; ) {
     if ((c->s[i] & 0x3) == 0) {
-      n += (((uint16_t*) (c->s+i))[0])>>2;
+      uint16_t v; memcpy(&v, c->s+i, 2);
+      n += v >> 2;
       i += 2;
     } else if ((c->s[i] & 0x3) == 1) {
       uint64_t M = (c->s[i])>>5;
@@ -249,13 +250,15 @@ static uint64_t get_data_length(const cdata_t *c, uint8_t *unit) {
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
       n++; i++;
     } else if ((c->s[i] & 0x3) == 2) {
-      uint64_t M = (((uint16_t*) (c->s+i))[0])>>2;
+      uint16_t v; memcpy(&v, c->s+i, 2);
+      uint64_t M = v >> 2;
       uint64_t U = M & ((1<<7)-1);
       M >>= 7;
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
       n++; i += 2;
     } else {
-      uint64_t M = (((uint64_t*) (c->s+i))[0])>>2;
+      uint64_t v; memcpy(&v, c->s+i, 8);
+      uint64_t M = v >> 2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
       while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
@@ -309,6 +312,62 @@ cdata_t fmt3_decompress(const cdata_t c) {
   inflated.compressed = 0;
   inflated.fmt = '3';
   return inflated;
+}
+
+/*
+ * Decompress only rows [beg, end] (0-based, inclusive) from a compressed fmt3
+ * block, without materialising the full array. Single forward scan; allocates
+ * only (end-beg+1)*unit bytes.
+ */
+cdata_t fmt3_decompress_range(const cdata_t *c, uint64_t beg, uint64_t end) {
+  uint8_t unit = c->unit ? c->unit : 8;
+  uint64_t n_out = end - beg + 1;
+  uint8_t *s = calloc((size_t)n_out * unit, 1);
+
+  uint64_t row = 0; /* logical position in the inflated stream */
+
+  for (uint64_t i = 0; i < c->n && row <= end; ) {
+    uint8_t type = c->s[i] & 0x3;
+
+    if (type == 0) {
+      /* zero-run: output is already zero from calloc, just advance row */
+      uint16_t v; memcpy(&v, c->s + i, 2);
+      row += (uint64_t)(v >> 2);
+      i += 2;
+    } else {
+      uint64_t M, U;
+      size_t rec_size;
+
+      if (type == 1) {
+        M = c->s[i] >> 5;
+        U = (c->s[i] >> 2) & 0x7;
+        rec_size = 1;
+      } else if (type == 2) {
+        uint16_t v; memcpy(&v, c->s + i, 2);
+        uint64_t mv = (uint64_t)(v >> 2);
+        U = mv & ((1u << 7) - 1);
+        M = mv >> 7;
+        rec_size = 2;
+      } else {
+        uint64_t v; memcpy(&v, c->s + i, 8);
+        uint64_t mv = v >> 2;
+        U = mv & ((1ul << 31) - 1);
+        M = mv >> 31;
+        rec_size = 8;
+      }
+
+      if (row >= beg) {
+        uint64_t nbits = (unit == 1) ? 4 : (uint64_t)unit << 2;
+        fitMU(&M, &U, nbits);
+        f3_pack_mu(s + (row - beg) * unit, M, U, unit);
+      }
+      row++;
+      i += rec_size;
+    }
+  }
+
+  return (cdata_t){ .fmt = '3', .n = n_out, .unit = unit,
+                    .compressed = 0, .s = s };
 }
 
 stats_t* summarize1_queryfmt3(
