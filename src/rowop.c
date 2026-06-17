@@ -69,11 +69,15 @@
  *      count        number of contributing samples
  *      mean_beta   mean beta value across samples
  *      sd_beta     standard deviation of beta
- *      delta_beta  min(beta>0.5) - max(beta<0.5)
+ *      delta_beta  min(beta>0.5) - max(beta<0.5)   (worst-case group margin)
  *      min_n       min(#beta<0.5, #beta>0.5)
+ *      delta_mean  mean(beta>0.5) - mean(beta<0.5) (group-center separation)
  *
  *    Notes:
- *      - delta_beta is only defined when both sides exist; otherwise printed as NA.
+ *      - delta_beta/delta_mean are only defined when both sides exist; else NA.
+ *      - delta_beta measures the gap between the closest members of the two
+ *        groups (sensitive to group extremes); delta_mean measures the
+ *        separation of group means (robust to a single near-0.5 member).
  *      - sd is computed as sqrt(E[x^2] - E[x]^2).
  *
  * 4) binstring  (text output; fmt3)
@@ -136,9 +140,10 @@ static int usage(void) {
   fprintf(stderr, "  stat         Per-row summary statistics across samples.\n");
   fprintf(stderr, "              Input: fmt3 only.\n");
   fprintf(stderr, "              Output columns:\n");
-  fprintf(stderr, "                count  mean_beta  sd_beta  delta_beta  min_n\n");
-  fprintf(stderr, "              delta_beta = min(beta>0.5) - max(beta<0.5).\n");
+  fprintf(stderr, "                count  mean_beta  sd_beta  delta_beta  min_n  delta_mean\n");
+  fprintf(stderr, "              delta_beta = min(beta>0.5) - max(beta<0.5)   (worst-case margin).\n");
   fprintf(stderr, "              min_n      = min(#beta<0.5, #beta>0.5).\n");
+  fprintf(stderr, "              delta_mean = mean(beta>0.5) - mean(beta<0.5) (group-center separation).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "  binstring    Convert per-sample beta values into row-wise binary strings.\n");
   fprintf(stderr, "              Input: fmt3 only. Uses -b as the beta threshold.\n");
@@ -297,7 +302,7 @@ static cdata_t rowop_musum(cfile_t cf) {
   return cout;
 }
 
-static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, double *b0max, double *b1min, int *b0n, int *b1n, cdata_t *c, config_rowop_t *cfg) {
+static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, double *b0max, double *b1min, double *b0sum, double *b1sum, int *b0n, int *b1n, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
     if (!mu0) continue; // 0-0 is skipped
@@ -311,11 +316,13 @@ static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, doubl
       cnts[i]++;
       if (x < 0.5) {
         b0n[i]++;
+        b0sum[i] += x;
         if (x > b0max[i])
           b0max[i] = x;
       }
       if (x > 0.5) {
         b1n[i]++;
+        b1sum[i] += x;
         if (x < b1min[i])
           b1min[i] = x;
       }
@@ -336,19 +343,21 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   double *sum_sq = calloc(n, sizeof(double));
   double *b0max = calloc(n, sizeof(double));
   double *b1min = calloc(n, sizeof(double));
+  double *b0sum = calloc(n, sizeof(double));
+  double *b1sum = calloc(n, sizeof(double));
   int *b0n = calloc(n, sizeof(int));
   int *b1n = calloc(n, sizeof(int));
 
   srand(cfg->seed);
   for (uint64_t i = 0; i < n; ++i) b1min[i] = 1.0;
-  
+
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
     if (c.n == 0) break;
     cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
-    case '3': collect_stat_fmt3(cnts, sum, sum_sq, b0max, b1min, b0n, b1n, &c2, cfg); break;
+    case '3': collect_stat_fmt3(cnts, sum, sum_sq, b0max, b1min, b0sum, b1sum, b0n, b1n, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -365,10 +374,10 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     out = stdout;
   }
 
-  fputs("count\tmean_beta\tsd_beta\tdelta_beta\tmin_n\n", out);
+  fputs("count\tmean_beta\tsd_beta\tdelta_beta\tmin_n\tdelta_mean\n", out);
   for (uint64_t i = 0; i < n; ++i) {
     if (cnts[i] == 0) {
-      fputs("0\tNA\tNA\tNA\t0\n", out);
+      fputs("0\tNA\tNA\tNA\t0\tNA\n", out);
       continue;
     }
 
@@ -378,18 +387,31 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     /* delta_beta = b1min - b0max, but only meaningful if both sides exist */
     double delta_beta = (b0n[i] > 0 && b1n[i] > 0) ? (b1min[i] - b0max[i]) : -1.0;
 
+    /* delta_mean = mean(beta>0.5) - mean(beta<0.5); robust group separation,
+       only defined when both sides exist */
+    int both = (b0n[i] > 0 && b1n[i] > 0);
+    double delta_mean = both ? (b1sum[i] / b1n[i] - b0sum[i] / b0n[i]) : -1.0;
+
     /* min_n = min(#beta<0.5, #beta>0.5) */
     uint32_t min_n = (b1n[i] < b0n[i]) ? b1n[i] : b0n[i];
 
     if (delta_beta < 0) {
-      fprintf(out, "%u\t%1.3f\t%1.3f\tNA\t%u\n", cnts[i], mean, sd, min_n);
+      fprintf(out, "%u\t%1.3f\t%1.3f\tNA\t%u\t", cnts[i], mean, sd, min_n);
     } else {
-      fprintf(out, "%u\t%1.3f\t%1.3f\t%1.3f\t%u\n", cnts[i], mean, sd, delta_beta, min_n);
+      fprintf(out, "%u\t%1.3f\t%1.3f\t%1.3f\t%u\t", cnts[i], mean, sd, delta_beta, min_n);
     }
+    if (both) fprintf(out, "%1.3f\n", delta_mean);
+    else      fputs("NA\n", out);
   }
   free(cnts);
   free(sum_sq);
   free(sum);
+  free(b0max);
+  free(b1min);
+  free(b0sum);
+  free(b1sum);
+  free(b0n);
+  free(b1n);
   if (fname_out) fclose(out);
 }
 
