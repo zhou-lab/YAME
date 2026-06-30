@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include "kstring.h"
+#include "cdata.h"
 
 typedef struct stats_t {
   uint64_t sum_depth;           // sum of depth
@@ -46,5 +47,19 @@ typedef struct config_t {
   char *fname_snames;
   char *fname_qry_stdin;
 } config_t;
+
+/**
+ * Normalize a query/mask record into a representation summarize1() can consume:
+ * fmt 0/1 are converted to an fmt0 bitset; fmt >= 2 are decompressed in place.
+ */
+void prepare_mask(cdata_t *c);
+
+/**
+ * Summarize one (already prepared) query record against one mask record.
+ * Returns a heap array of n_st stats_t (caller frees each .sm/.sq and the array).
+ * When c_mask is empty (n == 0), a whole-record summary is produced.
+ */
+stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st,
+                    char *sm, char *sq, config_t *config);
 
 #endif /* _SUMMARY_H */

@@ -89,3 +89,11 @@ Thumbs.db
 
 # Atom
 .atom/
+
+# -----------------------------------------------------------------------------
+# Project build artifacts
+# -----------------------------------------------------------------------------
+# Static libraries (e.g. libyame.a, htslib/libhts.a)
+*.a
+# The yame CLI binary (no extension)
+/yame

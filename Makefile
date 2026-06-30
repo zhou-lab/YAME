@@ -17,6 +17,10 @@ endif
 # Program name
 PROG = yame
 
+# Static library for downstream linkers (e.g. MethScope2): all objects except
+# the CLI dispatcher (src/main.o), which carries the lone int main().
+LIB = libyame.a
+
 # HTSlib
 LHTSLIB_DIR = htslib
 LHTSLIB = $(LHTSLIB_DIR)/libhts.a
@@ -26,11 +30,14 @@ OBJECTS := $(SOURCES:$(SRC_DIR)/%.c=$(SRC_DIR)/%.o)
 
 CFLAGS += -I$(SRC_DIR) -I$(LHTSLIB_DIR)
 
-.PHONY: all build debug clean
+.PHONY: all build debug clean lib
 
 all: build
 
 build: exportcf $(PROG)
+
+# Build just the static library (used by MethScope2).
+lib: exportcf $(LIB)
 
 exportcf:
 	$(eval export CF_OPTIMIZE)
@@ -62,9 +69,15 @@ $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 $(PROG): $(LHTSLIB) $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $(OBJECTS) $(LHTSLIB) $(CLIB)
 
+# Archive every object except the CLI entry point (main.o has int main()).
+LIBOBJECTS = $(filter-out $(SRC_DIR)/main.o, $(OBJECTS))
+
+$(LIB): $(LHTSLIB) $(LIBOBJECTS)
+	ar rcs $@ $(LIBOBJECTS)
+
 ###################
 ###   clean    ####
 ###################
 clean :
-	rm -f $(SRC_DIR)/*.o $(PROG)
+	rm -f $(SRC_DIR)/*.o $(PROG) $(LIB)
 	$(MAKE) -C $(LHTSLIB_DIR) clean

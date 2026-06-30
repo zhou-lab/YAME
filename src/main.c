@@ -23,6 +23,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include "cfile.h"
+#include "yame_version.h"
 
 const int unit_base[40] = {
   0,  1,  1,  4,  4,  8,  8,  0,
@@ -50,7 +51,7 @@ int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
 int main_perturb(int argc, char *argv[]);
 
-#define PACKAGE_VERSION "v1.9"
+#define PACKAGE_VERSION YAME_VERSION
 
 static int usage(void)
 {

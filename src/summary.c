@@ -156,7 +156,7 @@ stats_t* summarize1_queryfmt4(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char 
 stats_t* summarize1_queryfmt6(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 stats_t* summarize1_queryfmt7(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 
-static stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
   switch (c->fmt) {
   case '0': return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
@@ -223,7 +223,7 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
   }
 }
 
-static void prepare_mask(cdata_t *c) {
+void prepare_mask(cdata_t *c) {
   if (c->fmt < '2') {
     convertToFmt0(c);
   } else {
