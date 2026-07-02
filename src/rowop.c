@@ -93,11 +93,16 @@
  *      confident state (more 0s -> 0, more 1s -> 1; exact tie -> 0). This
  *      replaces the previous random (-s seeded) tie-break, so output is now
  *      reproducible and -s no longer affects binstring.
+ *      The fill is only trusted when the majority is "sweeping": the larger
+ *      confident side must be >= -M <fold> times the smaller (unanimous counts
+ *      as sweeping; default fold = 10). If a CpG has ambiguous cells but the
+ *      majority is below this fold, the whole line is emitted as the '2'
+ *      sentinel (see Filter). CpGs with no ambiguous cells are unaffected.
  *    Filter:
- *      -m <frac> drops CpGs whose ambiguous fraction exceeds <frac> by emitting
- *      an all-'2' sentinel line (same length as other lines, preserving
- *      positional alignment). '2' never appears in a surviving line. Default
- *      1.0 = no filtering.
+ *      A CpG's line is emitted as an all-'2' sentinel (same length as other
+ *      lines, preserving positional alignment) when its ambiguous fraction
+ *      exceeds -m <frac> (default 1.0 = off), or when it has ambiguous cells
+ *      but no sweeping majority to fill them. '2' never appears otherwise.
  *
  * 5) cometh  (text output; fmt3)
  *    Purpose:
@@ -123,6 +128,7 @@ typedef struct config_rowop_t {
   unsigned mincov;
   double beta_threshold;   // default to 0.5
   double max_ambig_frac;   // binstring: max fraction of ambiguous cells per CpG (default 1.0 = no filtering)
+  double min_major_fold;   // binstring: min fold (hi/lo) of confident calls to trust the majority fill (default 10)
   int cometh_window;
   int verbose;
   unsigned seed;
@@ -179,6 +185,9 @@ static int usage(void) {
   fprintf(stderr, "  -b <beta>    Call methylated if beta > threshold (default: 0.5).\n");
   fprintf(stderr, "  -m <frac>    Max ambiguous fraction per CpG; above this the line is emitted\n");
   fprintf(stderr, "              as an all-'2' sentinel (default: 1.0 = no filtering).\n");
+  fprintf(stderr, "  -M <fold>    Min majority fold (hi/lo of confident calls) to trust the fill\n");
+  fprintf(stderr, "              (default: 10). If a CpG has ambiguous cells but the majority is\n");
+  fprintf(stderr, "              below this fold, its line is emitted as the all-'2' sentinel.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "cometh options:\n");
   fprintf(stderr, "  -w <W>       Neighbor window size (default: 5).\n");
@@ -492,7 +501,14 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     uint64_t n0 = ncells - n1 - namb;
     char fill = (n1 > n0) ? '1' : '0';  // exact tie -> 0
 
-    if (ncells && (double)namb > cfg->max_ambig_frac * (double)ncells) {
+    // Only trust the majority fill when it is "sweeping" (larger side >= fold x smaller;
+    // unanimous counts as sweeping). Filling from a near-even split fabricates calls.
+    uint64_t hi = (n1 > n0) ? n1 : n0;
+    uint64_t lo = (n1 > n0) ? n0 : n1;
+    int sweeping = (hi > 0) && (lo == 0 || (double)hi >= cfg->min_major_fold * (double)lo);
+
+    if ((ncells && (double)namb > cfg->max_ambig_frac * (double)ncells) ||
+        (namb > 0 && !sweeping)) {
       for (uint64_t kk=0; kk<ncells; ++kk) fputc('2', out);  // filtered sentinel
     } else {
       for (uint64_t kk=0; kk<ncells; ++kk) {
@@ -572,12 +588,13 @@ int main_rowop(int argc, char *argv[]) {
     .mincov = 1,
     .beta_threshold = 0.5,
     .max_ambig_frac = 1.0,
+    .min_major_fold = 10.0,
     .cometh_window = 5,
     .seed = (unsigned) time(NULL),
     .verbose = 0};
     
   char *op = NULL;
-  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:h"))>=0) {
     switch (c) {
     case 'o': op = strdup(optarg); break;
     case 'p': config.beta0 = atof(optarg); break;
@@ -587,6 +604,7 @@ int main_rowop(int argc, char *argv[]) {
     case 'w': config.cometh_window = atoi(optarg); break;
     case 's': config.seed = atoi(optarg); break;
     case 'm': config.max_ambig_frac = atof(optarg); break;
+    case 'M': config.min_major_fold = atof(optarg); break;
     case 'v': config.verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
