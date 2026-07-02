@@ -82,11 +82,22 @@
  *
  * 4) binstring  (text output; fmt3)
  *    Purpose:
- *      Emit a row-wise binary string across samples.
+ *      Emit a row-wise binary string across samples (one line per CpG row,
+ *      one character per sample).
  *    Behavior:
- *      For each sample/row, output '1' if beta > beta_threshold (-b), else '0'.
- *    Notes:
- *      Current implementation checks mu!=0 but does not enforce mincov.
+ *      For each sample at a CpG:
+ *        - confident '1' if beta >  beta_threshold (-b)
+ *        - confident '0' if beta <  beta_threshold
+ *        - "ambiguous"   if mu==0, cov < mincov (-c), or beta == beta_threshold
+ *      Ambiguous cells are filled deterministically with the CpG's majority
+ *      confident state (more 0s -> 0, more 1s -> 1; exact tie -> 0). This
+ *      replaces the previous random (-s seeded) tie-break, so output is now
+ *      reproducible and -s no longer affects binstring.
+ *    Filter:
+ *      -m <frac> drops CpGs whose ambiguous fraction exceeds <frac> by emitting
+ *      an all-'2' sentinel line (same length as other lines, preserving
+ *      positional alignment). '2' never appears in a surviving line. Default
+ *      1.0 = no filtering.
  *
  * 5) cometh  (text output; fmt3)
  *    Purpose:
@@ -111,6 +122,7 @@ typedef struct config_rowop_t {
   double beta1; // higher threshold
   unsigned mincov;
   double beta_threshold;   // default to 0.5
+  double max_ambig_frac;   // binstring: max fraction of ambiguous cells per CpG (default 1.0 = no filtering)
   int cometh_window;
   int verbose;
   unsigned seed;
@@ -146,7 +158,9 @@ static int usage(void) {
   fprintf(stderr, "              delta_mean = mean(beta>0.5) - mean(beta<0.5) (group-center separation).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "  binstring    Convert per-sample beta values into row-wise binary strings.\n");
-  fprintf(stderr, "              Input: fmt3 only. Uses -b as the beta threshold.\n");
+  fprintf(stderr, "              Input: fmt3 only. Uses -b as the beta threshold, -c as min coverage.\n");
+  fprintf(stderr, "              Ambiguous cells (mu==0, cov<mincov, or beta==threshold) are filled\n");
+  fprintf(stderr, "              with the CpG's majority state (deterministic; -s does not apply).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "  cometh       Neighbor co-methylation summary within a window.\n");
   fprintf(stderr, "              Input: fmt3 only.\n");
@@ -161,9 +175,10 @@ static int usage(void) {
   fprintf(stderr, "  -q <beta1>   Call methylated   if beta > beta1 (default: 0.6).\n");
   fprintf(stderr, "              Betas in [beta0, beta1] are ignored.\n");
   fprintf(stderr, "\n");
-  fprintf(stderr, "binstring threshold:\n");
+  fprintf(stderr, "binstring options:\n");
   fprintf(stderr, "  -b <beta>    Call methylated if beta > threshold (default: 0.5).\n");
-  fprintf(stderr, "  -s [int]     Seed for tie breaking (default: current time).\n");
+  fprintf(stderr, "  -m <frac>    Max ambiguous fraction per CpG; above this the line is emitted\n");
+  fprintf(stderr, "              as an all-'2' sentinel (default: 1.0 = no filtering).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "cometh options:\n");
   fprintf(stderr, "  -w <W>       Neighbor window size (default: 5).\n");
@@ -415,18 +430,13 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   if (fname_out) fclose(out);
 }
 
-static double random_zero_to_one() {
-  // rand() returns an integer in the range [0, RAND_MAX]
-  // Casting to double ensures floating-point division
-  return (double)rand() / ((double) RAND_MAX + 1.0);
-}
-
 static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return;    // nothing in cfile
   uint64_t n = cdata_n(&c);
   uint64_t binstring_bytes = 0;
-  uint8_t *binstring = NULL;
+  uint8_t *binstring = NULL;   // confident methylated (1) bits
+  uint8_t *ambig = NULL;       // ambiguous cells (tie / low-or-no depth)
   uint64_t k=0;
   for (k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -436,22 +446,24 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     if (binstring_bytes*8 <= k) {
       binstring_bytes++;
       binstring = realloc(binstring, (binstring_bytes*n));
-      memset(binstring + (binstring_bytes-1)*n, 0, sizeof(n));
+      ambig = realloc(ambig, (binstring_bytes*n));
+      memset(binstring + (binstring_bytes-1)*n, 0, n);
+      memset(ambig + (binstring_bytes-1)*n, 0, n);
     }
-    
+
     switch (c.fmt) {
     case '3': {
       for (uint64_t i=0; i<c2.n; ++i) {
         uint64_t mu = f3_get_mu(&c2, i);
-        /* if ((mu>>32) > (mu<<32>>32)) { */
-        if (mu) {
-          
-          if (MU2beta(mu) > cfg->beta_threshold) {
+        if (!mu || MU2cov(mu) < cfg->mincov) {          // no / low depth
+          ambig[(k>>3)*n+i] |= (1<<(k&0x7));
+        } else {
+          double beta = MU2beta(mu);
+          if (beta > cfg->beta_threshold) {             // confident methylated
             binstring[(k>>3)*n+i] |= (1<<(k&0x7));
-          } else if (MU2beta(mu) == cfg->beta_threshold) {
-            if (random_zero_to_one()>0.5)
-              binstring[(k>>3)*n+i] |= (1<<(k&0x7));
-          }
+          } else if (beta == cfg->beta_threshold) {     // M==U tie
+            ambig[(k>>3)*n+i] |= (1<<(k&0x7));
+          }                                             // else confident unmethylated (0)
         }
       }
       break;
@@ -465,16 +477,36 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     free(c.s); free(c2.s);
   }
 
+  uint64_t ncells = k;
   FILE *out;
   if (fname_out) { out = fopen(fname_out, "w");
   } else { out = stdout; }
   for (uint64_t i=0; i<n; ++i) {
-    for (uint64_t kk=0; kk<k; ++kk) {
-      fputc('0'+((binstring[(kk>>3)*n+i] >> (kk&0x7))&0x1), out);
+    // Per-CpG majority over confidently-called cells; ambiguous cells filled with it.
+    uint64_t n1 = 0, namb = 0;
+    for (uint64_t kk=0; kk<ncells; ++kk) {
+      int is_amb = (ambig[(kk>>3)*n+i] >> (kk&0x7)) & 0x1;
+      if (is_amb) { namb++; }
+      else if ((binstring[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) { n1++; }
+    }
+    uint64_t n0 = ncells - n1 - namb;
+    char fill = (n1 > n0) ? '1' : '0';  // exact tie -> 0
+
+    if (ncells && (double)namb > cfg->max_ambig_frac * (double)ncells) {
+      for (uint64_t kk=0; kk<ncells; ++kk) fputc('2', out);  // filtered sentinel
+    } else {
+      for (uint64_t kk=0; kk<ncells; ++kk) {
+        if ((ambig[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) {
+          fputc(fill, out);
+        } else {
+          fputc('0'+((binstring[(kk>>3)*n+i] >> (kk&0x7))&0x1), out);
+        }
+      }
     }
     fputc('\n', out);
   }
   free(binstring);
+  free(ambig);
   if (fname_out) fclose(out);
 }
 
@@ -539,12 +571,13 @@ int main_rowop(int argc, char *argv[]) {
     .beta1 = 0.6,
     .mincov = 1,
     .beta_threshold = 0.5,
+    .max_ambig_frac = 1.0,
     .cometh_window = 5,
     .seed = (unsigned) time(NULL),
     .verbose = 0};
     
   char *op = NULL;
-  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:h"))>=0) {
     switch (c) {
     case 'o': op = strdup(optarg); break;
     case 'p': config.beta0 = atof(optarg); break;
@@ -553,6 +586,7 @@ int main_rowop(int argc, char *argv[]) {
     case 'b': config.beta_threshold = atof(optarg); break;
     case 'w': config.cometh_window = atoi(optarg); break;
     case 's': config.seed = atoi(optarg); break;
+    case 'm': config.max_ambig_frac = atof(optarg); break;
     case 'v': config.verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
