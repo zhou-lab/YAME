@@ -145,9 +145,8 @@ Helpful for:
 yame rowop -o binstring -b 0.6 input.cx > binstrings.txt
 ```
 
-* Converts each sample to a binary string per row
+* Converts each sample to a binary string per row (one line **per row**, one character per sample)
 * Threshold `-b` decides methylated vs unmethylated (default 0.5)
-* Outputs one string **per row**
 
 Example output:
 
@@ -156,6 +155,45 @@ Example output:
 1100001110
 ...
 ```
+
+### Cell calls
+
+For each sample at a row:
+
+* `1` — confident methylated (`beta > -b`)
+* `0` — confident unmethylated (`beta < -b`)
+* **ambiguous** — no/low depth (`mu == 0` or `cov < -c`) or an exact tie (`beta == -b`)
+
+Ambiguous cells are **not** guessed at random. They are filled deterministically with the
+row's *majority* confident state (more `0`s → `0`, more `1`s → `1`; exact tie → `0`). Output
+is therefore reproducible, and `-s` no longer affects `binstring`.
+
+### Trusting the fill: sweeping majority (`-M`)
+
+Filling from a near-even split (e.g. 6 vs 5) fabricates unreliable calls, so a row is only
+filled when its majority is **sweeping**: the larger confident side must be at least
+`-M <fold>` times the smaller (unanimous counts as sweeping; default `-M 10`). If a row has
+ambiguous cells but the majority is below this fold, the whole line is emitted as the `2`
+sentinel (below). Rows with no ambiguous cells always keep their real `0`/`1` calls,
+regardless of how thin the split is.
+
+### Filtering and the `2` sentinel (`-m`)
+
+A row's line is emitted as an all-`2` string — same length as every other line, so positional
+alignment with the input row universe is preserved — when **either**:
+
+* its ambiguous fraction exceeds `-m <frac>` (default `1.0` = no filtering), or
+* it has ambiguous cells but no sweeping majority to fill them (see `-M`).
+
+`2` never appears in an otherwise-valid line, so downstream tools can treat any line
+containing `2` as a filtered row.
+
+| Option | Meaning | Default |
+| ------ | ------- | ------- |
+| `-b <beta>` | methylated if `beta > beta` | 0.5 |
+| `-c <mincov>` | cells with `cov < mincov` treated as ambiguous | 1 |
+| `-m <frac>` | max ambiguous fraction before the row is sentinel-filtered | 1.0 (off) |
+| `-M <fold>` | min majority fold (hi/lo of confident calls) to trust the fill | 10 |
 
 Useful for:
 
