@@ -34,6 +34,8 @@ static int usage(void) {
   yame_usage_opt("-o [PATH]", "output .cx file name.");
   yame_usage_cont("If missing, write to stdout (no index will be written).");
   yame_usage_opt("-s [int]", "seed for random sampling (default: current time).");
+  yame_usage_cont("Fix it to make a downsampling reproducible: the same seed");
+  yame_usage_cont("and input give the same sites every run.");
   yame_usage_opt("-b", "After sampling, randomly binarize sampled format 3 (MU)");
   yame_usage_cont("rows. Output is still format 3.");
   yame_usage_opt("-N [int]", "number of records to sample/keep per sample (default: 100).");
