@@ -464,4 +464,42 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
 
 #define YAME_ASSETS_N (sizeof(YAME_ASSETS)/sizeof(YAME_ASSETS[0]) - 1)
 
+/**
+ * Row-space fingerprints: how many rows a file written against each reference
+ * has.
+ *
+ * A CX record carries its row count and nothing about what those rows ARE, so
+ * the count is the only handle on which reference it belongs to -- and it is
+ * enough, because no two row spaces in the catalogue share one. That is what
+ * lets a command infer -R rather than make the caller repeat what the file
+ * already implies.
+ *
+ * `rows` is hand-pinned in the catalog: it is a property of a file's contents,
+ * which no manifest carries. `fetch` is the argument that would put the
+ * reference in the store, for the error message when it is not there.
+ */
+typedef struct yame_ref_rows_s {
+    const char *name;        /* hg38, EPIC, ... */
+    const char *kind;        /* "genome" (a .cr) or "array" (an ordering) */
+    uint64_t    rows;
+    const char *store_path;  /* under the store root */
+    const char *fetch;       /* "<source>/<target>" for `yame fetch` */
+} yame_ref_rows_t;
+
+static const yame_ref_rows_t YAME_REF_ROWS[] = {
+    { "hg38", "genome", 29401795, "KYCGKB/hg38/cpg_nocontig.cr", "KYCGKB/hg38" },
+    { "mm10", "genome", 21867837, "KYCGKB/mm10/cpg_nocontig.cr", "KYCGKB/mm10" },
+    { "mm39", "genome", 21889506, "KYCGKB/mm39/cpg_nocontig.cr", "KYCGKB/mm39" },
+    { "EPIC", "array", 866553, "InfiniumAnnotation/EPIC/EPIC.ordering.tsv.gz", "InfiniumAnnotation/EPIC" },
+    { "EPICv2", "array", 937690, "InfiniumAnnotation/EPICv2/EPICv2.ordering.tsv.gz", "InfiniumAnnotation/EPICv2" },
+    { "HM27", "array", 27722, "InfiniumAnnotation/HM27/HM27.ordering.tsv.gz", "InfiniumAnnotation/HM27" },
+    { "HM450", "array", 486427, "InfiniumAnnotation/HM450/HM450.ordering.tsv.gz", "InfiniumAnnotation/HM450" },
+    { "Mammal40", "array", 38607, "InfiniumAnnotation/Mammal40/Mammal40.ordering.tsv.gz", "InfiniumAnnotation/Mammal40" },
+    { "MM285", "array", 287692, "InfiniumAnnotation/MM285/MM285.ordering.tsv.gz", "InfiniumAnnotation/MM285" },
+    { "MSA", "array", 284309, "InfiniumAnnotation/MSA/MSA.ordering.tsv.gz", "InfiniumAnnotation/MSA" },
+    { NULL, NULL, 0, NULL, NULL }
+};
+
+#define YAME_REF_ROWS_N (sizeof(YAME_REF_ROWS)/sizeof(YAME_REF_ROWS[0]) - 1)
+
 #endif /* _YAME_REGISTRY_H */

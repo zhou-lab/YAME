@@ -53,6 +53,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <inttypes.h>
 
 /* The manifest filename, in every directory of every source. */
 #define YAME_ASSETS_SUMS_FILE "SHA256SUMS"
@@ -232,5 +234,43 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
                              const char *anchor_sha,
                              const char *const *only, size_t n_only,
                              const yame_fetch_opt_t *opt, char **err);
+
+/* ------------------------------------------- inferring a row-space reference */
+
+/**
+ * Which reference a file of `rows` rows is written against.
+ *
+ * The row count is the only handle a CX record gives on what its rows ARE,
+ * and it is enough: no two row spaces in the catalogue share a count. This is
+ * what lets a command work out -R rather than make the caller repeat what the
+ * file already implies.
+ *
+ * `want_kind` is "genome" for a coordinate stream (.cr) or "array" for a probe
+ * ordering; NULL accepts either. On YAME_REF_OK, `path` holds the resolved
+ * file. `hit` (optional) receives the matched row, which carries the name and
+ * the `yame fetch` argument for an error message.
+ *
+ * Resolves only -- it never downloads. A command that finds the reference
+ * missing should say which fetch would supply it and stop, not start a
+ * multi-megabyte transfer in the middle of a print.
+ */
+enum {
+  YAME_REF_OK         =  0,   /* identified and in the store */
+  YAME_REF_MISSING    =  1,   /* identified, not downloaded */
+  YAME_REF_WRONG_KIND =  2,   /* identified, but not the kind asked for */
+  YAME_REF_UNKNOWN    = -1    /* the count matches nothing known */
+};
+
+int yame_ref_for_rows(uint64_t rows, const char *store_override,
+                      const char *want_kind, char *path, size_t n,
+                      const char **name, const char **fetch);
+
+/**
+ * Print why an inference did not produce a usable reference: which reference
+ * the row count named, and the `yame fetch` that would supply it. `name` and
+ * `fetch` are what yame_ref_for_rows returned; either may be NULL.
+ */
+void yame_ref_explain(FILE *out, uint64_t rows, int status, const char *name,
+                      const char *fetch, const char *flag);
 
 #endif /* _YAME_ASSETS_H */

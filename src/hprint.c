@@ -21,6 +21,7 @@
 #include <string.h>
 #include "yame_ui.h"
 #include "cfile.h"
+#include "assets.h"
 
 /* ANSI color codes.
  * ANSI_RESET clears the FOREGROUND only (\x1b[39m), not all attributes, so a
@@ -54,11 +55,15 @@ static int usage(void) {
   yame_usage_sec("Modes:");
   yame_usage_opt("-R <ref>", "Whole-genome view: one column per CpG window across all chroms.");
   yame_usage_opt("-R <ref> -r <reg>", "Region view: rows=samples, columns=CpG sites in region.");
+  yame_usage_cont("-R is inferred from the file's row count when it names a");
+  yame_usage_cont("reference already in the store, so -r alone is usually enough.");
   yame_usage_text("(neither)         Legacy full-dataset dump (fmt6 only).");
   yame_usage_sec("Options:");
   yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
-  yame_usage_opt("-R <ref.cr>", "Reference coordinate file (format 7)");
+  yame_usage_opt("-R <ref.cr>", "Reference coordinate file (format 7). Optional with -r:");
+  yame_usage_cont("the row count identifies the genome, and the store is");
+  yame_usage_cont("searched for its cpg_nocontig.cr.");
   yame_usage_opt("-r <region>", "Genomic region: chr16  or  chr16:10000000-10100000");
   yame_usage_opt("-l <int>", "Sample label column width (default: 20)");
   yame_usage_opt("-t <int>", "Ruler tick interval in columns (default: 10)");
@@ -510,6 +515,33 @@ static int print_sample_label(const char *label, int label_w, int color) {
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The reference this file implies, when -R was not given.
+ *
+ * Only the first record is read, for its row count -- which is the whole of
+ * the fingerprint. Announced on stderr rather than silently, since a wrong
+ * inference would otherwise be invisible; stdout stays exactly what it was.
+ */
+static char *infer_ref(const char *fname) {
+  cfile_t cf = open_cfile((char *)fname);
+  cdata_t c = read_cdata1(&cf);
+  uint64_t rows = cdata_n(&c);
+  free_cdata(&c);
+  bgzf_close(cf.fh);
+
+  char path[4096];
+  const char *name = NULL, *fetch = NULL;
+  int st = yame_ref_for_rows(rows, NULL, "genome", path, sizeof(path),
+                             &name, &fetch);
+  if (st == YAME_REF_OK) {
+    fprintf(stderr, "[hprint] %"PRIu64" rows -> %s, using %s\n",
+            rows, name, path);
+    return strdup(path);
+  }
+  yame_ref_explain(stderr, rows, st, name, fetch, "-R");
+  return NULL;
+}
+
 int main_hprint(int argc, char *argv[]) {
   int c;
   int color = 1, label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
@@ -535,7 +567,10 @@ int main_hprint(int argc, char *argv[]) {
 
   /* ---- region mode ---- */
   if (region) {
-    if (!fname_cr) wzfatal("-R <ref.cr> is required when -r is used.\n");
+    /* A region needs coordinates. The file says which ones by its row count,
+     * so -R is a thing to supply only when that inference cannot be made. */
+    if (!fname_cr) fname_cr = infer_ref(fname);
+    if (!fname_cr) return 1;
 
     char *chrm = NULL;
     uint64_t beg1 = 0, end1 = 0;
@@ -592,7 +627,7 @@ int main_hprint(int argc, char *argv[]) {
     print_ruler(chrm, win_pos, n_cols, n_pos, win_size, last_cpg, label_w, tick_every);
     free(win_pos);
 
-    cfile_t cf = open_cfile(fname);
+    cfile_t cf = open_cfile((char *)fname);
     int si = 0;
     for (;;) {
       cdata_t cin = read_cdata1(&cf);
@@ -671,7 +706,7 @@ int main_hprint(int argc, char *argv[]) {
     snames_t snames = loadSampleNamesFromIndex(fname);
     print_genome_ruler(ch, n_chroms, total_cols, label_w);
 
-    cfile_t cf = open_cfile(fname);
+    cfile_t cf = open_cfile((char *)fname);
     int si = 0;
     for (;;) {
       cdata_t cin = read_cdata1(&cf);
@@ -710,7 +745,7 @@ int main_hprint(int argc, char *argv[]) {
   }
 
   /* ---- original full-dataset mode (fmt6 only) ---- */
-  cfile_t cf = open_cfile(fname);
+  cfile_t cf = open_cfile((char *)fname);
   for (;;) {
     cdata_t c2 = read_cdata1(&cf);
     if (c2.n == 0) { free_cdata(&c2); break; }
