@@ -21,19 +21,16 @@
 /**
  * `yame fetch` -- populate the shared asset store.
  *
- * A thin driver over src/assets.c, deliberately not a browser: kycg's `fetch`
- * has an interactive catalogue with per-knowledgebase descriptions and that
- * stays where it is. This exists so the store can be filled without any
- * particular tool installed, and so the engine every tool links has a way to
- * be exercised on its own.
+ * A driver over src/assets.c, so the store can be filled without any
+ * particular downstream tool installed, and so the engine they all link has a
+ * way to be exercised on its own.
  *
  * Two forms:
  *   yame fetch <source>/<target>[@tag]   a directory this build pins
  *   yame fetch -u URL -s SHA -o DEST     one file, digest given by hand
  *
- * The second is the low-level form. It is what methscope-cli's per-file
- * compiled digests will map onto, and it is how a store gets a file this
- * build's registry has never heard of.
+ * The second is the low-level form: a per-file digest supplied by the caller,
+ * which is how a store gets a file this build's registry has never heard of.
  */
 
 #include <stdio.h>
@@ -56,10 +53,10 @@ static int usage(void) {
   fprintf(stderr, "  yame fetch [options] -u <url> -s <sha256> -o <dest>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Browsing:\n");
-  fprintf(stderr, "  With no target on a terminal, opens the same tree browser as\n");
-  fprintf(stderr, "  'kycg fetch': arrows to move, right/left to open and close a source,\n");
-  fprintf(stderr, "  space to check, f to fetch what is checked, q to leave. What is\n");
-  fprintf(stderr, "  already in the store shows as present and cannot be checked.\n");
+  fprintf(stderr, "  With no target on a terminal, opens a tree browser: arrows move,\n");
+  fprintf(stderr, "  right/left open and close a source, space checks a row, f fetches\n");
+  fprintf(stderr, "  what is checked, q leaves. What is already in the store shows as\n");
+  fprintf(stderr, "  present and cannot be checked.\n");
   fprintf(stderr, "  Piped or redirected it prints the plain listing instead, so a script\n");
   fprintf(stderr, "  never blocks on a keystroke.\n");
   fprintf(stderr, "\n");
@@ -132,11 +129,9 @@ static const yame_asset_reg_t *find_asset(const char *source, const char *target
 
 /* ------------------------------------------------------------ the browser
  *
- * The same tree widget kycg fetch uses, which is why it now lives in YAME
- * (src/ui.c) rather than in kycg: methscope-cli had already started a second
- * copy of it. Sources are the top level, their targets unfold underneath, and
- * what is already in the store is shown as present and cannot be checked --
- * there is nothing to ask for.
+ * The tree widget from src/ui.c. Sources are the top level and their targets
+ * unfold underneath; what is already in the store is shown as present and
+ * cannot be checked, since there is nothing to ask for.
  */
 
 typedef struct {
@@ -343,6 +338,15 @@ int main_fetch(int argc, char *argv[]) {
     case 'h': return usage();
     default: return usage();
     }
+  }
+
+  /* About to actually use the store, so this is where the one-time notice
+   * about a pre-consolidation cache belongs -- not in every path that merely
+   * asks where the store is. */
+  {
+    char nroot[4096];
+    yame_assets_root(dopt, NULL, nroot, sizeof(nroot));
+    if (!quiet) yame_assets_legacy_notice(nroot);
   }
 
   yame_fetch_opt_t opt = {0};

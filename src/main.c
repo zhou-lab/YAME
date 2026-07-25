@@ -52,60 +52,90 @@ int main_binarize(int argc, char *argv[]);
 int main_perturb(int argc, char *argv[]);
 int main_fetch(int argc, char *argv[]);
 
+#include "yame_ui.h"
+#include "assets.h"
+
 #define PACKAGE_VERSION YAME_VERSION
+
+/* Help is rendered with colour when stderr is a terminal; yame_ui_* return
+ * empty strings otherwise, so a redirected --help stays plain text. */
+static void sec(const char *title) {
+  fprintf(stderr, "%s%s%s\n", yame_ui_bold(), title, yame_ui_reset());
+}
+
+static void cmd(const char *name, const char *desc) {
+  fprintf(stderr, "  %s%-12s%s %s\n",
+          yame_ui_green(), name, yame_ui_reset(), desc);
+}
+
+/* A continuation line for a command whose description needs two. */
+static void cmd2(const char *desc) {
+  fprintf(stderr, "               %s%s%s\n",
+          yame_ui_dim(), desc, yame_ui_reset());
+}
 
 static int usage(void)
 {
+  char store[4096];
+  yame_assets_root(NULL, NULL, store, sizeof(store));
+
   fprintf(stderr, "\n");
-  fprintf(stderr, "yame (Yet Another Methylation Encoder)\n");
+  fprintf(stderr, "%syame%s (Yet Another Methylation Encoder)  %s%s%s\n",
+          yame_ui_bold(), yame_ui_reset(),
+          yame_ui_dim(), PACKAGE_VERSION, yame_ui_reset());
   fprintf(stderr, "Whole-genome DNA methylation data management using CX formats.\n");
-  fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
   fprintf(stderr, "Contact: Wanding Zhou <wanding.zhou@pennmedicine.upenn.edu>\n");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
+
+  sec("Usage:");
   fprintf(stderr, "  yame <command> [options] [args]\n");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Core I/O:\n");
-  fprintf(stderr, "  pack         Pack text/bed-like inputs into a .cx stream\n");
-  fprintf(stderr, "  unpack       Unpack a .cx stream back to text\n");
-  fprintf(stderr, "  hprint       Horizontal printing (primarily format 6)\n");
+  sec("Core I/O:");
+  cmd("pack",   "Pack text/bed-like inputs into a .cx stream");
+  cmd("unpack", "Unpack a .cx stream back to text");
+  cmd("hprint", "Horizontal printing (primarily format 6)");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Indexing / file management:\n");
-  fprintf(stderr, "  index        Create/refresh a sample index for a .cx file\n");
-  fprintf(stderr, "  split        Split a multi-sample .cx into single-sample files\n");
-  fprintf(stderr, "  info         Show basic metadata/parameters of a .cx file\n");
+  sec("Indexing / file management:");
+  cmd("index", "Create/refresh a sample index for a .cx file");
+  cmd("split", "Split a multi-sample .cx into single-sample files");
+  cmd("info",  "Show basic metadata/parameters of a .cx file");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Subsetting / chunking:\n");
-  fprintf(stderr, "  subset       Subset samples from a .cx (or terms from format 2 with -s)\n");
-  fprintf(stderr, "  rowsub       Subset rows by index list / mask / coordinates / block range\n");
-  fprintf(stderr, "  chunk        Chunk binary CX into smaller fragments\n");
-  fprintf(stderr, "  chunkchar    Chunk text data into smaller fragments\n");
+  sec("Subsetting / chunking:");
+  cmd("subset",    "Subset samples from a .cx (or terms from format 2 with -s)");
+  cmd("rowsub",    "Subset rows by index list / mask / coordinates / block range");
+  cmd("chunk",     "Chunk binary CX into smaller fragments");
+  cmd("chunkchar", "Chunk text data into smaller fragments");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Summaries / comparisons:\n");
-  fprintf(stderr, "  summary      Summarize query features, optionally against masks\n");
-  fprintf(stderr, "  pairwise     Call pairwise differential methylation (fmt3 -> fmt6)\n");
+  sec("Summaries / comparisons:");
+  cmd("summary",  "Summarize query features, optionally against masks");
+  cmd("pairwise", "Call pairwise differential methylation (fmt3 -> fmt6)");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Transforms / utilities:\n");
-  fprintf(stderr, "  binarize     Convert fmt3 (M/U) to fmt6 (set+universe) by beta/M threshold\n");
-  fprintf(stderr, "  mask         Invalidate specific CpG sites using an external mask file\n");
-  fprintf(stderr, "               (deterministic, file-driven: controls *which* sites are valid)\n");
-  fprintf(stderr, "  dsample      Randomly subsample N covered CpG sites, masking the rest\n");
-  fprintf(stderr, "               (stochastic, rate-driven: reduces site count and effective coverage)\n");
-  fprintf(stderr, "  perturb      Randomly flip 0/1 bits in fmt0 or fmt6 (noise injection)\n");
-  fprintf(stderr, "  rowop        Row-wise operations (e.g., sum / combine binary tracks)\n");
+  sec("Transforms / utilities:");
+  cmd("binarize", "Convert fmt3 (M/U) to fmt6 (set+universe) by beta/M threshold");
+  cmd("mask",     "Invalidate specific CpG sites using an external mask file");
+  cmd2("(deterministic, file-driven: controls *which* sites are valid)");
+  cmd("dsample",  "Randomly subsample N covered CpG sites, masking the rest");
+  cmd2("(stochastic, rate-driven: reduces site count and coverage)");
+  cmd("perturb",  "Randomly flip 0/1 bits in fmt0 or fmt6 (noise injection)");
+  cmd("rowop",    "Row-wise operations (e.g., sum / combine binary tracks)");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Reference data:\n");
-  fprintf(stderr, "  fetch        Download reference assets into the shared store that\n");
-  fprintf(stderr, "               kycg / sesame / methscope all read ('yame fetch -l')\n");
+  sec("Reference data:");
+  cmd("fetch", "Download reference assets into the shared store");
+  cmd2("('yame fetch' to browse, 'yame fetch -l' to list)");
+  fprintf(stderr, "  %sstore%s        %s%s%s\n",
+          yame_ui_cyan(), yame_ui_reset(),
+          yame_ui_dim(), store, yame_ui_reset());
+  cmd2("$YAME_DATA_HOME overrides; shared with the other tools");
   fprintf(stderr, "\n");
 
-  fprintf(stderr, "Run 'yame <command> -h' for command-specific options and details.\n");
+  fprintf(stderr, "Run '%syame <command> -h%s' for command-specific options.\n",
+          yame_ui_bold(), yame_ui_reset());
   fprintf(stderr, "\n");
   return 1;
 }

@@ -21,8 +21,13 @@
 #include <string.h>
 #include "cfile.h"
 
-/* ANSI color codes */
-#define ANSI_RESET   "\x1b[0m"
+/* ANSI color codes.
+ * ANSI_RESET clears the FOREGROUND only (\x1b[39m), not all attributes, so a
+ * row-level underline (the trailing '_' sample-name flag, see below) survives
+ * the per-character coloring that resets after every glyph. */
+#define ANSI_RESET   "\x1b[39m"
+#define ANSI_ULINE   "\x1b[4m"    /* underline on  */
+#define ANSI_UNULINE "\x1b[24m"   /* underline off */
 #define ANSI_METH    "\x1b[33m"   /* yellow - methylated   */
 #define ANSI_UNMETH  "\x1b[34m"   /* blue   - unmethylated */
 #define ANSI_NA      "\x1b[90m"   /* grey   - NA           */
@@ -64,6 +69,7 @@ static int usage(void) {
   fprintf(stderr, "\n");
   fprintf(stderr, "Symbols (per-site):  fmt6: " CH_METH " meth  " CH_UNMETH " unmeth  . NA   fmt3/4: H/M/L/.   fmt0: 1/0\n");
   fprintf(stderr, "Symbols (windowed):  H >0.67   M 0.33-0.67   L <0.33   . no coverage\n");
+  fprintf(stderr, "Annotation:          a sample whose name ends with '_' is shown without the '_' and its whole row is underlined\n");
   fprintf(stderr, "\n");
   return 1;
 }
@@ -478,6 +484,30 @@ static void print_region_sample(cdata_t *c, uint64_t start_idx, uint64_t n_sites
 
 
 
+/* Print a sample's label column, honoring a trailing '_' as an "underline this
+ * row" flag: a sample named e.g. "RCC-KI098T_" is displayed as "RCC-KI098T"
+ * (the marker is stripped) and its whole row is underlined. This lets a caller
+ * annotate rows purely by renaming samples. Underlining needs color mode (it is
+ * an ANSI attribute); with -c the marker is still stripped but not underlined.
+ * Returns 1 if the row was opened underlined -- the caller must emit
+ * ANSI_UNULINE after the data and before the newline. */
+static int print_sample_label(const char *label, int label_w, int color) {
+  if (!label) label = "";
+  size_t len  = strlen(label);
+  int    flag = (len > 0 && label[len - 1] == '_');   /* trailing '_' = flag */
+  int    underline = flag && color;
+  char   buf[256];
+  const char *disp = label;
+  if (flag) {                                         /* strip the marker */
+    size_t dl = len - 1;
+    if (dl > sizeof(buf) - 1) dl = sizeof(buf) - 1;
+    memcpy(buf, label, dl); buf[dl] = '\0'; disp = buf;
+  }
+  if (underline) fputs(ANSI_ULINE, stdout);
+  fprintf(stdout, "%-*.*s  ", label_w, label_w, disp);
+  return underline;
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
@@ -571,7 +601,7 @@ int main_hprint(int argc, char *argv[]) {
       if (cin.n == 0) { free_cdata(&cin); break; }
 
       const char *label = (si < snames.n) ? snames.s[si] : "";
-      fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
+      int underline = print_sample_label(label, label_w, color);
 
       if (cin.fmt == '3') {
         stream_fmt3_region(&cin, first_row - 1, last_row - 1, win_size, n_cols, color, granular);
@@ -586,6 +616,7 @@ int main_hprint(int argc, char *argv[]) {
         else
           print_region_sample(&cin, first_row - 1, n_pos, color, granular);
       }
+      if (underline) fputs(ANSI_UNULINE, stdout);
       fputc('\n', stdout);
       free_cdata(&cin);
       si++;
@@ -649,7 +680,7 @@ int main_hprint(int argc, char *argv[]) {
       if (cin.n == 0) { free_cdata(&cin); break; }
 
       const char *label = (si < snames.n) ? snames.s[si] : "";
-      fprintf(stdout, "%-*.*s  ", label_w, label_w, label);
+      int underline = print_sample_label(label, label_w, color);
 
       if (cin.fmt == '3') {
         stream_fmt3_genome(&cin, ch, n_chroms, win_size, color, granular);
@@ -665,6 +696,7 @@ int main_hprint(int argc, char *argv[]) {
             print_region_sample(&cin, ch[ci].first_row - 1, ch[ci].n_cpgs, color, granular);
         }
       }
+      if (underline) fputs(ANSI_UNULINE, stdout);
       fputc('\n', stdout);
       free_cdata(&cin);
       si++;

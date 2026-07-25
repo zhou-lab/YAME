@@ -22,10 +22,10 @@
  * Shared asset store: where downloaded reference data lives, and how it gets
  * there.
  *
- * Every CLI in the suite (kycg, sesame-cli, methscope-cli) grew its own copy of
- * the same downloader, and each kept its assets in a private cache, so two
- * tools consuming the identical upstream file downloaded it twice. This is the
- * one implementation they all link, and the one store they all read.
+ * The CLIs that link this library each grew their own copy of the same
+ * downloader, and each kept its assets in a private cache, so two tools
+ * consuming the identical upstream file downloaded it twice. This is the one
+ * implementation they all link, and the one store they all read.
  *
  * THE STORE
  *   $YAME_DATA_HOME/<source>/<platform-or-build>/...
@@ -79,18 +79,19 @@ int  yame_assets_digest_equal(const char *a, const char *b);
  * The default is the data tier rather than a cache tier on purpose: these are
  * multi-GB reference sets that should survive somebody clearing ~/.cache.
  *
- * Writes into buf and returns it (never NULL). The first call also emits the
- * one-line legacy-cache notice described in yame_assets_legacy_notice().
+ * Writes into buf and returns it (never NULL). Asking where the store is says
+ * nothing to the user: a caller that is about to USE it calls
+ * yame_assets_legacy_notice() itself, so `--help` stays quiet.
  */
 const char *yame_assets_root(const char *override, const char *tool_env,
                              char *buf, size_t n);
 
 /**
  * If the resolved root does not exist yet but a pre-consolidation per-tool
- * cache does (~/.cache/kycg, ~/.cache/sesame, $XDG_CACHE_HOME/sesame, or
- * ~/Library/Caches/sesame on macOS), print one line to stderr saying so. The
- * legacy cache is never read from and never moved: this only exists so a user
- * whose downloads appear to have vanished is told where they went.
+ * cache does (the ~/.cache/<tool> directories used before this store existed),
+ * print one line to stderr saying so. That cache is never read from and never
+ * moved: this exists only so a user whose downloads appear to have vanished is
+ * told where they went.
  *
  * Prints at most once per process. Safe to call directly; yame_assets_root()
  * already does.
@@ -125,7 +126,7 @@ int yame_assets_safe_name(const char *s);
 int yame_assets_safe_relpath(const char *s);
 
 /* Directory holding the running executable, for a tool that ships data beside
- * its binary (sesame-cli's <exe>/data). Returns 0 on success. */
+ * its binary, e.g. <exe>/data. Returns 0 on success. */
 int yame_assets_exe_dir(char *out, size_t n);
 
 /* --------------------------------------------------------------- manifests */
@@ -167,8 +168,8 @@ typedef struct {
   int quiet;                 /* no progress reporting */
 
   /* Optional progress hooks. Left NULL, a fetch is silent apart from errors,
-   * which is what a library caller with its own UI wants; kycg and sesame pass
-   * their own renderers here rather than inheriting one. */
+   * which is what a library caller with its own UI wants: a caller passes its
+   * own renderer here rather than inheriting one. */
   void (*on_begin)(void *ud, const char *name, uint64_t total);
   void (*on_progress)(void *ud, uint64_t now, uint64_t total);
   void (*on_done)(void *ud, const char *name, uint64_t bytes, int ok);

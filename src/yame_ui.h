@@ -368,7 +368,6 @@ typedef struct {
  *    0  the user quit without invoking an action
  *   >0  the 1-based index into `actions` of the action they invoked, so a
  *       caller with several verbs can tell which one ended the session
- *       (kycg's browser checks for 2 to tell `t test` from `f fetch`)
  *
  * An action with a `commit` does not end the session, so it never becomes the
  * return value -- only an action whose commit is NULL does.

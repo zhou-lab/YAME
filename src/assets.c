@@ -206,19 +206,16 @@ const char *yame_assets_root(const char *override, const char *tool_env,
   }
   if ((env = getenv("YAME_DATA_HOME")) && *env) {
     snprintf(buf, n, "%s", env);
-    yame_assets_legacy_notice(buf);
     return buf;
   }
   if ((env = getenv("XDG_DATA_HOME")) && *env) {
     snprintf(buf, n, "%s/yame", env);
-    yame_assets_legacy_notice(buf);
     return buf;
   }
 
   const char *home = getenv("HOME");
   if (!home || !*home) home = ".";
   snprintf(buf, n, "%s/.local/share/yame", home);
-  yame_assets_legacy_notice(buf);
   return buf;
 }
 

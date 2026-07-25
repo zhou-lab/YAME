@@ -3,13 +3,11 @@
 ## yame-config.in, so the answer comes from the build that actually happened
 ## rather than from a consumer's guess.
 ##
-## Every tool in the suite spelled YAME's dependencies itself, and each spelled
-## them differently -- kycg as `$(YAME_LIB) $(YAME_HTSLIB) $(CLIB)`, sesame-cli
-## as `$(YAME_LIB) $(HTSLIB) -lpthread $(LDLIBS)`, methscope-cli with its own
-## curl variable on top. That divergence is not cosmetic: sesame-cli asked for a
-## bare -lcurl while YAME resolved libcurl through curl-config, and on a conda
-## toolchain the two picked different libraries and the link failed outright.
-## One authoritative answer removes that whole class of problem.
+## Consumers used to spell these dependencies themselves, and each spelled them
+## differently. That divergence is not cosmetic: one asked for a bare -lcurl
+## while YAME resolved libcurl through curl-config, and on a conda toolchain the
+## two picked different libraries and the link failed outright. One
+## authoritative answer removes that whole class of problem.
 ##
 ##   yame-config --cflags   include paths for #include "assets.h" etc.
 ##   yame-config --libs     libyame.a + htslib + every transitive dependency
