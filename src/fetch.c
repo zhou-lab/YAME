@@ -161,7 +161,19 @@ typedef struct {
   pick_t pick[512];
   size_t n_pick;
   int    force;
+
+  /* The widget holds these arrays and re-reads them after a commit, so a
+   * fetch has to rewrite the entries in place -- otherwise a unit whose files
+   * all just arrived keeps saying it has none of them. The arrays must not
+   * move; the strings in them may. */
+  char          **roots;
+  unsigned char  *styles;
+  size_t          n_roots;
 } browse_t;
+
+/* Defined below, next to the code that builds these rows in the first place:
+ * a fetch has to put the counts back. */
+static void refresh_roots(browse_t *b);
 
 static int file_present(const char *store_root, const yame_asset_reg_t *a,
                         const char *name) {
@@ -483,32 +495,50 @@ static const char *unit_tag(const char *unit) {
 
 /* ---- tree paths ---- */
 
-/* <group>[/<unit>[/<sub>]] -- the chain of keys the widget hands back. */
+/**
+ * <unit>[/<sub>] -- the chain of keys the widget hands back.
+ *
+ * A species is a heading rather than a component: it groups the units under
+ * it without being a level of its own. Nesting ten platforms under three
+ * labels cost a keystroke to reach any of them and hid the rest until you
+ * pressed it.
+ */
 typedef struct {
-  char group[64];
   char unit[128];
   char sub[128];
 } bpath_t;
 
 static void bpath_parse(const char *path, bpath_t *p) {
-  p->group[0] = p->unit[0] = p->sub[0] = '\0';
+  p->unit[0] = p->sub[0] = '\0';
 
-  const char *a = path, *b = strchr(a, '/');
-  size_t l = b ? (size_t)(b - a) : strlen(a);
-  if (l >= sizeof(p->group)) l = sizeof(p->group) - 1;
-  memcpy(p->group, a, l);
-  p->group[l] = '\0';
-  if (!b) return;
-
-  a = b + 1;
-  b = strchr(a, '/');
-  l = b ? (size_t)(b - a) : strlen(a);
+  const char *b = strchr(path, '/');
+  size_t l = b ? (size_t)(b - path) : strlen(path);
   if (l >= sizeof(p->unit)) l = sizeof(p->unit) - 1;
-  memcpy(p->unit, a, l);
+  memcpy(p->unit, path, l);
   p->unit[l] = '\0';
-  if (!b) return;
+  if (b) snprintf(p->sub, sizeof(p->sub), "%s", b + 1);
+}
 
-  snprintf(p->sub, sizeof(p->sub), "%s", b + 1);
+/* A heading row carries a rule in front of the species name, which is also
+ * how one is told from a unit when it comes back as a path. */
+static const char *group_mark(void) {
+  /* Two cells, not a full rule: the heading shares a column with the unit
+   * names, so anything wider pads every row beneath it. */
+  return yame_ui_unicode() ? "▪ " : "= ";
+}
+
+static int is_group_row(const char *path) {
+  const char *m = group_mark();
+  return strncmp(path, m, strlen(m)) == 0;
+}
+
+/* The group a heading row names, lowercased back from its display form. */
+static void group_of_row(const char *path, char *out, size_t n) {
+  const char *p = path + strlen(group_mark());
+  size_t i = 0;
+  for (; p[i] && i + 1 < n; ++i)
+    out[i] = (p[i] >= 'A' && p[i] <= 'Z') ? (char)(p[i] - 'A' + 'a') : p[i];
+  out[i] = '\0';
 }
 
 /* ---- what data/assets.tsv calls a file ---- */
@@ -598,29 +628,6 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   out->styles = calloc(CAP, 1);
   out->branch = calloc(CAP, 1);
   if (!out->rows || !out->keys || !out->styles || !out->branch) return;
-
-  /* A group: its platforms and builds. */
-  if (!p.unit[0]) {
-    char units[32][128];
-    size_t nu = group_units(p.group, units, 32);
-    for (size_t i = 0; i < nu && out->n < CAP; ++i) {
-      size_t total, have;
-      unit_counts(b->root, units[i], "", 1, &total, &have);
-
-      char note[64], line[256];
-      counts_note(total, have, note, sizeof(note));
-      snprintf(line, sizeof(line), UNIT_ROW_FMT, units[i],
-               unit_is_array(units[i]) ? "array" : "genome",
-               unit_tag(units[i]), note);
-
-      out->rows[out->n]   = strdup(line);
-      out->keys[out->n]   = strdup(units[i]);
-      out->styles[out->n] = count_style(total, have);
-      out->branch[out->n] = 1;
-      ++out->n;
-    }
-    return;
-  }
 
   static ent_t ents[CAP];
   size_t n_ents = unit_entries(p.unit, p.sub, 0, ents, CAP);
@@ -774,19 +781,22 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
 
   const char *bar = key ? strchr(key, '|') : NULL;
 
-  if (!p.unit[0]) {
-    /* A species group. */
+  if (is_group_row(path)) {
+    /* A species heading. */
+    char group[64];
+    group_of_row(path, group, sizeof(group));
+
     char units[32][128], list[512] = "";
-    size_t nu = group_units(p.group, units, 32);
+    size_t nu = group_units(group, units, 32);
     for (size_t i = 0; i < nu; ++i) {
       strncat(list, units[i], sizeof(list) - strlen(list) - 1);
       if (i + 1 < nu) strncat(list, ", ", sizeof(list) - strlen(list) - 1);
     }
 
     size_t total, have;
-    group_counts(b->root, p.group, &total, &have);
+    group_counts(b->root, group, &total, &have);
 
-    lay_head(&L, p.group, "genome builds and array platforms");
+    lay_head(&L, group, "genome builds and array platforms");
     lay_wrap(&L, NULL, list);
     char buf[128];
     snprintf(buf, sizeof(buf), "%zu of %zu files already in the store",
@@ -916,14 +926,115 @@ static void bx_accept(void *ctx, const char *path, const char *key) {
       pick_add(b, (size_t)(ents[i].a - YAME_ASSETS), ents[i].f->name);
 }
 
-/* Runs inside the widget: the tree suspends, this draws in a panel, and the
- * tree resumes with its rows reloaded so the new state shows. Selections are
- * grouped by directory so each one costs a single manifest request. */
-static void bx_commit(void *ctx) {
+/* Bytes moving, painted onto the row of the file they belong to. The panel
+ * at the foot says what is happening overall; this says which of the rows you
+ * are looking at is the one being fetched. */
+typedef struct {
+  size_t asset;
+  char   key[288];
+} fprog_t;
+
+/* An .idx has no row of its own -- it rides with its .cm -- so its progress
+ * is painted onto the row that asked for it. */
+static void fprog_key(fprog_t *p, const char *name) {
+  snprintf(p->key, sizeof(p->key), "%zu|%s", p->asset, name);
+  if (yame_ui_tree_progress(p->key, 0, 1)) return;
+
+  size_t l = strlen(name);
+  if (l > 4 && strcmp(name + l - 4, ".idx") == 0) {
+    char base[256];
+    if (l - 4 < sizeof(base)) {
+      memcpy(base, name, l - 4);
+      base[l - 4] = '\0';
+      snprintf(p->key, sizeof(p->key), "%zu|%s", p->asset, base);
+    }
+  }
+}
+
+static void fp_begin(void *ud, const char *name, uint64_t total) {
+  (void)total;
+  fprog_key((fprog_t *)ud, name);
+}
+
+static void fp_progress(void *ud, uint64_t now, uint64_t total) {
+  fprog_t *p = ud;
+  if (p->key[0]) yame_ui_tree_progress(p->key, now, total ? total : now + 1);
+}
+
+static void fp_done(void *ud, const char *name, uint64_t bytes, int ok) {
+  fprog_t *p = ud;
+  (void)name; (void)bytes;
+  if (ok && p->key[0]) yame_ui_tree_progress(p->key, 1, 1);
+  p->key[0] = '\0';
+}
+
+/* What `f` is about to do, before it does it. A selection is easy to build up
+ * without noticing -- space on a directory takes everything under it -- and a
+ * knowledgebase runs to tens of megabytes, so the size is worth seeing while
+ * it can still be reconsidered. */
+static int confirm_plan(browse_t *b) {
+  size_t n_files = 0, n_dirs = 0, unknown = 0;
+  uint64_t bytes = 0;
+  size_t seen[512], n_seen = 0;
+
+  for (size_t i = 0; i < b->n_pick; ++i) {
+    size_t idx = b->pick[i].asset;
+    if (idx >= YAME_ASSETS_N) continue;
+    ++n_files;
+
+    const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+    uint64_t sz = 0;
+    for (size_t j = 0; j < a->n_files; ++j)
+      if (strcmp(a->files[j].name, b->pick[i].name) == 0) {
+        sz = a->files[j].size;
+        break;
+      }
+    if (sz) bytes += sz; else ++unknown;
+
+    size_t k = 0;
+    for (; k < n_seen; ++k) if (seen[k] == idx) break;
+    if (k == n_seen && n_seen < 512) seen[n_seen++] = idx;
+  }
+  n_dirs = n_seen;
+
+  char sz[32], line[256];
+  human_size(bytes, sz, sizeof(sz));
+  if (!bytes)
+    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  "
+             "(size not published upstream)",
+             n_files, n_files == 1 ? "" : "s", n_dirs,
+             n_dirs == 1 ? "y" : "ies");
+  else if (unknown)
+    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  "
+             "at least %s (%zu of unpublished size)",
+             n_files, n_files == 1 ? "" : "s", n_dirs,
+             n_dirs == 1 ? "y" : "ies", sz, unknown);
+  else
+    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  %s",
+             n_files, n_files == 1 ? "" : "s", n_dirs,
+             n_dirs == 1 ? "y" : "ies", sz);
+
+  yame_ui_panel_open(4);
+  yame_ui_panel_line(0, "%s%s%s", yame_ui_bold(), line, yame_ui_reset());
+  yame_ui_panel_line(1, "");
+  return yame_ui_panel_confirm(2, "Proceed?", 1);
+}
+
+/* Runs inside the widget: the tree stays on screen, this draws in a panel and
+ * onto the rows being fetched, and the tree resumes with its rows reloaded so
+ * the new state shows. Selections are grouped by directory so each one costs a
+ * single manifest request. */
+static int bx_commit(void *ctx) {
   browse_t *b = ctx;
   int ok = 0, bad = 0;
 
-  if (!b->n_pick) return;
+  if (!b->n_pick) return 0;
+
+  if (!confirm_plan(b)) {
+    yame_ui_panel_close();
+    b->n_pick = 0;               /* the checks stay; the fetch does not run */
+    return 0;
+  }
   yame_ui_panel_open(4);
 
   for (size_t i = 0; i < b->n_pick; ++i) {
@@ -954,9 +1065,17 @@ static void bx_commit(void *ctx) {
     yame_ui_panel_line(0, "%s/%s  -  %zu file%s",
                        a->source, a->target, n_names, n_names == 1 ? "" : "s");
 
+    fprog_t fp;
+    memset(&fp, 0, sizeof(fp));
+    fp.asset = idx;
+
     yame_fetch_opt_t opt = {0};
     opt.force = b->force;
-    opt.quiet = 1;                 /* the panel is the only output surface */
+    opt.quiet = 1;                 /* the panel and the rows are the output */
+    opt.on_begin = fp_begin;
+    opt.on_progress = fp_progress;
+    opt.on_done = fp_done;
+    opt.ud = &fp;
 
     char *err = NULL;
     if (yame_assets_fetch_subset(a->base_url, a->tag, a->remote_sub, store_sub,
@@ -975,15 +1094,61 @@ static void bx_commit(void *ctx) {
   yame_ui_panel_line(1, "");
   yame_ui_panel_pause(2, "press any key to return to the catalogue");
   yame_ui_panel_close();
+  refresh_roots(b);
   b->n_pick = 0;
+  return 1;
+}
+
+/* Fill in one root row: a species heading, or a unit. Every count in it is a
+ * function of the store, so this is also the refresh after a fetch. */
+static void root_row(browse_t *b, size_t i, const char *group,
+                     const char *unit) {
+  size_t total, have;
+  char note[64], line[256];
+
+  if (unit) {
+    unit_counts(b->root, unit, "", 1, &total, &have);
+    counts_note(total, have, note, sizeof(note));
+    snprintf(line, sizeof(line), "%s\t%s\t%s\t%s", unit,
+             unit_is_array(unit) ? "array" : "genome", unit_tag(unit), note);
+  } else {
+    char upper[64];
+    size_t k = 0;
+    for (; group[k] && k + 1 < sizeof(upper); ++k)
+      upper[k] = (group[k] >= 'a' && group[k] <= 'z')
+                   ? (char)(group[k] - 'a' + 'A') : group[k];
+    upper[k] = '\0';
+
+    group_counts(b->root, group, &total, &have);
+    counts_note(total, have, note, sizeof(note));
+    snprintf(line, sizeof(line), "%s%s\t\t\t%s", group_mark(), upper, note);
+  }
+
+  free(b->roots[i]);
+  b->roots[i] = strdup(line);
+  b->styles[i] = count_style(total, have);
+}
+
+/* Re-read every root row from the store. */
+static void refresh_roots(browse_t *b) {
+  char groups[16][64];
+  size_t ng = all_groups(groups, 16), i = 0;
+  for (size_t g = 0; g < ng && i < b->n_roots; ++g) {
+    root_row(b, i++, groups[g], NULL);
+    char units[32][128];
+    size_t nu = group_units(groups[g], units, 32);
+    for (size_t j = 0; j < nu && i < b->n_roots; ++j)
+      root_row(b, i++, groups[g], units[j]);
+  }
 }
 
 /* The catalogue as a browsable tree: species, then platform or build, then
  * what each publishes. Returns 0 when it ran, -1 when the terminal cannot
  * host it and the caller should print the list instead. */
 static int browse_catalog(const char *dopt, int force) {
-  static char *roots[16];
-  static unsigned char styles[16];
+  enum { MAXROOT = 64 };
+  static char *roots[MAXROOT];
+  static unsigned char styles[MAXROOT], branch[MAXROOT];
   size_t n_roots = 0;
   static browse_t b;
 
@@ -991,24 +1156,22 @@ static int browse_catalog(const char *dopt, int force) {
   b.force = force;
   yame_assets_root(dopt, NULL, b.root, sizeof(b.root));
 
+  /* Every unit at the top level, with its species as a heading above it: a
+   * label to read past, not a level to open. */
+  memset(roots, 0, sizeof(roots));
+  b.roots = roots;
+  b.styles = styles;
+
   char groups[16][64];
   size_t ng = all_groups(groups, 16);
-  for (size_t i = 0; i < ng && n_roots < 16; ++i) {
+  for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
+    branch[n_roots++] = 0;                  /* a heading never opens */
     char units[32][128];
     size_t nu = group_units(groups[i], units, 32);
-
-    size_t total, have;
-    group_counts(b.root, groups[i], &total, &have);
-
-    char note[64], line[256];
-    counts_note(total, have, note, sizeof(note));
-    snprintf(line, sizeof(line), "%s\t%zu target%s\t%s", groups[i], nu,
-             nu == 1 ? "" : "s", note);
-
-    roots[n_roots] = strdup(line);
-    styles[n_roots] = count_style(total, have);
-    ++n_roots;
+    for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
   }
+  b.n_roots = n_roots;
+  refresh_roots(&b);
 
   static char title[4200];
   snprintf(title, sizeof(title), "yame fetch   %s   %s", yame_ui_bullet(),
@@ -1017,9 +1180,10 @@ static int browse_catalog(const char *dopt, int force) {
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
   spec.title       = title;
-  spec.header      = "SPECIES\tTARGETS\tIN STORE";
+  spec.header      = "TARGET\tKIND\tTAG\tIN STORE";
   spec.roots       = roots;
   spec.root_styles = styles;
+  spec.root_branch = branch;
   spec.n_roots     = n_roots;
   spec.expand      = bx_expand;
   spec.detail      = bx_detail;

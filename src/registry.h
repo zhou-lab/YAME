@@ -411,6 +411,12 @@ static const yame_asset_file_t YAME_FILES_KYCGKB_mm10[] = {
     { NULL, NULL, 0 }
 };
 
+static const yame_asset_file_t YAME_FILES_KYCGKB_mm39[] = {
+    { "ChromHMM.20250102.cm", "237d39c512c81c5e6f2d543b034ae16999219fb594b9d9e83abdb63c5971fdff", 882311 },
+    { "cpg_nocontig.cr", "67b183a53a820a13303a4e793465d8012b106baed0f0098bf480f623b4bfe75d", 23857084 },
+    { NULL, NULL, 0 }
+};
+
 static const yame_asset_file_t YAME_FILES_genomes_hg38[] = {
     { "seqinfo.tsv.gz", "fb0451cc3a142233e220154fd7af2961d0ff2e8ba1113ca2b5ff6a948680b9e2", 0 },
     { "gaps.tsv.gz", "0585abdbf80263e8779f5cdcc24bcf8ed2f108efb738e8ba44ba9b3ac24d5733", 0 },
@@ -449,6 +455,7 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "InfiniumAnnotation", "MSA/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MSA/KYCG", "InfiniumAnnotation/MSA/KYCG", "cc63264354f71f436e7aa4e7b9820430461e6923d657c54a24bb03cca4682db5", YAME_FILES_InfiniumAnnotation_MSA_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MSA_KYCG) },
     { "KYCGKB", "hg38", "https://github.com/zhou-lab/KYCGKB_hg38/raw", "v2", "", "KYCGKB/hg38", "8e0594ade2936a7b837306cec8e4d29bb9028a6a3be5b2cdbd372af7c16f650a", YAME_FILES_KYCGKB_hg38, YAME_NFILES(YAME_FILES_KYCGKB_hg38) },
     { "KYCGKB", "mm10", "https://github.com/zhou-lab/KYCGKB_mm10/raw", "v2", "", "KYCGKB/mm10", "fbb75f8198a731f3ea2de7d2fb65e92c84f4e0f0e2ff335b9ff2e2000606f289", YAME_FILES_KYCGKB_mm10, YAME_NFILES(YAME_FILES_KYCGKB_mm10) },
+    { "KYCGKB", "mm39", "https://github.com/zhou-lab/KYCGKB_mm39/raw", "v2", "", "KYCGKB/mm39", "0dfa2114daa79c8c5fabae2d4795d250266d48f7e941fd99e81cf459e72ead64", YAME_FILES_KYCGKB_mm39, YAME_NFILES(YAME_FILES_KYCGKB_mm39) },
     { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v2", "hg38", "genomes/hg38", "b64b320984c6d1d29dc1e15dd1a8a2ce109442eea703eba013d11ffb1eb8e975", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38) },
     { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v2", "mm10", "genomes/mm10", "0b9aed8b19ed9ead8d8c61b9bf5050e11f4c5278bf701d46b439857407142035", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
     { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v2", "mm39", "genomes/mm39", "8f7bab6aa49cc2612b82d0f3b6e749eaff41d6ea925e8aff20b42269b47b9902", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },

@@ -171,8 +171,7 @@ typedef struct {
  *
  * Every callback below identifies a node by its path: the '/'-joined chain of
  * keys from the root down, where a root contributes its first tab-separated
- * field. So "InfiniumAnnotation", then "InfiniumAnnotation/EPIC", then
- * "InfiniumAnnotation/EPIC/KYCG".
+ * field. So "EPIC", then "EPIC/KYCG", then "EPIC/KYCG/<the set>".
  *
  * A path rather than a row text because once a label can appear at two depths
  * it stops identifying anything -- "KYCG" sits under every platform. Keys
@@ -268,14 +267,34 @@ void yame_ui_panel_pause(int line, const char *msg);
 int yame_ui_panel_ask(int line, const char *prompt, char *buf, size_t n);
 
 /**
+ * Paint a progress bar onto the row carrying `key`, while an action runs.
+ *
+ * Where a file's bytes are counted is not where anyone is looking: a commit
+ * callback knows the filename, and the user is looking at the row for it. Only
+ * the widget knows which screen line that row is on, so it does the painting
+ * and the caller just names the row.
+ *
+ * A no-op (returning 0) when the row is folded away or scrolled off, which is
+ * the common case for a file pulled in as a dependency rather than chosen.
+ * Meaningful only from inside a commit or key callback, with the tree on
+ * screen. Pass now == total to settle the row.
+ */
+int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total);
+
+/**
  * Called once, after every checked row has been reported through `accept`.
  *
  * Runs while the widget is still on screen; use the panel calls above for any
  * output. Whatever it changes in the `roots` and `root_styles` arrays is
  * picked up when the tree resumes — but it must replace the entries in place
  * rather than reallocating the arrays, whose addresses the tree holds.
+ *
+ * Returns nonzero if it changed anything, which reloads the tree and with it
+ * clears every check. Returning 0 leaves the selection exactly as it was —
+ * what a callback that asked for confirmation and was refused must do, since
+ * losing the selection is the one thing that makes declining expensive.
  */
-typedef void (*yame_ui_commit_fn)(void *ctx);
+typedef int (*yame_ui_commit_fn)(void *ctx);
 
 /**
  * One thing that can be done with the checked rows.
@@ -324,6 +343,15 @@ typedef struct {
    * reflects what it just did. The arrays themselves must not move. */
   char          **roots;
   unsigned char  *root_styles; /* may be NULL */
+  /**
+   * Optional, one per root: 0 means this root never opens. NULL means they
+   * all may.
+   *
+   * What it buys is a heading -- a row that groups the ones under it without
+   * being a level of its own. Nesting a handful of items under a label costs
+   * a keystroke to reach any of them and hides the rest until you do.
+   */
+  unsigned char  *root_branch;
   size_t          n_roots;
 
   yame_ui_expand_fn expand;    /* may be NULL for a flat tree */

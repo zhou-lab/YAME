@@ -386,6 +386,16 @@ static void frame_line(frame_t *f, const char *fmt, ...) {
   ++f->lines;
 }
 
+/* Display cells in a UTF-8 string. Padding a column by bytes puts every
+ * column after a multi-byte glyph two cells to the left, which is what a
+ * heading marker like "\u25aa " did to every row it headed. */
+static int cells_of(const char *s) {
+  int n = 0;
+  for (size_t i = 0; s[i]; ++i)
+    if ((s[i] & 0xC0) != 0x80) ++n;     /* count lead bytes only */
+  return n;
+}
+
 /* Truncate to `cols` display cells, ASCII-safe and multi-byte tolerant. */
 static void fit(const char *s, int cols, char *out, size_t outsz) {
   int cells = 0;
@@ -400,6 +410,45 @@ static void fit(const char *s, int cols, char *out, size_t outsz) {
     ++cells;
   }
   out[o] = '\0';
+}
+
+/**
+ * Lay a tab-separated line into fixed-width columns.
+ *
+ * Widths are in display cells; a field too wide for its column is truncated
+ * rather than allowed to push the ones after it.
+ */
+static void columns(const char *line, const int *w, int ncol,
+                    char *out, size_t cap) {
+  size_t o = 0;
+  out[0] = '\0';
+
+  const char *p = line;
+  for (int c = 0; c < ncol; ++c) {
+    const char *tab = strchr(p, '\t');
+    size_t flen = tab ? (size_t)(tab - p) : strlen(p);
+
+    char field[512];
+    size_t n = flen < sizeof(field) - 1 ? flen : sizeof(field) - 1;
+    memcpy(field, p, n);
+    field[n] = '\0';
+
+    char cut[512];
+    fit(field, w[c] > 2 ? w[c] - 2 : 1, cut, sizeof(cut));
+    size_t l = strlen(cut);
+    int used = cells_of(cut);
+    int pad = w[c] - used;
+    if (pad < 0) pad = 0;
+
+    if (o + l + (size_t)pad + 1 >= cap) break;
+    memcpy(out + o, cut, l);
+    o += l;
+    while (pad-- > 0) out[o++] = ' ';
+    out[o] = '\0';
+
+    if (!tab) break;
+    p = tab + 1;
+  }
 }
 
 /* ----------------------------------------------- panel inside a widget */
@@ -1348,6 +1397,50 @@ static void tn_apply_pred(tnode_t *n, const yame_ui_tree_t *spec,
   for (size_t i = 0; i < n->n_kids; ++i) tn_apply_pred(n->kids[i], spec, pred);
 }
 
+static size_t tn_count_selectable(const tnode_t *n,
+                                  const yame_ui_tree_t *spec) {
+  size_t c = tn_selectable(n, spec) ? 1 : 0;
+  for (size_t i = 0; i < n->n_kids; ++i)
+    c += tn_count_selectable(n->kids[i], spec);
+  return c;
+}
+
+/**
+ * The four-cell marker at the head of a row.
+ *
+ * Four cells whatever it says, so the text after it lines up and the check
+ * sits where the x would be in "[x]". A directory gets a box of its own
+ * because space takes everything under it -- without one, that a folder is
+ * itself selectable is something you have to be told rather than see. Partly
+ * selected is "[*]": a folder showing "[x]" with two of its thirty sets
+ * checked would be a lie, and "[ ]" would be a different one.
+ */
+static void node_box(const tnode_t *n, const yame_ui_tree_t *spec,
+                     char *out, size_t cap) {
+  int uni = yame_ui_unicode();
+
+  if (!tn_is_leaf(n)) {
+    /* Unopened: nothing is checked under it yet, whatever it holds. */
+    if (!n->loaded) { snprintf(out, cap, "[ ] "); return; }
+    size_t sel = tn_count_selectable(n, spec);
+    size_t chk = tn_count_checked(n);
+    if (!sel)            snprintf(out, cap, "    ");  /* nothing to ask for */
+    else if (!chk)       snprintf(out, cap, "[ ] ");
+    else if (chk >= sel) snprintf(out, cap, "[x] ");
+    else                 snprintf(out, cap, "[*] ");
+    return;
+  }
+
+  if (n->style == YAME_ROW_REQUIRED)
+    snprintf(out, cap, "%s", uni ? " ●  " : " ** ");
+  else if (!spec->have_selectable && n->style == YAME_ROW_HAVE)
+    snprintf(out, cap, "%s", uni ? " ✓  " : " ok ");
+  else if (n->key)
+    snprintf(out, cap, "%s", n->checked ? "[x] " : "[ ] ");
+  else
+    snprintf(out, cap, "    ");
+}
+
 static void tn_accept_walk(tnode_t *n, const yame_ui_action_t *act, void *ctx) {
   if (n->checked && n->key && act->accept) act->accept(ctx, n->path, n->key);
   for (size_t i = 0; i < n->n_kids; ++i) tn_accept_walk(n->kids[i], act, ctx);
@@ -1431,6 +1524,72 @@ static void search_apply(tnode_t *forest, const char *q, tnode_t ***hits,
   if (*hit_i >= *nh) *hit_i = 0;
   tn_reveal((*hits)[*hit_i]);
   *want_cur = (*hits)[*hit_i];
+}
+
+/* ---- painting one row while an action runs ----
+ *
+ * The visible window, republished on every redraw so a commit callback can
+ * name a row and have the widget find it. File-static like the panel state
+ * above, and for the same reason: the callback runs inside the caller's code,
+ * which has no handle on the frame.
+ */
+static tnode_t **vis_flat = NULL;
+static size_t    vis_n = 0, vis_top = 0;
+static int       vis_avail = 0;
+static const int VIS_ROW0 = 3;   /* screen line of the first list row */
+
+int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
+  if (!vis_flat || !key || !raw_active) return 0;
+
+  for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
+    tnode_t *nd = vis_flat[i];
+    if (!nd->key || strcmp(nd->key, key) != 0) continue;
+
+    int cols = term_cols();
+    int row = VIS_ROW0 + (int)(i - vis_top);
+    int uni = yame_ui_unicode();
+    int done = (total && now >= total);
+
+    char pre[256];
+    tn_prefix(nd, pre, sizeof(pre));
+
+    /* Ten cells of bar and then the percentage, pinned right so the row does
+     * not jump as the digit count changes. */
+    enum { BAR = 10 };
+    int pct = total ? (int)((now * 100) / total) : 0;
+    if (pct > 100) pct = 100;
+    int on = (pct * BAR + 99) / 100;
+
+    char bar[64];
+    size_t o = 0;
+    bar[0] = '\0';
+    for (int c = 0; c < BAR; ++c) {
+      const char *g = (c < on) ? (uni ? "▰" : "#") : (uni ? "▱" : ".");
+      size_t l = strlen(g);
+      if (o + l + 1 >= sizeof(bar)) break;
+      memcpy(bar + o, g, l);
+      o += l;
+      bar[o] = '\0';
+    }
+
+    int lead = 2 + 4 * nd->depth + 4;
+    int room = cols - lead - (BAR + 8);
+    if (room < 12) room = 12;
+    char cut[1024];
+    fit(nd->row, room, cut, sizeof(cut));
+
+    /* Save the cursor, paint the one line, put it back: the panel below is
+     * drawing too, and it positions relative to where it left off. */
+    fprintf(stderr, "\033[s\033[%d;1H\033[2K  %s%s%s%s%s%-*s %s %3d%%%s",
+            row, yame_ui_dim(), pre, yame_ui_reset(),
+            done ? yame_ui_green() : yame_ui_cyan(),
+            done ? (uni ? " ✓  " : " ok ") : (uni ? " ▸  " : " >  "),
+            room, cut, bar, pct, yame_ui_reset());
+    fputs("\033[u", stderr);
+    fflush(stderr);
+    return 1;
+  }
+  return 0;
 }
 
 /* ---- the flattened view ---- */
@@ -1527,7 +1686,8 @@ static void tn_refresh(tnode_t *forest, const yame_ui_tree_t *spec,
     tn_free_kids(r);
     r->expanded = 0;
     r->checked = 0;
-    r->branch = spec->expand ? 1 : 0;
+    r->branch = !spec->expand ? 0
+              : spec->root_branch ? (spec->root_branch[i] != 0) : 1;
     /* A commit may rewrite a root in place to show what it just did. */
     free(r->row);
     free(r->path);
@@ -1577,7 +1737,12 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     int c = 0;
     for (const char *p = line; c < ncol; ++c) {
       const char *tab = strchr(p, '\t');
-      int len = (int)(tab ? (size_t)(tab - p) : strlen(p));
+      size_t blen = tab ? (size_t)(tab - p) : strlen(p);
+      char field[512];
+      size_t n = blen < sizeof(field) - 1 ? blen : sizeof(field) - 1;
+      memcpy(field, p, n);
+      field[n] = '\0';
+      int len = cells_of(field);      /* cells: see columns() */
       if (len > w[c]) w[c] = len;
       if (!tab) break;
       p = tab + 1;
@@ -1601,7 +1766,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     r->row    = strdup(roots[i]);
     r->path   = tn_root_path(roots[i]);
     r->style  = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
-    r->branch = spec->expand ? 1 : 0;
+    r->branch = !spec->expand ? 0
+              : spec->root_branch ? (spec->root_branch[i] != 0) : 1;
     r->parent = &forest;
     forest.kids[forest.n_kids++] = r;
   }
@@ -1697,24 +1863,21 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         top = nflat > (size_t)avail ? nflat - (size_t)avail : 0;
     }
 
+    /* Republish the window a commit callback may want to paint into. */
+    vis_flat = flat; vis_n = nflat; vis_top = top; vis_avail = avail;
+
     frame_begin(&f);
     frame_line(&f, "%s%s%s", yame_ui_bold(), title, yame_ui_reset());
 
     if (header) {
-      char buf[1024]; size_t o = 0;
-      int c = 0;
-      for (const char *p = header; c < ncol && o + 40 < sizeof(buf); ++c) {
-        const char *tab = strchr(p, '\t');
-        int len = (int)(tab ? (size_t)(tab - p) : strlen(p));
-        if (len > w[c] - 2) len = w[c] - 2;
-        o += (size_t)snprintf(buf + o, sizeof(buf) - o, "%-*.*s", w[c], len, p);
-        if (!tab) break;
-        p = tab + 1;
-      }
+      char buf[1024];
+      columns(header, w, ncol, buf, sizeof(buf));
       char cut[1024];
       fit(buf, cols - 6, cut, sizeof(cut));
-      /* Indent matches the cursor marker plus the fold arrow. */
-      frame_line(&f, "    %s%s%s", yame_ui_dim(), cut, yame_ui_reset());
+      /* Indent matches the cursor marker, the fold arrow and, when the tree
+       * is a picker, the checkbox. */
+      frame_line(&f, "    %s%s%s%s", picking ? "    " : "",
+                 yame_ui_dim(), cut, yame_ui_reset());
     } else {
       frame_line(&f, "");
     }
@@ -1732,25 +1895,20 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
                                            : (yame_ui_unicode() ? "▸" : "+"));
 
       if (nd->depth == 0) {
-        /* A root: fold marker, then aligned columns. */
-        char buf[1024]; size_t o = 0;
-        int c = 0;
-        for (const char *p = nd->row; c < ncol && o + 40 < sizeof(buf); ++c) {
-          const char *tab = strchr(p, '\t');
-          int len = (int)(tab ? (size_t)(tab - p) : strlen(p));
-          if (len > w[c] - 2) len = w[c] - 2;
-          o += (size_t)snprintf(buf + o, sizeof(buf) - o, "%-*.*s", w[c], len, p);
-          if (!tab) break;
-          p = tab + 1;
-        }
+        /* A root: fold marker, checkbox, then aligned columns. */
+        char buf[1024];
+        columns(nd->row, w, ncol, buf, sizeof(buf));
         char cut[1024];
-        fit(buf, cols - 6, cut, sizeof(cut));
+        fit(buf, cols - 10, cut, sizeof(cut));
 
-        frame_line(&f, "%s%s%s %s%s%s %s%s%s%s",
+        char box[8] = "";
+        if (picking) node_box(nd, spec, box, sizeof(box));
+
+        frame_line(&f, "%s%s%s %s%s%s %s%s%s%s%s",
                    yame_ui_cyan(), arrow, yame_ui_reset(),
                    yame_ui_cyan(), fold, yame_ui_reset(),
                    is_cur ? yame_ui_bold() : "",
-                   style_color1(nd->style), cut, yame_ui_reset());
+                   style_color1(nd->style), box, cut, yame_ui_reset());
       } else {
         /* Deeper: preformatted text behind the stems of its ancestry. */
         char pre[256];
@@ -1761,24 +1919,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
          * how much is selected out of sight beneath it -- otherwise folding
          * one away silently hides part of what f is about to fetch. */
         char box[8] = "";
-        if (picking) {
-          if (!tn_is_leaf(nd)) {
-            size_t nk = tn_count_checked(nd);
-            if (!nk)          snprintf(box, sizeof(box), "    ");
-            else if (nk < 10) snprintf(box, sizeof(box), "[%zu] ", nk);
-            else              snprintf(box, sizeof(box), "[+] ");
-          } else if (nd->style == YAME_ROW_REQUIRED) {
-            snprintf(box, sizeof(box), "%s",
-                     yame_ui_unicode() ? " ●  " : " ** ");
-          } else if (!spec->have_selectable && nd->style == YAME_ROW_HAVE) {
-            snprintf(box, sizeof(box), "%s",
-                     yame_ui_unicode() ? " ✓  " : " ok ");
-          } else if (nd->key) {
-            snprintf(box, sizeof(box), "%s", nd->checked ? "[x] " : "[ ] ");
-          } else {
-            snprintf(box, sizeof(box), "    ");
-          }
-        }
+        if (picking) node_box(nd, spec, box, sizeof(box));
 
         int lead = 4 + 4 * nd->depth + (picking ? 4 : 0);
         int room = cols - lead - 4;
@@ -1839,7 +1980,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "%c %s  ",
                                spec->actions[a].key, spec->actions[a].verb);
       frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %s open  "
-                     "%s close  space select  / search  %s%s%s q quit%s",
+                     "%s close  space/x select  / search  %s%s%s q quit%s",
                  yame_ui_dim(), nflat ? cur + 1 : 0, nflat,
                  yame_ui_bullet(), nsel, yame_ui_bullet(),
                  yame_ui_unicode() ? "→" : "right",
@@ -1925,7 +2066,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         want_cur = sel->parent;
       }
     }
-    else if (picking && key == K_SPACE && sel) {
+    else if (picking && sel &&
+             (key == K_SPACE || (key == K_CHAR && ch == 'x'))) {
       if (tn_is_leaf(sel)) {
         if (tn_selectable(sel, spec)) sel->checked = !sel->checked;
         if (cur + 1 < nflat) ++cur;
@@ -1952,11 +2094,13 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
          * catalogue stays visible above it, which is the part that matters
          * while a download runs; the description underneath is context you
          * have already read. */
-        act->commit(ctx);
+        int changed = act->commit(ctx);
         yame_ui_panel_close();
-        tn_refresh(&forest, spec, roots, root_styles, n_roots, 1);
-        /* The hit list points at nodes that no longer exist. */
-        n_hits = 0; query[0] = '\0'; search_home = NULL;
+        if (changed) {
+          tn_refresh(&forest, spec, roots, root_styles, n_roots, 1);
+          /* The hit list points at nodes that no longer exist. */
+          n_hits = 0; query[0] = '\0'; search_home = NULL;
+        }
         continue;
       }
     }
@@ -1977,6 +2121,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       else if (spec->detail && spec->detail_key && ch == spec->detail_key)
         detail_open = !detail_open;
       else if (picking && find_action(spec, ch) >= 0) { /* above */ }
+      else if (picking && ch == 'x') { /* handled above, with space */ }
       else if (ch == 'j') { if (cur + 1 < nflat) ++cur; }
       else if (ch == 'k') { if (cur) --cur; }
       else if (ch == '/') {
@@ -2022,6 +2167,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       }
     }
   }
+
+  vis_flat = NULL; vis_n = vis_top = 0; vis_avail = 0;
 
   tn_free_kids(&forest);
   free(flat);
