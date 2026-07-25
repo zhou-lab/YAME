@@ -53,7 +53,7 @@ typedef struct {
 static int usage(void) {
   yame_usage_head("yame hprint [options] <in.cx>");
   yame_usage_sec("Modes:");
-  yame_usage_opt("-R <ref>", "Whole-genome view: one column per CpG window across all chroms.");
+  yame_usage_opt("-R <ref|name>", "Whole-genome view: one column per CpG window across all chroms.");
   yame_usage_opt("-r <reg>", "Region view: rows=samples, columns=CpG sites in region.");
   yame_usage_cont("-R is OPTIONAL here: the file's row count identifies its");
   yame_usage_cont("reference, and the store is searched for it. So `-r chr16`");
@@ -62,7 +62,7 @@ static int usage(void) {
   yame_usage_sec("Options:");
   yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
-  yame_usage_opt("-R [ref.cr|name]", "Reference coordinates (format 7).");
+  yame_usage_opt("-R <ref.cr|name>", "Reference coordinates (format 7).");
   yame_usage_cont("OPTIONAL with -r -- inferred from the row count.");
   yame_usage_cont("A name works too: -R hg38 finds it in the store.");
   yame_usage_opt("-r <region>", "Genomic region: chr16  or  chr16:10000000-10100000");

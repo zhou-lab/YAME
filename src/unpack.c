@@ -119,7 +119,7 @@ static int usage(void) {
   yame_usage_opt("-H <N>", "Output the first N samples.");
   yame_usage_opt("-T <N>", "Output the last  N samples (requires index).");
   yame_usage_text("Row coordinates (optional first column):");
-  yame_usage_opt("-R [rows.cx|name]", "Row coordinate dataset (CX; typically format 7).");
+  yame_usage_opt("-R <rows.cx|name>", "Row coordinate dataset (CX; typically format 7).");
   yame_usage_cont("A name works: -R hg38 finds it in the store. Not");
   yame_usage_cont("inferred, since omitting it means no coordinate column.");
   yame_usage_opt("-r <mode>", "Coordinate print mode (default: 0):");

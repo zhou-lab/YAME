@@ -106,7 +106,7 @@ static int usage(config_t *config) {
   yame_usage_text("(A) Explicit row indices (1-based list):");
   yame_usage_opt("-l <idx.txt>", "One [index1] per line (1-based). Order preserved; no sorting required.");
   yame_usage_text("(B) Explicit genomic coordinates via row coordinate table (format 7):");
-  yame_usage_opt("-R [rows.cx|name]", "Row coordinates (format 7; BED-like).");
+  yame_usage_opt("-R <rows.cx|name>", "Row coordinates (format 7; BED-like).");
   yame_usage_cont("OPTIONAL with -L or -1: inferred from the input's row");
   yame_usage_cont("count. A name works too: -R hg38 finds it in the store.");
   yame_usage_opt("-L <coord.txt>", "One [chrm]_[beg1] per line (1-based beg). Needs coordinates,"); 

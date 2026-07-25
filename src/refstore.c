@@ -191,6 +191,16 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
 void yame_ref_explain_name(FILE *out, const char *spec, uint64_t rows,
                            int status, const char *name, const char *fetch,
                            const char *flag) {
+  /* `-R -r chr16` parses as -R with the argument "-r": the flag may be
+   * omitted, but if it is written it takes an argument, and getopt will take
+   * whatever follows. Saying so beats reporting a reference named "-r". */
+  if (spec && spec[0] == '-' && spec[1]) {
+    fprintf(out, "%s takes an argument, and '%s' looks like the next option "
+                 "rather than one.\n  Omit %s entirely to have it inferred, or "
+                 "give it a path or a name.\n", flag, spec, flag);
+    return;
+  }
+
   switch (status) {
   case YAME_REF_UNKNOWN:
     fprintf(out, "%s: no file named '%s', and %" PRIu64 " rows matches no row "

@@ -498,7 +498,7 @@ static const yame_ref_rows_t YAME_REF_ROWS[] = {
     { "Mammal40", "array", 38607, "InfiniumAnnotation/Mammal40/Mammal40.ordering.tsv.gz", "InfiniumAnnotation/Mammal40/KYCG", "InfiniumAnnotation/Mammal40" },
     { "MM285", "array", 287692, "InfiniumAnnotation/MM285/MM285.ordering.tsv.gz", "InfiniumAnnotation/MM285/KYCG", "InfiniumAnnotation/MM285" },
     { "MSA", "array", 284309, "InfiniumAnnotation/MSA/MSA.ordering.tsv.gz", "InfiniumAnnotation/MSA/KYCG", "InfiniumAnnotation/MSA" },
-    { NULL, NULL, 0, NULL, NULL }
+    { NULL, NULL, 0, NULL, NULL, NULL }
 };
 
 #define YAME_REF_ROWS_N (sizeof(YAME_REF_ROWS)/sizeof(YAME_REF_ROWS[0]) - 1)

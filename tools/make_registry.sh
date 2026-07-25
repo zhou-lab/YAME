@@ -330,7 +330,7 @@ EOF
     done
 
   cat <<'EOF'
-    { NULL, NULL, 0, NULL, NULL }
+    { NULL, NULL, 0, NULL, NULL, NULL }
 };
 
 #define YAME_REF_ROWS_N (sizeof(YAME_REF_ROWS)/sizeof(YAME_REF_ROWS[0]) - 1)
