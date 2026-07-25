@@ -584,7 +584,7 @@ int main_hprint(int argc, char *argv[]) {
     if (fname_cr && !yame_assets_is_file(fname_cr)) {
       char resolved[4096];
       const char *rname = NULL, *rfetch = NULL;
-      int st = yame_ref_resolve(fname_cr, data_n, NULL, resolved,
+      int st = yame_ref_resolve(fname_cr, data_n, NULL, NULL, resolved,
                                 sizeof(resolved), &rname, &rfetch);
       if (st != YAME_REF_OK) {
         yame_ref_explain_name(stderr, fname_cr, data_n, st, rname, rfetch, "-R");
@@ -686,8 +686,8 @@ int main_hprint(int argc, char *argv[]) {
     uint64_t rows = yame_ref_file_rows(fname);
     char resolved[4096];
     const char *rname = NULL, *rfetch = NULL;
-    int st = yame_ref_resolve(fname_cr, rows, NULL, resolved, sizeof(resolved),
-                              &rname, &rfetch);
+    int st = yame_ref_resolve(fname_cr, rows, NULL, NULL, resolved,
+                              sizeof(resolved), &rname, &rfetch);
     if (st != YAME_REF_OK) {
       yame_ref_explain_name(stderr, fname_cr, rows, st, rname, rfetch, "-R");
       return 1;

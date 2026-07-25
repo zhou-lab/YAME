@@ -76,6 +76,17 @@ int yame_assets_safe_name(const char *s) {
   return 1;
 }
 
+const char *yame_assets_index_suffix(const char *name) {
+  static const char *const sfx[] = { ".idx", ".tbi", NULL };
+  if (!name) return NULL;
+  size_t l = strlen(name);
+  for (size_t k = 0; sfx[k]; ++k) {
+    size_t sl = strlen(sfx[k]);
+    if (l > sl && strcmp(name + l - sl, sfx[k]) == 0) return sfx[k];
+  }
+  return NULL;
+}
+
 int yame_assets_safe_relpath(const char *s) {
   if (!s || !*s) return 0;
   if (*s == '/') return 0;                 /* never absolute */

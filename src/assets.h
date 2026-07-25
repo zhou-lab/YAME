@@ -123,6 +123,20 @@ int yame_assets_is_dir(const char *path);
  */
 int yame_assets_safe_name(const char *s);
 
+/**
+ * Does this filename index another file in the same directory?
+ *
+ * Two spellings, because two ecosystems: YAME writes <x>.idx, tabix writes
+ * <x>.tbi. One definition of it, because everything that treats a pair as one
+ * thing has to agree -- the browser folds an index into its data file's row,
+ * and a name lookup must not return one when asked for the other. They
+ * disagreed once: "genes" resolved to genes.bed.gz.tbi, because .tbi sorts
+ * after .bed.gz and only .idx was being skipped.
+ *
+ * Returns the suffix that matched (a static string), or NULL.
+ */
+const char *yame_assets_index_suffix(const char *name);
+
 /* Like safe_name but for a relative path: every '/'-separated component must
  * itself be a safe name. Returns 1 when the whole path is safe. */
 int yame_assets_safe_relpath(const char *s);
@@ -272,14 +286,14 @@ int yame_ref_for_rows(uint64_t rows, const char *store_override,
  * An existing path is used as given -- the ordinary spelling costs nothing
  * and cannot change meaning. Anything else is a NAME, resolved against the
  * store for the row space `rows` identifies: the row space's own name
- * ("hg38") gives its reference, and any other name gives the newest set
- * called that in its knowledgebase, so `-m ChromHMM` finds
- * ChromHMM.20220303.cm without anyone having to know the date or the
- * directory.
+ * ("hg38") gives its reference, and any other name gives the newest file of
+ * that name in any directory the row space owns -- its own first, then its
+ * knowledgebase -- so `-m ChromHMM` finds ChromHMM.20220303.cm without anyone
+ * having to know the date or the directory.
  */
-int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
-                     char *path, size_t n, const char **name,
-                     const char **fetch);
+int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override,
+                     const char *want_kind, char *path, size_t n,
+                     const char **name, const char **fetch);
 
 /** Rows in a CX file's first record, or 0 if it cannot be read. */
 uint64_t yame_ref_file_rows(const char *path);

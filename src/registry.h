@@ -489,21 +489,32 @@ typedef struct yame_ref_rows_s {
     const char *kind;        /* "genome" (a .cr) or "array" (an ordering) */
     uint64_t    rows;
     const char *store_path;  /* the reference itself, under the store root */
-    const char *kb_path;     /* where this row space's .cm sets live */
+    const char *const *dirs; /* every directory it owns, nearest first */
     const char *fetch;       /* "<source>/<target>" for `yame fetch` */
 } yame_ref_rows_t;
 
+static const char *const YAME_REF_DIRS_hg38[] = { "genomes/hg38", "KYCGKB/hg38", NULL };
+static const char *const YAME_REF_DIRS_mm10[] = { "genomes/mm10", "KYCGKB/mm10", NULL };
+static const char *const YAME_REF_DIRS_mm39[] = { "genomes/mm39", "KYCGKB/mm39", NULL };
+static const char *const YAME_REF_DIRS_EPIC[] = { "InfiniumAnnotation/EPIC", "InfiniumAnnotation/EPIC/KYCG", NULL };
+static const char *const YAME_REF_DIRS_EPICv2[] = { "InfiniumAnnotation/EPICv2", "InfiniumAnnotation/EPICv2/KYCG", NULL };
+static const char *const YAME_REF_DIRS_HM27[] = { "InfiniumAnnotation/HM27", "InfiniumAnnotation/HM27/KYCG", NULL };
+static const char *const YAME_REF_DIRS_HM450[] = { "InfiniumAnnotation/HM450", "InfiniumAnnotation/HM450/KYCG", NULL };
+static const char *const YAME_REF_DIRS_Mammal40[] = { "InfiniumAnnotation/Mammal40", "InfiniumAnnotation/Mammal40/KYCG", NULL };
+static const char *const YAME_REF_DIRS_MM285[] = { "InfiniumAnnotation/MM285", "InfiniumAnnotation/MM285/KYCG", NULL };
+static const char *const YAME_REF_DIRS_MSA[] = { "InfiniumAnnotation/MSA", "InfiniumAnnotation/MSA/KYCG", NULL };
+
 static const yame_ref_rows_t YAME_REF_ROWS[] = {
-    { "hg38", "genome", 29401795, "KYCGKB/hg38/cpg_nocontig.cr", "KYCGKB/hg38", "KYCGKB/hg38" },
-    { "mm10", "genome", 21867837, "KYCGKB/mm10/cpg_nocontig.cr", "KYCGKB/mm10", "KYCGKB/mm10" },
-    { "mm39", "genome", 21889506, "KYCGKB/mm39/cpg_nocontig.cr", "KYCGKB/mm39", "KYCGKB/mm39" },
-    { "EPIC", "array", 866553, "InfiniumAnnotation/EPIC/EPIC.ordering.tsv.gz", "InfiniumAnnotation/EPIC/KYCG", "InfiniumAnnotation/EPIC" },
-    { "EPICv2", "array", 937690, "InfiniumAnnotation/EPICv2/EPICv2.ordering.tsv.gz", "InfiniumAnnotation/EPICv2/KYCG", "InfiniumAnnotation/EPICv2" },
-    { "HM27", "array", 27722, "InfiniumAnnotation/HM27/HM27.ordering.tsv.gz", "InfiniumAnnotation/HM27/KYCG", "InfiniumAnnotation/HM27" },
-    { "HM450", "array", 486427, "InfiniumAnnotation/HM450/HM450.ordering.tsv.gz", "InfiniumAnnotation/HM450/KYCG", "InfiniumAnnotation/HM450" },
-    { "Mammal40", "array", 38607, "InfiniumAnnotation/Mammal40/Mammal40.ordering.tsv.gz", "InfiniumAnnotation/Mammal40/KYCG", "InfiniumAnnotation/Mammal40" },
-    { "MM285", "array", 287692, "InfiniumAnnotation/MM285/MM285.ordering.tsv.gz", "InfiniumAnnotation/MM285/KYCG", "InfiniumAnnotation/MM285" },
-    { "MSA", "array", 284309, "InfiniumAnnotation/MSA/MSA.ordering.tsv.gz", "InfiniumAnnotation/MSA/KYCG", "InfiniumAnnotation/MSA" },
+    { "hg38", "genome", 29401795, "KYCGKB/hg38/cpg_nocontig.cr", YAME_REF_DIRS_hg38, "KYCGKB/hg38" },
+    { "mm10", "genome", 21867837, "KYCGKB/mm10/cpg_nocontig.cr", YAME_REF_DIRS_mm10, "KYCGKB/mm10" },
+    { "mm39", "genome", 21889506, "KYCGKB/mm39/cpg_nocontig.cr", YAME_REF_DIRS_mm39, "KYCGKB/mm39" },
+    { "EPIC", "array", 866553, "InfiniumAnnotation/EPIC/EPIC.ordering.tsv.gz", YAME_REF_DIRS_EPIC, "InfiniumAnnotation/EPIC" },
+    { "EPICv2", "array", 937690, "InfiniumAnnotation/EPICv2/EPICv2.ordering.tsv.gz", YAME_REF_DIRS_EPICv2, "InfiniumAnnotation/EPICv2" },
+    { "HM27", "array", 27722, "InfiniumAnnotation/HM27/HM27.ordering.tsv.gz", YAME_REF_DIRS_HM27, "InfiniumAnnotation/HM27" },
+    { "HM450", "array", 486427, "InfiniumAnnotation/HM450/HM450.ordering.tsv.gz", YAME_REF_DIRS_HM450, "InfiniumAnnotation/HM450" },
+    { "Mammal40", "array", 38607, "InfiniumAnnotation/Mammal40/Mammal40.ordering.tsv.gz", YAME_REF_DIRS_Mammal40, "InfiniumAnnotation/Mammal40" },
+    { "MM285", "array", 287692, "InfiniumAnnotation/MM285/MM285.ordering.tsv.gz", YAME_REF_DIRS_MM285, "InfiniumAnnotation/MM285" },
+    { "MSA", "array", 284309, "InfiniumAnnotation/MSA/MSA.ordering.tsv.gz", YAME_REF_DIRS_MSA, "InfiniumAnnotation/MSA" },
     { NULL, NULL, 0, NULL, NULL, NULL }
 };
 

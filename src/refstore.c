@@ -123,9 +123,10 @@ static int newest_named(const char *dir, const char *want, char *out,
   struct dirent *e;
   while ((e = readdir(d))) {
     if (e->d_name[0] == '.') continue;
-    size_t l = strlen(e->d_name);
-    if (l > 4 && strcmp(e->d_name + l - 4, ".idx") == 0) continue;
     if (strcmp(e->d_name, "SHA256SUMS") == 0) continue;
+    /* Never an index: it shares its data file's set name and sorts after it,
+     * so "genes" would resolve to genes.bed.gz.tbi. */
+    if (yame_assets_index_suffix(e->d_name)) continue;
 
     char sn[256];
     set_name_of(e->d_name, sn, sizeof(sn));
@@ -148,9 +149,9 @@ uint64_t yame_ref_file_rows(const char *path) {
   return rows;
 }
 
-int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
-                     char *path, size_t n, const char **name,
-                     const char **fetch) {
+int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override,
+                     const char *want_kind, char *path, size_t n,
+                     const char **name, const char **fetch) {
   if (name) *name = NULL;
   if (fetch) *fetch = NULL;
   if (!spec || !*spec) return YAME_REF_UNKNOWN;
@@ -171,7 +172,7 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
   if (want_kind && strcmp(e->kind, want_kind) != 0) return YAME_REF_WRONG_KIND;
 
   char root[4096], dir[4096];
-  yame_assets_root(NULL, NULL, root, sizeof(root));
+  yame_assets_root(store_override, NULL, root, sizeof(root));
 
   /* The row space's own name resolves to its reference: -R hg38. */
   if (strcasecmp(spec, e->name) == 0) {
@@ -180,10 +181,15 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
     return yame_assets_is_file(path) ? YAME_REF_OK : YAME_REF_MISSING;
   }
 
-  /* Otherwise a set in this row space's knowledgebase. */
-  if (yame_assets_join(dir, sizeof(dir), root, e->kb_path) == 0 &&
-      newest_named(dir, spec, path, n))
-    return YAME_REF_OK;
+  /* Otherwise any file of that name the row space owns, its own directory
+   * before its knowledgebase. Searching only the knowledgebase left the files
+   * that come WITH a platform or a genome -- ordering, mask, coord, seqinfo,
+   * genes -- unreachable by name, though the browser lists them in the same
+   * unit as the sets. */
+  for (size_t k = 0; e->dirs && e->dirs[k]; ++k)
+    if (yame_assets_join(dir, sizeof(dir), root, e->dirs[k]) == 0 &&
+        newest_named(dir, spec, path, n))
+      return YAME_REF_OK;
 
   return YAME_REF_NO_NAME;
 }

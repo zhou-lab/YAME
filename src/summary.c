@@ -288,32 +288,48 @@ void prepare_mask(cdata_t *c) {
 int main_summary(int argc, char *argv[]);
 
 /**
+ * True while summarize_each is driving main_summary.
+ *
+ * -b must not survive into the child. Filtering it out of the argv looked
+ * like enough and was not: getopt accepts glued short options, so `-bH` is a
+ * -b that no string comparison against "-b" will find -- and a child that
+ * browses again re-enters this function, forever. A guard cannot be spelled
+ * around.
+ */
+static int summary_reentry = 0;
+
+/**
  * Run one summary per chosen mask.
  *
  * Re-entering main_summary with a made-up argv, rather than restructuring it
  * to loop: the mask is set up at the top and torn down at the bottom of a
  * long function, and one -m per run is exactly what that function already
  * does correctly. getopt is reset each time, and the header is printed once.
+ *
+ * The caller's arguments are passed through untouched and the chosen mask is
+ * appended LAST, because getopt keeps the last -m it sees -- so the choice
+ * made in the browser wins over anything already on the command line, however
+ * that was spelled.
  */
 static int summarize_each(int argc, char *argv[], char **masks, size_t n) {
   int rc = 0;
+  char **av = calloc((size_t)argc + 8, sizeof(char *));
+  if (!av) return 1;
+
   for (size_t i = 0; i < n; ++i) {
-    char *av[64];
     int ac = 0;
-    av[ac++] = argv[0];
+    for (int k = 0; k < argc; ++k) av[ac++] = argv[k];
+    if (i) av[ac++] = (char *)"-H";       /* one header for the whole run */
     av[ac++] = (char *)"-m";
     av[ac++] = masks[i];
-    if (i) av[ac++] = (char *)"-H";       /* one header for the whole run */
-    /* Everything the caller passed except -b and its own -m. */
-    for (int k = 1; k < argc && ac < 60; ++k) {
-      if (strcmp(argv[k], "-b") == 0) continue;
-      if (strcmp(argv[k], "-m") == 0) { ++k; continue; }
-      av[ac++] = argv[k];
-    }
     av[ac] = NULL;
+
     optind = 1;
+    summary_reentry = 1;
     rc |= main_summary(ac, av);
+    summary_reentry = 0;
   }
+  free(av);
   return rc;
 }
 
@@ -353,9 +369,8 @@ int main_summary(int argc, char *argv[]) {
 
   /* -b: show what there is, and use what gets chosen. Needs the query first,
    * since its row space decides which collection to open at. */
-  if (browse) {
-    if (optind >= argc) { usage(); wzfatal("Please supply input file.\n"); }
-    uint64_t rows = yame_ref_file_rows(argv[optind]);
+  if (browse && !summary_reentry) {
+    uint64_t rows = yame_ref_file_rows(argv[optind]);   /* checked above */
     const char *rname = NULL, *rfetch = NULL;
     char path[4096];
     yame_ref_for_rows(rows, NULL, NULL, path, sizeof(path), &rname, &rfetch);
@@ -385,7 +400,7 @@ int main_summary(int argc, char *argv[]) {
     char resolved[4096];
     const char *rname = NULL, *rfetch = NULL;
     uint64_t rows = yame_ref_file_rows(argv[optind]);
-    int st = yame_ref_resolve(config.fname_mask, rows, NULL, resolved,
+    int st = yame_ref_resolve(config.fname_mask, rows, NULL, NULL, resolved,
                               sizeof(resolved), &rname, &rfetch);
     if (st != YAME_REF_OK) {
       yame_ref_explain_name(stderr, config.fname_mask, rows, st, rname,
@@ -415,6 +430,34 @@ int main_summary(int argc, char *argv[]) {
       prepare_mask(&c_mask);
       c_masks = realloc(c_masks, (c_masks_n+1)*sizeof(cdata_t));
       c_masks[c_masks_n] = c_mask;
+    }
+  }
+
+  /**
+   * A mask holding no CX record produces no rows at all.
+   *
+   * Every output row comes from a (query, mask) pair, so a mask file with
+   * nothing in it emits a header and exits 0 -- which reads as "no
+   * enrichment" when it means "that file is not a mask". Worth one read to
+   * turn a silent empty answer into a sentence, and worth it especially now
+   * that -m takes a NAME: `-m gaps` resolves to a real file that is a
+   * tsv.gz, and nothing downstream would have said so.
+   */
+  if (config.fname_mask) {
+    int have_mask = 1;
+    if (config.in_memory || unseekable) {
+      have_mask = (c_masks_n > 0);
+    } else {
+      cdata_t probe = read_cdata1(&cf_mask);
+      have_mask = (probe.n != 0);
+      free_cdata(&probe);
+      if (bgzf_seek(cf_mask.fh, 0, SEEK_SET) != 0) have_mask = 0;
+    }
+    if (!have_mask) {
+      fprintf(stderr, "[summary] %s holds no CX record, so it cannot be a "
+                      "mask.\n  A mask is a .cm / .cx file; a .tsv.gz or a "
+                      ".bed.gz is not one.\n", config.fname_mask);
+      return 1;
     }
   }
   

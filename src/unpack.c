@@ -364,7 +364,7 @@ int main_unpack(int argc, char *argv[]) {
     char resolved[4096];
     const char *rname = NULL, *rfetch = NULL;
     uint64_t rows = yame_ref_file_rows(fname_in);
-    int st = yame_ref_resolve(fname_row, rows, NULL, resolved,
+    int st = yame_ref_resolve(fname_row, rows, NULL, NULL, resolved,
                               sizeof(resolved), &rname, &rfetch);
     if (st != YAME_REF_OK) {
       yame_ref_explain_name(stderr, fname_row, rows, st, rname, rfetch, "-R");

@@ -157,18 +157,31 @@ typedef struct {
   char   name[256];             /* the file within it */
 } pick_t;
 
+/**
+ * Room for a selection.
+ *
+ * `a` takes the whole catalogue, which is 311 files today and grows with it,
+ * so these are sized well past that rather than at it. Whatever the size,
+ * hitting it is COUNTED and reported: a picker that quietly fetched the first
+ * N of what you asked for would be worse than one that refused, because the
+ * result looks like success.
+ */
+enum { PICK_MAX = 4096, CHOSEN_MAX = 256 };
+
 typedef struct {
   char   root[4096];            /* the store */
-  pick_t pick[512];
+  pick_t pick[PICK_MAX];
   size_t n_pick;
+  size_t n_dropped;             /* wanted, but past PICK_MAX */
   int    force;
 
   /* What the user picked to USE, as opposed to everything that has to be
    * fetched alongside it -- an .idx and a unit index are part of the download
    * but are not what anyone asked to summarize against. */
-  size_t chosen_asset[64];
-  char   chosen_name[64][256];
+  size_t chosen_asset[CHOSEN_MAX];
+  char   chosen_name[CHOSEN_MAX][256];
   size_t n_chosen;
+  size_t n_chosen_dropped;
 
   /* The widget holds these arrays and re-reads them after a commit, so a
    * fetch has to rewrite the entries in place -- otherwise a unit whose files
@@ -1005,7 +1018,7 @@ static int bx_recommend(void *ctx, const char *path, const char *key) {
 /* ---- choosing and fetching ---- */
 
 static void pick_add(browse_t *b, size_t asset, const char *name) {
-  if (b->n_pick >= sizeof(b->pick) / sizeof(b->pick[0])) return;
+  if (b->n_pick >= PICK_MAX) { ++b->n_dropped; return; }
   for (size_t i = 0; i < b->n_pick; ++i)
     if (b->pick[i].asset == asset && strcmp(b->pick[i].name, name) == 0) return;
   b->pick[b->n_pick].asset = asset;
@@ -1163,10 +1176,16 @@ static int confirm_plan(browse_t *b) {
 
   yame_ui_panel_open(4);
   panel_row(0, yame_ui_bold(), yame_ui_unicode() ? "⤓" : ">", label, value);
-  if (unknown)
+  if (b->n_dropped) {
+    char note[128];
+    snprintf(note, sizeof(note), "%zu more did not fit and will NOT be fetched",
+             b->n_dropped);
+    panel_row(1, yame_ui_red(), yame_ui_cross(), "selection truncated", note);
+  } else if (unknown) {
     panel_row(1, NULL, " ", "", "some sizes are not published upstream");
-  else
+  } else {
     yame_ui_panel_line(1, "");
+  }
   return yame_ui_panel_confirm(2, "   Proceed?", 1);
 }
 
@@ -1185,7 +1204,7 @@ static void bx_choose(void *ctx, const char *path, const char *key) {
 
   const char *bar = key ? strchr(key, '|') : NULL;
   if (!bar) return;
-  if (b->n_chosen >= sizeof(b->chosen_asset) / sizeof(b->chosen_asset[0])) return;
+  if (b->n_chosen >= CHOSEN_MAX) { ++b->n_chosen_dropped; return; }
 
   b->chosen_asset[b->n_chosen] = (size_t)strtoul(key, NULL, 10);
   snprintf(b->chosen_name[b->n_chosen], sizeof(b->chosen_name[0]), "%s",
@@ -1205,6 +1224,7 @@ static int bx_commit(void *ctx) {
   if (!confirm_plan(b)) {
     yame_ui_panel_close();
     b->n_pick = 0;               /* the checks stay; the fetch does not run */
+    b->n_dropped = 0;
     return 0;
   }
 
@@ -1229,6 +1249,7 @@ static int bx_commit(void *ctx) {
   yame_ui_panel_close();
   refresh_roots(b);
   b->n_pick = 0;
+  b->n_dropped = 0;
   return 1;
 }
 
@@ -1247,9 +1268,9 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
 
     /* Collect every file picked from this same directory, then mark them
      * consumed so the group is only fetched once. */
-    const char *names[512];
+    const char *names[PICK_MAX];
     size_t n_names = 0;
-    for (size_t j = i; j < b->n_pick && n_names < 512; ++j) {
+    for (size_t j = i; j < b->n_pick && n_names < PICK_MAX; ++j) {
       if (b->pick[j].asset != idx || !b->pick[j].name[0]) continue;
       names[n_names++] = b->pick[j].name;
       if (j != i) b->pick[j].asset = (size_t)-1;   /* consumed */
@@ -1491,6 +1512,11 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
   spec.ctx         = &b;
 
   if (yame_ui_tree(&spec) != 2 || !b.n_chosen) return 0;
+
+  if (b.n_chosen_dropped)
+    fprintf(stderr, "yame: %zu chosen file%s did not fit and %s ignored.\n",
+            b.n_chosen_dropped, b.n_chosen_dropped == 1 ? "" : "s",
+            b.n_chosen_dropped == 1 ? "was" : "were");
 
   /* Anything chosen but not downloaded is fetched now, on the normal screen:
    * the widget is gone, so this is an ordinary transfer with ordinary output. */
