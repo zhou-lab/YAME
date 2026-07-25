@@ -557,11 +557,12 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
    * stop and let the human decide. */
   int pin = yame_assets_pin_check(store_sub, anchor_sha);
   if (pin == YAME_PIN_CONFLICT && !(opt && opt->force)) {
+    /* Remedy first: this is rendered into a fixed-width panel row by the
+     * browser, and the one word the reader needs is -f. Leading with the
+     * diagnosis put it past the truncation point. */
     set_err(err,
-            "%s holds a %s this build does not pin: it was populated from a "
-            "different upstream tag (this build pins %s). Rebuild against the "
-            "same tag, point the tool's own data-dir variable at a private "
-            "root, or re-fetch with -f to overwrite.",
+            "stale tag: re-fetch with -f to overwrite %s. Its %s came from a "
+            "different upstream tag than this build pins (%s).",
             store_sub, YAME_ASSETS_SUMS_FILE, tag ? tag : "(none)");
     return -1;
   }

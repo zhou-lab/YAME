@@ -460,6 +460,30 @@ static void unit_counts(const char *store_root, const char *unit,
   for (size_t i = 0; i < n; ++i) if (ent_present(store_root, &ents[i])) ++*have;
 }
 
+/**
+ * Does any directory behind this unit hold a tag this build does not pin?
+ *
+ * Presence is a file test, and a file test cannot see this: the three small
+ * files of an older genomes tag are byte-identical to the new one, so the unit
+ * looks half-fetched rather than blocked. Selecting the missing file then
+ * fails inside the guard in yame_assets_fetch_dir(), which is a bad way to
+ * learn that the whole directory needs -f. Ask the pin, and say so on the row.
+ */
+static int unit_pin_conflict(const char *store_root, const char *unit) {
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    char u[128], s[128];
+    unit_of(a, u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) != 0) continue;
+
+    char dir[4096];
+    if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0)
+      continue;
+    if (yame_assets_pin_check(dir, a->anchor) == YAME_PIN_CONFLICT) return 1;
+  }
+  return 0;
+}
+
 static void group_counts(const char *store_root, const char *group,
                          size_t *total, size_t *have) {
   char units[32][128];
@@ -1402,6 +1426,11 @@ static void root_row(browse_t *b, size_t i, const char *group,
   if (unit) {
     unit_counts(b->root, unit, "", 1, &total, &have);
     counts_note(total, have, note, sizeof(note));
+    /* A conflicted directory cannot be written into at all, so the gauge
+     * would be describing a fetch that is not on offer. Say what is actually
+     * wrong, in the column the eye is already in. */
+    if (unit_pin_conflict(b->root, unit))
+      snprintf(note, sizeof(note), "%s", "stale tag: -f");
     snprintf(line, sizeof(line), "%s\t%s\t" TAIL_FMT, unit,
              unit_is_array(unit) ? "array" : "genome", unit_tag(unit), note);
   } else {
