@@ -26,6 +26,7 @@
 #include "wzmisc.h"
 #include "wzbed.h"
 #include "cfile.h"
+#include "assets.h"
 #include "snames.h"
 #include "summary.h"
 
@@ -309,6 +310,26 @@ int main_summary(int argc, char *argv[]) {
   if (optind + 1 > argc) { 
     usage(); 
     wzfatal("Please supply input file.\n"); 
+  }
+
+  /* A mask may be named rather than spelled out: the query's row count says
+   * which row space it lives in, so `-m ChromHMM` is enough. Only a spec that
+   * is not already a file is looked up, so a path still means itself and
+   * costs nothing. */
+  if (config.fname_mask && !yame_assets_is_file(config.fname_mask)) {
+    char resolved[4096];
+    const char *rname = NULL, *rfetch = NULL;
+    uint64_t rows = yame_ref_file_rows(argv[optind]);
+    int st = yame_ref_resolve(config.fname_mask, rows, NULL, resolved,
+                              sizeof(resolved), &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain_name(stderr, config.fname_mask, rows, st, rname,
+                            rfetch, "-m");
+      return 1;
+    }
+    fprintf(stderr, "[summary] -m %s -> %s\n", config.fname_mask, resolved);
+    free(config.fname_mask);
+    config.fname_mask = strdup(resolved);
   }
 
   cfile_t cf_mask; int unseekable = 0;

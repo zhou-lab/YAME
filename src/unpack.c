@@ -24,6 +24,7 @@
 #include <zlib.h>
 #include <stdio.h>
 #include "cfile.h"
+#include "assets.h"
 #include "vector.h"
 #include "snames.h"
 
@@ -118,7 +119,9 @@ static int usage(void) {
   yame_usage_opt("-H <N>", "Output the first N samples.");
   yame_usage_opt("-T <N>", "Output the last  N samples (requires index).");
   yame_usage_text("Row coordinates (optional first column):");
-  yame_usage_opt("-R <rows.cx>", "Row coordinate dataset (CX; typically format 7).");
+  yame_usage_opt("-R [rows.cx|name]", "Row coordinate dataset (CX; typically format 7).");
+  yame_usage_cont("A name works: -R hg38 finds it in the store. Not");
+  yame_usage_cont("inferred, since omitting it means no coordinate column.");
   yame_usage_opt("-r <mode>", "Coordinate print mode (default: 0):");
   yame_usage_cont("0: chrm<tab>beg0<tab>end1   (cg-style)");
   yame_usage_cont("1: chrm<tab>beg0<tab>end0   (allc-style)");
@@ -353,6 +356,24 @@ int main_unpack(int argc, char *argv[]) {
   }
 
   char *fname_in = strdup(argv[optind]);
+
+  /* -R may be a name rather than a path: the input's row count says which row
+   * space to look in. Only a spec that is not already a file is looked up, so
+   * a path still means itself. */
+  if (fname_row && !yame_assets_is_file(fname_row)) {
+    char resolved[4096];
+    const char *rname = NULL, *rfetch = NULL;
+    uint64_t rows = yame_ref_file_rows(fname_in);
+    int st = yame_ref_resolve(fname_row, rows, NULL, resolved,
+                              sizeof(resolved), &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain_name(stderr, fname_row, rows, st, rname, rfetch, "-R");
+      return 1;
+    }
+    free(fname_row);
+    fname_row = strdup(resolved);
+  }
+
   cfile_t cf = open_cfile(fname_in);
   char *fname_index = get_fname_index(fname_in);
   index_t *idx = loadIndex(fname_index);

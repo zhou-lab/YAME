@@ -258,12 +258,36 @@ enum {
   YAME_REF_OK         =  0,   /* identified and in the store */
   YAME_REF_MISSING    =  1,   /* identified, not downloaded */
   YAME_REF_WRONG_KIND =  2,   /* identified, but not the kind asked for */
+  YAME_REF_NO_NAME    =  3,   /* row space known, nothing in it by that name */
   YAME_REF_UNKNOWN    = -1    /* the count matches nothing known */
 };
 
 int yame_ref_for_rows(uint64_t rows, const char *store_override,
                       const char *want_kind, char *path, size_t n,
                       const char **name, const char **fetch);
+
+/**
+ * Turn a -R / -m argument into a path.
+ *
+ * An existing path is used as given -- the ordinary spelling costs nothing
+ * and cannot change meaning. Anything else is a NAME, resolved against the
+ * store for the row space `rows` identifies: the row space's own name
+ * ("hg38") gives its reference, and any other name gives the newest set
+ * called that in its knowledgebase, so `-m ChromHMM` finds
+ * ChromHMM.20220303.cm without anyone having to know the date or the
+ * directory.
+ */
+int yame_ref_resolve(const char *spec, uint64_t rows, const char *want_kind,
+                     char *path, size_t n, const char **name,
+                     const char **fetch);
+
+/** Rows in a CX file's first record, or 0 if it cannot be read. */
+uint64_t yame_ref_file_rows(const char *path);
+
+/** Print why a name did not resolve. */
+void yame_ref_explain_name(FILE *out, const char *spec, uint64_t rows,
+                           int status, const char *name, const char *fetch,
+                           const char *flag);
 
 /**
  * Print why an inference did not produce a usable reference: which reference

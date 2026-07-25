@@ -309,7 +309,8 @@ typedef struct yame_ref_rows_s {
     const char *name;        /* hg38, EPIC, ... */
     const char *kind;        /* "genome" (a .cr) or "array" (an ordering) */
     uint64_t    rows;
-    const char *store_path;  /* under the store root */
+    const char *store_path;  /* the reference itself, under the store root */
+    const char *kb_path;     /* where this row space's .cm sets live */
     const char *fetch;       /* "<source>/<target>" for `yame fetch` */
 } yame_ref_rows_t;
 
@@ -318,14 +319,14 @@ EOF
 
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools _repo nrows _rest; do
     [ -n "${nrows:-}" ] || continue
-    printf '    { "%s", "genome", %s, "KYCGKB/%s/cpg_nocontig.cr", "KYCGKB/%s" },\n' \
-      "$g" "$nrows" "$g" "$g"
+    printf '    { "%s", "genome", %s, "KYCGKB/%s/cpg_nocontig.cr", "KYCGKB/%s", "KYCGKB/%s" },\n' \
+      "$g" "$nrows" "$g" "$g" "$g"
   done
   rows_of "$cat_dir/InfiniumAnnotation.tsv" |
     while IFS=$'\t' read -r p _tools _beads nrows _rest; do
       [ -n "${nrows:-}" ] || continue
-      printf '    { "%s", "array", %s, "InfiniumAnnotation/%s/%s.ordering.tsv.gz", "InfiniumAnnotation/%s" },\n' \
-        "$p" "$nrows" "$p" "$p" "$p"
+      printf '    { "%s", "array", %s, "InfiniumAnnotation/%s/%s.ordering.tsv.gz", "InfiniumAnnotation/%s/KYCG", "InfiniumAnnotation/%s" },\n' \
+        "$p" "$nrows" "$p" "$p" "$p" "$p"
     done
 
   cat <<'EOF'

@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include "cfile.h"
+#include "assets.h"
 #include "cdata.h"
 
 /**
@@ -105,8 +106,11 @@ static int usage(config_t *config) {
   yame_usage_text("(A) Explicit row indices (1-based list):");
   yame_usage_opt("-l <idx.txt>", "One [index1] per line (1-based). Order preserved; no sorting required.");
   yame_usage_text("(B) Explicit genomic coordinates via row coordinate table (format 7):");
-  yame_usage_opt("-R <rows.cx>", "Row coordinate dataset (format 7; e.g. BED-like coordinates).");
-  yame_usage_opt("-L <coord.txt>", "One [chrm]_[beg1] per line (1-based beg). Requires -R.");
+  yame_usage_opt("-R [rows.cx|name]", "Row coordinates (format 7; BED-like).");
+  yame_usage_cont("OPTIONAL with -L or -1: inferred from the input's row");
+  yame_usage_cont("count. A name works too: -R hg38 finds it in the store.");
+  yame_usage_opt("-L <coord.txt>", "One [chrm]_[beg1] per line (1-based beg). Needs coordinates,"); 
+  yame_usage_cont("which are inferred when -R is not given.");
   yame_usage_cont("Order preserved; no sorting required.");
   yame_usage_opt("-1", "If -R is provided, emit the subsetted row coordinates as the FIRST dataset.");
   yame_usage_text("(C) Mask-based filtering (binary mask):");
@@ -506,10 +510,36 @@ int main_rowsub(int argc, char *argv[]) {
     exit(1);
   }
 
-  if (fname_rnindex && !fname_row) {
-    fprintf(stderr, "[%s:%d] Missing -R for BED coordinates.\n", __func__, __LINE__);
-    fflush(stderr);
-    exit(1);
+  /* -L needs coordinates, and the input says which ones by its row count, so
+   * -R is a thing to supply only when that inference cannot be made. A -R
+   * that IS supplied may be a name rather than a path. */
+  if (fname_row && !yame_assets_is_file(fname_row)) {
+    char resolved[4096];
+    const char *rname = NULL, *rfetch = NULL;
+    uint64_t rows = yame_ref_file_rows(argv[optind]);
+    int st = yame_ref_resolve(fname_row, rows, NULL, resolved,
+                              sizeof(resolved), &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain_name(stderr, fname_row, rows, st, rname, rfetch, "-R");
+      return 1;
+    }
+    free(fname_row);
+    fname_row = strdup(resolved);
+  }
+
+  if ((fname_rnindex || add_row_coordinates) && !fname_row) {
+    uint64_t rows = yame_ref_file_rows(argv[optind]);
+    char path[4096];
+    const char *rname = NULL, *rfetch = NULL;
+    int st = yame_ref_for_rows(rows, NULL, "genome", path, sizeof(path),
+                               &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain(stderr, rows, st, rname, rfetch, "-R");
+      return 1;
+    }
+    fprintf(stderr, "[rowsub] %"PRIu64" rows -> %s, using %s\n",
+            rows, rname, path);
+    fname_row = strdup(path);
   }
 
   if (fname_row) {

@@ -54,16 +54,17 @@ static int usage(void) {
   yame_usage_head("yame hprint [options] <in.cx>");
   yame_usage_sec("Modes:");
   yame_usage_opt("-R <ref>", "Whole-genome view: one column per CpG window across all chroms.");
-  yame_usage_opt("-R <ref> -r <reg>", "Region view: rows=samples, columns=CpG sites in region.");
-  yame_usage_cont("-R is inferred from the file's row count when it names a");
-  yame_usage_cont("reference already in the store, so -r alone is usually enough.");
+  yame_usage_opt("-r <reg>", "Region view: rows=samples, columns=CpG sites in region.");
+  yame_usage_cont("-R is OPTIONAL here: the file's row count identifies its");
+  yame_usage_cont("reference, and the store is searched for it. So `-r chr16`");
+  yame_usage_cont("alone is usually enough.");
   yame_usage_text("(neither)         Legacy full-dataset dump (fmt6 only).");
   yame_usage_sec("Options:");
   yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
-  yame_usage_opt("-R <ref.cr>", "Reference coordinate file (format 7). Optional with -r:");
-  yame_usage_cont("the row count identifies the genome, and the store is");
-  yame_usage_cont("searched for its cpg_nocontig.cr.");
+  yame_usage_opt("-R [ref.cr|name]", "Reference coordinates (format 7).");
+  yame_usage_cont("OPTIONAL with -r -- inferred from the row count.");
+  yame_usage_cont("A name works too: -R hg38 finds it in the store.");
   yame_usage_opt("-r <region>", "Genomic region: chr16  or  chr16:10000000-10100000");
   yame_usage_opt("-l <int>", "Sample label column width (default: 20)");
   yame_usage_opt("-t <int>", "Ruler tick interval in columns (default: 10)");
@@ -578,7 +579,20 @@ int main_hprint(int argc, char *argv[]) {
     }
 
     /* A region needs coordinates. The file says which ones by its row count,
-     * so -R is a thing to supply only when that inference cannot be made. */
+     * so -R is a thing to supply only when that inference cannot be made --
+     * and when it is supplied it may be a name rather than a path. */
+    if (fname_cr && !yame_assets_is_file(fname_cr)) {
+      char resolved[4096];
+      const char *rname = NULL, *rfetch = NULL;
+      int st = yame_ref_resolve(fname_cr, data_n, NULL, resolved,
+                                sizeof(resolved), &rname, &rfetch);
+      if (st != YAME_REF_OK) {
+        yame_ref_explain_name(stderr, fname_cr, data_n, st, rname, rfetch, "-R");
+        return 1;
+      }
+      free(fname_cr);
+      fname_cr = strdup(resolved);
+    }
     if (!fname_cr) fname_cr = infer_ref(data_n);
     if (!fname_cr) return 1;
 
@@ -667,6 +681,21 @@ int main_hprint(int argc, char *argv[]) {
   }
 
   /* ---- whole-genome mode: -R without -r ---- */
+  if (fname_cr && !yame_assets_is_file(fname_cr)) {
+    /* Only pay for the row count when a name actually needs resolving. */
+    uint64_t rows = yame_ref_file_rows(fname);
+    char resolved[4096];
+    const char *rname = NULL, *rfetch = NULL;
+    int st = yame_ref_resolve(fname_cr, rows, NULL, resolved, sizeof(resolved),
+                              &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain_name(stderr, fname_cr, rows, st, rname, rfetch, "-R");
+      return 1;
+    }
+    free(fname_cr);
+    fname_cr = strdup(resolved);
+  }
+
   if (fname_cr) {
     cfile_t cf_cr = open_cfile(fname_cr);
     cdata_t cr    = read_cdata1(&cf_cr);
