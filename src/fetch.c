@@ -330,28 +330,47 @@ static int has_file(const yame_asset_reg_t *a, const char *name) {
   return 0;
 }
 
-/* A ".cm.idx" whose ".cm" is in the same directory rides with it rather than
- * being offered: the index is unreadable alone and the set unusable without
- * it, so listing them apart only invited picking one. */
+/**
+ * An index rides with the file it indexes rather than being offered beside
+ * it: it is unreadable alone and its data file is unusable without it, so
+ * listing the two apart only invited picking one.
+ *
+ * Two spellings, because two ecosystems: YAME writes <x>.idx, tabix writes
+ * <x>.tbi, and a genes.bed.gz without its .tbi is exactly as much use as a
+ * .cm without its .idx.
+ */
+static const char *const COMPANION_SFX[] = { ".idx", ".tbi", NULL };
+
+/* Is this file an index whose data file sits in the same directory? */
 static int is_companion(const yame_asset_reg_t *a, const char *name) {
   size_t l = strlen(name);
-  char base[256];
-  if (l < 5 || strcmp(name + l - 4, ".idx") != 0) return 0;
-  if (l - 4 >= sizeof(base)) return 0;
-  memcpy(base, name, l - 4);
-  base[l - 4] = '\0';
-  return has_file(a, base);
+  for (size_t k = 0; COMPANION_SFX[k]; ++k) {
+    size_t sl = strlen(COMPANION_SFX[k]);
+    char base[256];
+    if (l <= sl || strcmp(name + l - sl, COMPANION_SFX[k]) != 0) continue;
+    if (l - sl >= sizeof(base)) continue;
+    memcpy(base, name, l - sl);
+    base[l - sl] = '\0';
+    if (has_file(a, base)) return 1;
+  }
+  return 0;
 }
 
-static int companion_of(const yame_asset_reg_t *a, const char *name,
-                        char *out, size_t n) {
-  snprintf(out, n, "%s.idx", name);
-  return has_file(a, out);
+/* The index belonging to `name`, if the directory publishes one. Returns the
+ * suffix that matched, so a row can say which kind it carries. */
+static const char *companion_of(const yame_asset_reg_t *a, const char *name,
+                                char *out, size_t n) {
+  for (size_t k = 0; COMPANION_SFX[k]; ++k) {
+    snprintf(out, n, "%s%s", name, COMPANION_SFX[k]);
+    if (has_file(a, out)) return COMPANION_SFX[k];
+  }
+  out[0] = '\0';
+  return NULL;
 }
 
 static uint64_t companion_size(const yame_asset_reg_t *a, const char *name) {
   char idxname[256];
-  snprintf(idxname, sizeof(idxname), "%s.idx", name);
+  if (!companion_of(a, name, idxname, sizeof(idxname))) return 0;
   for (size_t i = 0; i < a->n_files; ++i)
     if (strcmp(a->files[i].name, idxname) == 0) return a->files[i].size;
   return 0;
@@ -361,8 +380,8 @@ static uint64_t companion_size(const yame_asset_reg_t *a, const char *name) {
 typedef struct {
   const yame_asset_reg_t  *a;
   const yame_asset_file_t *f;
-  int paired;
-  int required;
+  const char              *paired;   /* ".idx" / ".tbi", or NULL */
+  int                      required;
 } ent_t;
 
 /**
@@ -395,6 +414,7 @@ static size_t unit_entries(const char *unit, const char *sub, int recursive,
       out[n].a = a;
       out[n].f = f;
       out[n].paired = companion_of(a, f->name, idxname, sizeof(idxname));
+      (void)idxname;
       out[n].required = required;
       ++n;
     }
@@ -422,7 +442,7 @@ static int ent_present(const char *store_root, const ent_t *e) {
   if (!file_present(store_root, e->a, e->f->name)) return 0;
   if (e->paired) {
     char idxname[256];
-    snprintf(idxname, sizeof(idxname), "%s.idx", e->f->name);
+    snprintf(idxname, sizeof(idxname), "%s%s", e->f->name, e->paired);
     if (!file_present(store_root, e->a, idxname)) return 0;
   }
   return 1;
@@ -624,7 +644,8 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
    * fetch of this row will cost. */
   human_size(e->f->size + (e->paired ? companion_size(e->a, e->f->name) : 0),
              sz, sizeof(sz));
-  snprintf(name, sizeof(name), "%s%s", e->f->name, e->paired ? " +idx" : "");
+  snprintf(name, sizeof(name), "%s%s%s", e->f->name, e->paired ? " +" : "",
+           e->paired ? e->paired + 1 : "");
   snprintf(line, sizeof(line), "%s\t%s", name, sz);
   snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
 
@@ -777,7 +798,7 @@ static void lay_wrap(info_lay_t *L, const char *label, const char *text) {
 /* Where a file comes from and where it lands. Facts from the registry, so
  * every file says something even when the table describes none of them. */
 static void lay_provenance(info_lay_t *L, const yame_asset_reg_t *a,
-                           const yame_asset_file_t *f, int paired) {
+                           const yame_asset_file_t *f, const char *paired) {
   char buf[1024];
 
   snprintf(buf, sizeof(buf), "%s @ %s", a->base_url, a->tag);
@@ -787,8 +808,8 @@ static void lay_provenance(info_lay_t *L, const yame_asset_reg_t *a,
   lay_wrap(L, "store", buf);
 
   if (f) {
-    snprintf(buf, sizeof(buf), "%.16s...%s", f->sha256,
-             paired ? "   ships with its .idx companion" : "");
+    snprintf(buf, sizeof(buf), "%.16s...%s%s", f->sha256,
+             paired ? "   ships with its " : "", paired ? paired : "");
     lay_wrap(L, "sha256", buf);
   }
 }
@@ -863,7 +884,7 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
       if (strcmp(a->files[i].name, name) == 0) { f = &a->files[i]; break; }
 
     char idxname[256];
-    int paired = companion_of(a, name, idxname, sizeof(idxname));
+    const char *paired = companion_of(a, name, idxname, sizeof(idxname));
 
     char ikey[256];
     info_key_of(name, ikey, sizeof(ikey));

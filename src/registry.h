@@ -421,6 +421,8 @@ static const yame_asset_file_t YAME_FILES_genomes_hg38[] = {
     { "seqinfo.tsv.gz", "fb0451cc3a142233e220154fd7af2961d0ff2e8ba1113ca2b5ff6a948680b9e2", 221 },
     { "gaps.tsv.gz", "0585abdbf80263e8779f5cdcc24bcf8ed2f108efb738e8ba44ba9b3ac24d5733", 5185 },
     { "cytoband.tsv.gz", "a49a0cf26294e04d12cf073edcf2bd512f231c2f30607105c2fc4157b6c149f1", 9645 },
+    { "genes.bed.gz", "0ec51c895e05475cafdce90e83ef72beae2eee06b3fbe5544821ebd56bb1d423", 10708528 },
+    { "genes.bed.gz.tbi", "fa4064aed5e8f89db296cdcea7f5b131f8c6c53b5e213614b27e386a8f30b8d8", 192014 },
     { NULL, NULL, 0 }
 };
 
@@ -428,6 +430,8 @@ static const yame_asset_file_t YAME_FILES_genomes_mm10[] = {
     { "seqinfo.tsv.gz", "ed48effa987d844b514e7bfd237447a949191c149f95aba383604cdc463f2a9f", 203 },
     { "gaps.tsv.gz", "91f3ec9b0856505819e357b0644be35840b37dc26b42afced0c80e3ceedf59fe", 4758 },
     { "cytoband.tsv.gz", "a7bb429fb76b97a37654fde43ced186d6bff49f4564faef1650b4e12af12566a", 4129 },
+    { "genes.bed.gz", "0e4497a94a8830a2d386f66836f6fec7d0669fdf3ee8ec62f06196117d23e14e", 6823722 },
+    { "genes.bed.gz.tbi", "5f6b4acadd9e2badf5b6b91bf9f5cb8ce864553362d34044188e1a2ecd923ff6", 202003 },
     { NULL, NULL, 0 }
 };
 
@@ -435,6 +439,8 @@ static const yame_asset_file_t YAME_FILES_genomes_mm39[] = {
     { "seqinfo.tsv.gz", "bdcee6698a3dd045e91b07a7be6ad36b0c5b372707a17fb33051c6a7a251027b", 203 },
     { "gaps.tsv.gz", "002c5aa5e3efab25947e93847e397c4629057640bc635b512d07f26029dc2337", 2038 },
     { "cytoband.tsv.gz", "20f66bce778c2d07c08362673f1c75dadf6290925182dbb099d693a8bc183634", 757 },
+    { "genes.bed.gz", "ce6c63a5ab350fd40e4b75ea1b5295745f70114cb19d5717e938a39f02b96ca2", 7047902 },
+    { "genes.bed.gz.tbi", "6002f81994af23a84d6df8c8aba152bb507ed88b0a66532a3d1ebee1f9192f10", 203709 },
     { NULL, NULL, 0 }
 };
 
@@ -456,9 +462,9 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "KYCGKB", "hg38", "https://github.com/zhou-lab/KYCGKB_hg38/raw", "v2", "", "KYCGKB/hg38", "8e0594ade2936a7b837306cec8e4d29bb9028a6a3be5b2cdbd372af7c16f650a", YAME_FILES_KYCGKB_hg38, YAME_NFILES(YAME_FILES_KYCGKB_hg38) },
     { "KYCGKB", "mm10", "https://github.com/zhou-lab/KYCGKB_mm10/raw", "v2", "", "KYCGKB/mm10", "fbb75f8198a731f3ea2de7d2fb65e92c84f4e0f0e2ff335b9ff2e2000606f289", YAME_FILES_KYCGKB_mm10, YAME_NFILES(YAME_FILES_KYCGKB_mm10) },
     { "KYCGKB", "mm39", "https://github.com/zhou-lab/KYCGKB_mm39/raw", "v2", "", "KYCGKB/mm39", "0dfa2114daa79c8c5fabae2d4795d250266d48f7e941fd99e81cf459e72ead64", YAME_FILES_KYCGKB_mm39, YAME_NFILES(YAME_FILES_KYCGKB_mm39) },
-    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v2", "hg38", "genomes/hg38", "b64b320984c6d1d29dc1e15dd1a8a2ce109442eea703eba013d11ffb1eb8e975", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38) },
-    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v2", "mm10", "genomes/mm10", "0b9aed8b19ed9ead8d8c61b9bf5050e11f4c5278bf701d46b439857407142035", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
-    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v2", "mm39", "genomes/mm39", "8f7bab6aa49cc2612b82d0f3b6e749eaff41d6ea925e8aff20b42269b47b9902", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },
+    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v3", "hg38", "genomes/hg38", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38) },
+    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "genomes/mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
+    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "genomes/mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
 };
 

@@ -1,3 +1,5 @@
 fb0451cc3a142233e220154fd7af2961d0ff2e8ba1113ca2b5ff6a948680b9e2  seqinfo.tsv.gz
 0585abdbf80263e8779f5cdcc24bcf8ed2f108efb738e8ba44ba9b3ac24d5733  gaps.tsv.gz
 a49a0cf26294e04d12cf073edcf2bd512f231c2f30607105c2fc4157b6c149f1  cytoband.tsv.gz
+0ec51c895e05475cafdce90e83ef72beae2eee06b3fbe5544821ebd56bb1d423  genes.bed.gz
+fa4064aed5e8f89db296cdcea7f5b131f8c6c53b5e213614b27e386a8f30b8d8  genes.bed.gz.tbi

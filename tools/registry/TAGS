@@ -16,5 +16,5 @@
 #
 # source              tag     base_url
 InfiniumAnnotation    v8.1    https://github.com/zhou-lab/InfiniumAnnotation/raw
-genomes               v2      https://github.com/zhou-lab/genomes/raw
+genomes               v3      https://github.com/zhou-lab/genomes/raw
 KYCGKB                v2      https://github.com/zhou-lab
