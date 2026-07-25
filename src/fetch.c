@@ -1041,6 +1041,30 @@ static void bx_accept(void *ctx, const char *path, const char *key) {
       pick_add(b, (size_t)(ents[i].a - YAME_ASSETS), ents[i].f->name);
 }
 
+/**
+ * One panel line, laid out the same way every time: a glyph in its own
+ * column, a label, and a value at a fixed column.
+ *
+ * The panel used to print whatever each site had to say -- "ok" alone on a
+ * line, a bare count, a path run together with a number -- which reads as
+ * debug output rather than as the tool reporting. One shape makes it a small
+ * table, and a small table is read at a glance.
+ */
+#define PANEL_LABELW 42
+
+static void panel_row(int line, const char *color, const char *glyph,
+                      const char *label, const char *value) {
+  char lbl[512];
+  snprintf(lbl, sizeof(lbl), "%s", label ? label : "");
+
+  int pad = PANEL_LABELW - (int)strlen(lbl);
+  if (pad < 1) pad = 1;
+  yame_ui_panel_line(line, "  %s%s%s  %s%*s%s%s%s",
+                     color ? color : "", glyph ? glyph : " ", yame_ui_reset(),
+                     lbl, pad, "",
+                     yame_ui_dim(), value ? value : "", yame_ui_reset());
+}
+
 /* Bytes moving, painted onto the row of the file they belong to. The panel
  * at the foot says what is happening overall; this says which of the rows you
  * are looking at is the one being fetched. */
@@ -1128,33 +1152,29 @@ static int confirm_plan(browse_t *b) {
   }
   n_dirs = n_seen;
 
-  char sz[32], line[256];
+  char sz[32], label[256], value[128];
   human_size(bytes, sz, sizeof(sz));
-  if (!bytes)
-    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  "
-             "(size not published upstream)",
-             n_files, n_files == 1 ? "" : "s", n_dirs,
-             n_dirs == 1 ? "y" : "ies");
-  else if (unknown)
-    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  "
-             "at least %s (%zu of unpublished size)",
-             n_files, n_files == 1 ? "" : "s", n_dirs,
-             n_dirs == 1 ? "y" : "ies", sz, unknown);
-  else
-    snprintf(line, sizeof(line), "%zu file%s from %zu director%s  %s",
-             n_files, n_files == 1 ? "" : "s", n_dirs,
-             n_dirs == 1 ? "y" : "ies", sz);
+
+  snprintf(label, sizeof(label), "Fetch %zu file%s from %zu director%s",
+           n_files, n_files == 1 ? "" : "s", n_dirs, n_dirs == 1 ? "y" : "ies");
+  if (!bytes)          snprintf(value, sizeof(value), "size not published");
+  else if (unknown)    snprintf(value, sizeof(value), "at least %s", sz);
+  else                 snprintf(value, sizeof(value), "%s", sz);
 
   yame_ui_panel_open(4);
-  yame_ui_panel_line(0, "%s%s%s", yame_ui_bold(), line, yame_ui_reset());
-  yame_ui_panel_line(1, "");
-  return yame_ui_panel_confirm(2, "Proceed?", 1);
+  panel_row(0, yame_ui_bold(), yame_ui_unicode() ? "⤓" : ">", label, value);
+  if (unknown)
+    panel_row(1, NULL, " ", "", "some sizes are not published upstream");
+  else
+    yame_ui_panel_line(1, "");
+  return yame_ui_panel_confirm(2, "   Proceed?", 1);
 }
 
 /* Fetch everything picked, grouped by directory so each group costs a single
  * manifest request. `in_widget` reports through the panel; otherwise this is
  * an ordinary command-line fetch. */
-static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out);
+static void fetch_picks(browse_t *b, int in_widget, int *ok_out,
+                        int *bad_out, uint64_t *bytes_out);
 
 /* The "use these" action: same collection as a fetch, plus a record of what
  * was actually asked for. A .cm's .idx and a unit's index come along with the
@@ -1188,20 +1208,34 @@ static int bx_commit(void *ctx) {
     return 0;
   }
 
+  uint64_t moved = 0;
   yame_ui_panel_open(4);
-  fetch_picks(b, 1, &ok, &bad);
-  yame_ui_panel_line(0, "%d file%s fetched, %d failed",
-                     ok, ok == 1 ? "" : "s", bad);
-  yame_ui_panel_line(1, "");
-  yame_ui_panel_pause(2, "press any key to return to the catalogue");
+  fetch_picks(b, 1, &ok, &bad, &moved);
+
+  char label[128], value[64];
+  snprintf(label, sizeof(label), "%d file%s fetched", ok, ok == 1 ? "" : "s");
+  human_size(moved, value, sizeof(value));
+  panel_row(0, yame_ui_green(), yame_ui_check(), label,
+            moved ? value : "");
+
+  if (bad) {
+    snprintf(label, sizeof(label), "%d failed", bad);
+    panel_row(1, yame_ui_red(), yame_ui_cross(), label,
+              "nothing was written for these");
+  } else {
+    yame_ui_panel_line(1, "");
+  }
+  yame_ui_panel_pause(2, "   press any key to return to the catalogue");
   yame_ui_panel_close();
   refresh_roots(b);
   b->n_pick = 0;
   return 1;
 }
 
-static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
+static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
+                        uint64_t *bytes_out) {
   int ok = 0, bad = 0;
+  uint64_t moved = 0;
 
   for (size_t i = 0; i < b->n_pick; ++i) {
     size_t idx = b->pick[i].asset;
@@ -1235,8 +1269,13 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
     yame_fetch_opt_t opt = {0};
     opt.force = b->force;
     if (in_widget) {
-      yame_ui_panel_line(0, "%s/%s  -  %zu file%s", a->source, a->target,
-                         n_names, n_names == 1 ? "" : "s");
+      char what[256], howmany[64];
+      snprintf(what, sizeof(what), "%s/%s", a->source, a->target);
+      snprintf(howmany, sizeof(howmany), "%zu file%s", n_names,
+               n_names == 1 ? "" : "s");
+      panel_row(0, yame_ui_cyan(), yame_ui_unicode() ? "⤓" : ">", what,
+                howmany);
+      yame_ui_panel_line(1, "");
       opt.quiet = 1;                /* the panel and the rows are the output */
       opt.on_begin = fp_begin;
       opt.on_progress = fp_progress;
@@ -1251,10 +1290,14 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
     if (yame_assets_fetch_subset(a->base_url, a->tag, a->remote_sub, store_sub,
                                  a->anchor, names, n_names, &opt, &err) == 0) {
       ok += (int)n_names;
-      if (in_widget) yame_ui_panel_line(1, "ok");
+      for (size_t j = 0; j < n_names; ++j)
+        for (size_t k = 0; k < a->n_files; ++k)
+          if (strcmp(a->files[k].name, names[j]) == 0) moved += a->files[k].size;
     } else {
       bad += (int)n_names;
-      if (in_widget) yame_ui_panel_line(1, "failed: %s", err ? err : "(no detail)");
+      if (in_widget)
+        panel_row(1, yame_ui_red(), yame_ui_cross(), "failed",
+                  err ? err : "(no detail)");
       else fprintf(stderr, "  failed: %s\n", err ? err : "(no detail)");
     }
     free(err);
@@ -1262,6 +1305,7 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
 
   if (ok_out) *ok_out = ok;
   if (bad_out) *bad_out = bad;
+  if (bytes_out) *bytes_out = moved;
 }
 
 /* The header's last field spans the same two things every tail holds, laid
@@ -1451,7 +1495,7 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
   /* Anything chosen but not downloaded is fetched now, on the normal screen:
    * the widget is gone, so this is an ordinary transfer with ordinary output. */
   int ok = 0, bad = 0;
-  fetch_picks(&b, 0, &ok, &bad);
+  fetch_picks(&b, 0, &ok, &bad, NULL);
 
   char **paths = calloc(b.n_chosen, sizeof(char *));
   if (!paths) return 0;
