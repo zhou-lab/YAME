@@ -516,19 +516,17 @@ static int print_sample_label(const char *label, int label_w, int color) {
 /* ------------------------------------------------------------------ */
 
 /**
- * The reference this file implies, when -R was not given.
+ * The reference a row count implies, when -R was not given.
  *
- * Only the first record is read, for its row count -- which is the whole of
- * the fingerprint. Announced on stderr rather than silently, since a wrong
- * inference would otherwise be invisible; stdout stays exactly what it was.
+ * Takes the count rather than the filename because the caller already has it:
+ * reading the first record costs a decompression of the whole record (~0.3 s
+ * on a 29 M-row sample), and doing that twice to answer one question is the
+ * kind of waste that hides inside a convenience.
+ *
+ * Announced on stderr rather than silently, since a wrong inference would
+ * otherwise be invisible; stdout stays exactly what it was.
  */
-static char *infer_ref(const char *fname) {
-  cfile_t cf = open_cfile((char *)fname);
-  cdata_t c = read_cdata1(&cf);
-  uint64_t rows = cdata_n(&c);
-  free_cdata(&c);
-  bgzf_close(cf.fh);
-
+static char *infer_ref(uint64_t rows) {
   char path[4096];
   const char *name = NULL, *fetch = NULL;
   int st = yame_ref_for_rows(rows, NULL, "genome", path, sizeof(path),
@@ -567,9 +565,21 @@ int main_hprint(int argc, char *argv[]) {
 
   /* ---- region mode ---- */
   if (region) {
+    /* One read of the first record answers both questions asked below: which
+     * reference this file belongs to, and whether it agrees with the one we
+     * end up using. */
+    uint64_t data_n;
+    {
+      cfile_t cf_check = open_cfile(fname);
+      cdata_t c_check = read_cdata1(&cf_check);
+      data_n = cdata_n(&c_check);
+      free_cdata(&c_check);
+      bgzf_close(cf_check.fh);
+    }
+
     /* A region needs coordinates. The file says which ones by its row count,
      * so -R is a thing to supply only when that inference cannot be made. */
-    if (!fname_cr) fname_cr = infer_ref(fname);
+    if (!fname_cr) fname_cr = infer_ref(data_n);
     if (!fname_cr) return 1;
 
     char *chrm = NULL;
@@ -597,11 +607,6 @@ int main_hprint(int argc, char *argv[]) {
 
     /* preflight: check dimensions against the first sample before printing anything */
     {
-      cfile_t cf_check = open_cfile(fname);
-      cdata_t c_check = read_cdata1(&cf_check);
-      uint64_t data_n = cdata_n(&c_check);
-      free_cdata(&c_check);
-      bgzf_close(cf_check.fh);
       if (data_n != cr_n)
         wzfatal("[hprint] Dimension mismatch: reference has %"PRIu64" CpGs "
                 "but data in %s has %"PRIu64". "
