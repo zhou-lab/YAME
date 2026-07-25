@@ -19,6 +19,7 @@
  */
 
 #include <stdlib.h>
+#include "yame_ui.h"
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
@@ -124,59 +125,48 @@
  */
 
 static int usage(void) {
+  yame_usage_head("yame summary [options] <query.cx> [query2.cx ...]");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Summarize a query feature set (or per-state composition) and optionally");
+  yame_usage_text("its overlap/enrichment against one or more masks.");
+  yame_usage_sec("Input:");
+  yame_usage_text("<query.cx> may contain one or multiple samples (records). Supported query");
+  yame_usage_text("formats: 0/1 (binary), 2 (state), 3 (MU counts), 4 (float),");
+  yame_usage_cont("6 (set+universe), 7 (genomic coordinates).");
+  yame_usage_sec("Masking:");
+  yame_usage_opt("-m <mask.cx>", "Optional mask feature file (can be multi-sample).");
+  yame_usage_cont("If provided, every query sample is summarized against every");
+  yame_usage_cont("mask sample (cartesian product).");
+  yame_usage_opt("-M", "Load all masks into memory (faster when mask file is on slow IO).");
+  yame_usage_cont("Also auto-enabled when the mask stream is unseekable.");
+  yame_usage_sec("Naming / output formatting:");
+  yame_usage_opt("-H", "Suppress the header line.");
+  yame_usage_opt("-F", "Use full paths in QFile/MFile (default: basename only).");
+  yame_usage_opt("-T", "Always include section/state names in output labels when");
+  yame_usage_cont("summarizing format-2 (state) data.");
+  yame_usage_opt("-s <list.txt>", "Override query sample names using a plain-text list.");
+  yame_usage_cont("Only applies to the first query file.");
+  yame_usage_sec("Stdin helpers:");
+  yame_usage_opt("-q <name>", "Backup query file name used only when <query.cx> is '-'.");
+  yame_usage_text("Format-6 view (the 2 bits are used with more than one meaning):");
+  yame_usage_opt("-V <view>", "set  (default) universe = background, set = feature member");
+  yame_usage_cont("meth          universe = covered,    set = methylated");
+  yame_usage_cont("2bit          count the 4 quaternary states separately");
+  yame_usage_opt("-6", "Deprecated alias for -V 2bit.");
+  yame_usage_sec("Other:");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_text("Output columns (-V set, the default; also -V 2bit):");
+  yame_usage_text("QFile  Query  MFile  Mask  N_univ  N_query  N_mask  N_overlap  Log2OddsRatio  Beta  Depth");
+  yame_usage_text("Output columns (-V meth):");
+  yame_usage_text("QFile  Query  MFile  Mask  N_covered  N_meth  N_covered_in_mask  N_meth_in_mask  Log2OddsRatio  Beta  Beta_bg");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* For state masks (format 2), summary is emitted per state key (one row per key).");
+  yame_usage_text("* When no mask is given, Mask is reported as 'global'.");
+  yame_usage_text("* -V meth requires every query record to be format 6; Beta is then the");
+  yame_usage_text("  methylated fraction inside the mask (whole sample when no mask is given)");
+  yame_usage_text("  and Beta_bg the same fraction outside the mask.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame summary [options] <query.cx> [query2.cx ...]\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Summarize a query feature set (or per-state composition) and optionally\n");
-  fprintf(stderr, "  its overlap/enrichment against one or more masks.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Input:\n");
-  fprintf(stderr, "  <query.cx> may contain one or multiple samples (records). Supported query\n");
-  fprintf(stderr, "  formats: 0/1 (binary), 2 (state), 3 (MU counts), 4 (float),\n");
-  fprintf(stderr, "           6 (set+universe), 7 (genomic coordinates).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Masking:\n");
-  fprintf(stderr, "  -m <mask.cx>   Optional mask feature file (can be multi-sample).\n");
-  fprintf(stderr, "                 If provided, every query sample is summarized against every\n");
-  fprintf(stderr, "                 mask sample (cartesian product).\n");
-  fprintf(stderr, "  -M             Load all masks into memory (faster when mask file is on slow IO).\n");
-  fprintf(stderr, "                 Also auto-enabled when the mask stream is unseekable.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Naming / output formatting:\n");
-  fprintf(stderr, "  -H             Suppress the header line.\n");
-  fprintf(stderr, "  -F             Use full paths in QFile/MFile (default: basename only).\n");
-  fprintf(stderr, "  -T             Always include section/state names in output labels when\n");
-  fprintf(stderr, "                 summarizing format-2 (state) data.\n");
-  fprintf(stderr, "  -s <list.txt>  Override query sample names using a plain-text list.\n");
-  fprintf(stderr, "                 Only applies to the first query file.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Stdin helpers:\n");
-  fprintf(stderr, "  -q <name>      Backup query file name used only when <query.cx> is '-'.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Format-6 view (the 2 bits are used with more than one meaning):\n");
-  fprintf(stderr, "  -V <view>      set  (default) universe = background, set = feature member\n");
-  fprintf(stderr, "                 meth          universe = covered,    set = methylated\n");
-  fprintf(stderr, "                 2bit          count the 4 quaternary states separately\n");
-  fprintf(stderr, "  -6             Deprecated alias for -V 2bit.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Other:\n");
-  fprintf(stderr, "  -h             Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Output columns (-V set, the default; also -V 2bit):\n");
-  fprintf(stderr, "  QFile  Query  MFile  Mask  N_univ  N_query  N_mask  N_overlap  Log2OddsRatio  Beta  Depth\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Output columns (-V meth):\n");
-  fprintf(stderr, "  QFile  Query  MFile  Mask  N_covered  N_meth  N_covered_in_mask  N_meth_in_mask  Log2OddsRatio  Beta  Beta_bg\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * For state masks (format 2), summary is emitted per state key (one row per key).\n");
-  fprintf(stderr, "  * When no mask is given, Mask is reported as 'global'.\n");
-  fprintf(stderr, "  * -V meth requires every query record to be format 6; Beta is then the\n");
-  fprintf(stderr, "    methylated fraction inside the mask (whole sample when no mask is given)\n");
-  fprintf(stderr, "    and Beta_bg the same fraction outside the mask.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

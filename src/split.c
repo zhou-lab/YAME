@@ -20,14 +20,13 @@
 
 #include "cfile.h"
 
+#include "yame_ui.h"
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame split [options] <in.cx> out_prefix\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -s        sample name list\n");
-  fprintf(stderr, "    -h        This help\n");
+  yame_usage_head("yame split [options] <in.cx> out_prefix");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-v", "verbose");
+  yame_usage_opt("-s", "sample name list");
+  yame_usage_opt("-h", "This help");
   fprintf(stderr, "\n");
 
   return 1;

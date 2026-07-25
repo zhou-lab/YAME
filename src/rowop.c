@@ -19,6 +19,7 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include <time.h>
 #include "cfile.h"
@@ -135,67 +136,54 @@ typedef struct config_rowop_t {
 } config_rowop_t;
 
 static int usage(void) {
+  yame_usage_head("yame rowop [options] <in.cx> [out]");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Perform row-wise operations across multiple records (samples) in a CX file.");
+  yame_usage_text("Depending on the operation, output is either a new CX file or plain text.");
+  yame_usage_sec("Operation:");
+  yame_usage_opt("-o <op>", "Operation name (default: binasum)");
+  yame_usage_sec("CX-output operations:");
+  yame_usage_text("binasum      Convert per-sample values into per-row sample counts (M/U) as format 3.");
+  yame_usage_cont("Input: fmt0, fmt1, or fmt3.");
+  yame_usage_cont("For fmt3, beta thresholds (-p/-q) define methylated vs unmethylated calls.");
+  yame_usage_text("musum        Sum MU sequencing counts across samples.");
+  yame_usage_cont("Input: fmt3 only. Output: one fmt3 record.");
+  yame_usage_sec("Text-output operations:");
+  yame_usage_text("stat         Per-row summary statistics across samples.");
+  yame_usage_cont("Input: fmt3 only.");
+  yame_usage_cont("Output columns:");
+  yame_usage_cont(" count  mean_beta  sd_beta  delta_beta  min_n  delta_mean");
+  yame_usage_cont("delta_beta = min(beta>0.5) - max(beta<0.5)   (worst-case margin).");
+  yame_usage_cont("min_n      = min(#beta<0.5, #beta>0.5).");
+  yame_usage_cont("delta_mean = mean(beta>0.5) - mean(beta<0.5) (group-center separation).");
+  yame_usage_text("binstring    Convert per-sample beta values into row-wise binary strings.");
+  yame_usage_cont("Input: fmt3 only. Uses -b as the beta threshold, -c as min coverage.");
+  yame_usage_cont("Ambiguous cells (mu==0, cov<mincov, or beta==threshold) are filled");
+  yame_usage_cont("with the CpG's majority state (deterministic; -s does not apply).");
+  yame_usage_text("cometh       Neighbor co-methylation summary within a window.");
+  yame_usage_cont("Input: fmt3 only.");
+  yame_usage_cont("Output: packed 4-way counts (UU, UM, MU, MM) per neighbor offset.");
+  yame_usage_cont("Use -v to print unpacked lanes.");
+  yame_usage_sec("Common filters:");
+  yame_usage_opt("-c <mincov>", "Minimum coverage (M+U) for a sample/row to contribute (default: 1).");
+  yame_usage_text("binasum (fmt3 input) thresholds:");
+  yame_usage_opt("-p <beta0>", "Call unmethylated if beta < beta0 (default: 0.4).");
+  yame_usage_opt("-q <beta1>", "Call methylated   if beta > beta1 (default: 0.6).");
+  yame_usage_cont("Betas in [beta0, beta1] are ignored.");
+  yame_usage_text("binstring options:");
+  yame_usage_opt("-b <beta>", "Call methylated if beta > threshold (default: 0.5).");
+  yame_usage_opt("-m <frac>", "Max ambiguous fraction per CpG; above this the line is emitted");
+  yame_usage_cont("as an all-'2' sentinel (default: 1.0 = no filtering).");
+  yame_usage_opt("-M <fold>", "Min majority fold (hi/lo of confident calls) to trust the fill");
+  yame_usage_cont("(default: 10). If a CpG has ambiguous cells but the majority is");
+  yame_usage_cont("below this fold, its line is emitted as the all-'2' sentinel.");
+  yame_usage_text("cometh options:");
+  yame_usage_opt("-w <W>", "Neighbor window size (default: 5).");
+  yame_usage_opt("-v", "Verbose output (print UU-UM-MU-MM instead of packed uint64).");
+  yame_usage_sec("Other:");
+  yame_usage_opt("-h", "Show this help message.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame rowop [options] <in.cx> [out]\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Perform row-wise operations across multiple records (samples) in a CX file.\n");
-  fprintf(stderr, "  Depending on the operation, output is either a new CX file or plain text.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Operation:\n");
-  fprintf(stderr, "  -o <op>      Operation name (default: binasum)\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "CX-output operations:\n");
-  fprintf(stderr, "  binasum      Convert per-sample values into per-row sample counts (M/U) as format 3.\n");
-  fprintf(stderr, "              Input: fmt0, fmt1, or fmt3.\n");
-  fprintf(stderr, "              For fmt3, beta thresholds (-p/-q) define methylated vs unmethylated calls.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  musum        Sum MU sequencing counts across samples.\n");
-  fprintf(stderr, "              Input: fmt3 only. Output: one fmt3 record.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Text-output operations:\n");
-  fprintf(stderr, "  stat         Per-row summary statistics across samples.\n");
-  fprintf(stderr, "              Input: fmt3 only.\n");
-  fprintf(stderr, "              Output columns:\n");
-  fprintf(stderr, "                count  mean_beta  sd_beta  delta_beta  min_n  delta_mean\n");
-  fprintf(stderr, "              delta_beta = min(beta>0.5) - max(beta<0.5)   (worst-case margin).\n");
-  fprintf(stderr, "              min_n      = min(#beta<0.5, #beta>0.5).\n");
-  fprintf(stderr, "              delta_mean = mean(beta>0.5) - mean(beta<0.5) (group-center separation).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  binstring    Convert per-sample beta values into row-wise binary strings.\n");
-  fprintf(stderr, "              Input: fmt3 only. Uses -b as the beta threshold, -c as min coverage.\n");
-  fprintf(stderr, "              Ambiguous cells (mu==0, cov<mincov, or beta==threshold) are filled\n");
-  fprintf(stderr, "              with the CpG's majority state (deterministic; -s does not apply).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  cometh       Neighbor co-methylation summary within a window.\n");
-  fprintf(stderr, "              Input: fmt3 only.\n");
-  fprintf(stderr, "              Output: packed 4-way counts (UU, UM, MU, MM) per neighbor offset.\n");
-  fprintf(stderr, "              Use -v to print unpacked lanes.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Common filters:\n");
-  fprintf(stderr, "  -c <mincov>  Minimum coverage (M+U) for a sample/row to contribute (default: 1).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "binasum (fmt3 input) thresholds:\n");
-  fprintf(stderr, "  -p <beta0>   Call unmethylated if beta < beta0 (default: 0.4).\n");
-  fprintf(stderr, "  -q <beta1>   Call methylated   if beta > beta1 (default: 0.6).\n");
-  fprintf(stderr, "              Betas in [beta0, beta1] are ignored.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "binstring options:\n");
-  fprintf(stderr, "  -b <beta>    Call methylated if beta > threshold (default: 0.5).\n");
-  fprintf(stderr, "  -m <frac>    Max ambiguous fraction per CpG; above this the line is emitted\n");
-  fprintf(stderr, "              as an all-'2' sentinel (default: 1.0 = no filtering).\n");
-  fprintf(stderr, "  -M <fold>    Min majority fold (hi/lo of confident calls) to trust the fill\n");
-  fprintf(stderr, "              (default: 10). If a CpG has ambiguous cells but the majority is\n");
-  fprintf(stderr, "              below this fold, its line is emitted as the all-'2' sentinel.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "cometh options:\n");
-  fprintf(stderr, "  -w <W>       Neighbor window size (default: 5).\n");
-  fprintf(stderr, "  -v           Verbose output (print UU-UM-MU-MM instead of packed uint64).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Other:\n");
-  fprintf(stderr, "  -h           Show this help message.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

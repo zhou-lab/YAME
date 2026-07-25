@@ -19,6 +19,7 @@
  */
 
 #include <stdlib.h>
+#include "yame_ui.h"
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
@@ -106,54 +107,45 @@
  */
 
 static int usage(void) {
+  yame_usage_head("yame unpack [options] <in.cx> [sample1 sample2 ...]");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Print selected records from a .cx file as a tab-delimited table.");
+  yame_usage_text("Each output row is a genomic row index; each output column is a selected sample/record.");
+  yame_usage_text("Sample selection (default: first record):");
+  yame_usage_opt("-a", "Output all records in the file.");
+  yame_usage_opt("-l <list>", "Sample list file (one name per line).");
+  yame_usage_cont("Ignored if sample names are provided as trailing arguments.");
+  yame_usage_opt("-H <N>", "Output the first N samples.");
+  yame_usage_opt("-T <N>", "Output the last  N samples (requires index).");
+  yame_usage_text("Row coordinates (optional first column):");
+  yame_usage_opt("-R <rows.cx>", "Row coordinate dataset (CX; typically format 7).");
+  yame_usage_opt("-r <mode>", "Coordinate print mode (default: 0):");
+  yame_usage_cont("0: chrm<tab>beg0<tab>end1   (cg-style)");
+  yame_usage_cont("1: chrm<tab>beg0<tab>end0   (allc-style)");
+  yame_usage_cont("else: chrm_beg1");
+  yame_usage_sec("Output formatting:");
+  yame_usage_opt("-C", "Print a header line (column names).");
+  yame_usage_opt("-u <bytes>", "Inflated unit-size override (0=auto; allowed: 1,2,4,6,8).");
+  yame_usage_text("Value printing (-f):");
+  yame_usage_opt("-f <N>", "Print mode for certain formats (default: 0):");
+  yame_usage_cont("For format 3 (MU):");
+  yame_usage_cont("  N == 0 : print packed MU (uint64)");
+  yame_usage_cont("  N  < 0 : print M<tab>U (two columns)");
+  yame_usage_cont("  N  > 0 : print beta; print NA if cov < N or cov==0");
+  yame_usage_cont("For format 6 (set+universe):");
+  yame_usage_cont("  N == 0 : print 0/1, NA coded as '2'");
+  yame_usage_cont("  N  < 0 : print value<tab>universe  (e.g., 1<tab>1, 0<tab>1, NA<tab>0)");
+  yame_usage_cont("  N  > 0 : print raw 2-bit code (FMT6_2BIT)");
+  yame_usage_sec("Chunked printing:");
+  yame_usage_opt("-c", "Enable chunked printing (reduces peak memory).");
+  yame_usage_opt("-s <rows>", "Chunk size in rows (default: 1000000).");
+  yame_usage_sec("Other:");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* Selecting by sample name or using -T requires an index (.cxi) unless reading from stdin.");
+  yame_usage_text("* Chunking does not support format 7 datasets.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame unpack [options] <in.cx> [sample1 sample2 ...]\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Print selected records from a .cx file as a tab-delimited table.\n");
-  fprintf(stderr, "  Each output row is a genomic row index; each output column is a selected sample/record.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Sample selection (default: first record):\n");
-  fprintf(stderr, "  -a            Output all records in the file.\n");
-  fprintf(stderr, "  -l <list>     Sample list file (one name per line).\n");
-  fprintf(stderr, "                Ignored if sample names are provided as trailing arguments.\n");
-  fprintf(stderr, "  -H <N>        Output the first N samples.\n");
-  fprintf(stderr, "  -T <N>        Output the last  N samples (requires index).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Row coordinates (optional first column):\n");
-  fprintf(stderr, "  -R <rows.cx>  Row coordinate dataset (CX; typically format 7).\n");
-  fprintf(stderr, "  -r <mode>     Coordinate print mode (default: 0):\n");
-  fprintf(stderr, "                0: chrm<tab>beg0<tab>end1   (cg-style)\n");
-  fprintf(stderr, "                1: chrm<tab>beg0<tab>end0   (allc-style)\n");
-  fprintf(stderr, "                else: chrm_beg1\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Output formatting:\n");
-  fprintf(stderr, "  -C            Print a header line (column names).\n");
-  fprintf(stderr, "  -u <bytes>    Inflated unit-size override (0=auto; allowed: 1,2,4,6,8).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Value printing (-f):\n");
-  fprintf(stderr, "  -f <N>        Print mode for certain formats (default: 0):\n");
-  fprintf(stderr, "                For format 3 (MU):\n");
-  fprintf(stderr, "                  N == 0 : print packed MU (uint64)\n");
-  fprintf(stderr, "                  N  < 0 : print M<tab>U (two columns)\n");
-  fprintf(stderr, "                  N  > 0 : print beta; print NA if cov < N or cov==0\n");
-  fprintf(stderr, "                For format 6 (set+universe):\n");
-  fprintf(stderr, "                  N == 0 : print 0/1, NA coded as '2'\n");
-  fprintf(stderr, "                  N  < 0 : print value<tab>universe  (e.g., 1<tab>1, 0<tab>1, NA<tab>0)\n");
-  fprintf(stderr, "                  N  > 0 : print raw 2-bit code (FMT6_2BIT)\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Chunked printing:\n");
-  fprintf(stderr, "  -c            Enable chunked printing (reduces peak memory).\n");
-  fprintf(stderr, "  -s <rows>     Chunk size in rows (default: 1000000).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Other:\n");
-  fprintf(stderr, "  -h            Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * Selecting by sample name or using -T requires an index (.cxi) unless reading from stdin.\n");
-  fprintf(stderr, "  * Chunking does not support format 7 datasets.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

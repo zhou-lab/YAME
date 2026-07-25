@@ -19,6 +19,7 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include <string.h>
 #include "cfile.h"
@@ -96,53 +97,43 @@ typedef struct config_t {
 // rowsub supports multiple mutually-exclusive row selection modes.
 // Precedence in code is: -l/-L (explicit indices) > -m (mask) > -B/-I (block) > default block.
 static int usage(config_t *config) {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame rowsub [options] in.cx >out.cx\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Subset (slice) rows from each dataset (record) in a CX stream.\n");
-  fprintf(stderr, "  Output is always written to stdout.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Row selection modes (choose one):\n");
-  fprintf(stderr, "  (A) Explicit row indices (1-based list):\n");
-  fprintf(stderr, "      -l <idx.txt>     One [index1] per line (1-based). Order preserved; no sorting required.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  (B) Explicit genomic coordinates via row coordinate table (format 7):\n");
-  fprintf(stderr, "      -R <rows.cx>     Row coordinate dataset (format 7; e.g. BED-like coordinates).\n");
-  fprintf(stderr, "      -L <coord.txt>   One [chrm]_[beg1] per line (1-based beg). Requires -R.\n");
-  fprintf(stderr, "                       Order preserved; no sorting required.\n");
-  fprintf(stderr, "      -1               If -R is provided, emit the subsetted row coordinates as the FIRST dataset.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  (C) Mask-based filtering (binary mask):\n");
-  fprintf(stderr, "      -m <mask.cx>     Mask file (format 0/1 only). Rows with bit=1 are kept.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  (D) Contiguous block by absolute row range (0-based):\n");
-  fprintf(stderr, "      -B <beg0>[_<end1>]\n");
-  fprintf(stderr, "         Keep rows in [beg0, end0] where end0 = end1-1.\n");
-  fprintf(stderr, "         If <end1> is omitted, keep a single row at beg0.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  (E) Contiguous block by block index and size (0-based):\n");
-  fprintf(stderr, "      -I <blockIndex0>[_<blockSize>]\n");
-  fprintf(stderr, "         Keep rows:\n");
-  fprintf(stderr, "           beg0 = blockIndex0 * blockSize\n");
-  fprintf(stderr, "           end0 = (blockIndex0+1)*blockSize - 1\n");
+  yame_usage_head("yame rowsub [options] in.cx >out.cx");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Subset (slice) rows from each dataset (record) in a CX stream.");
+  yame_usage_text("Output is always written to stdout.");
+  yame_usage_text("Row selection modes (choose one):");
+  yame_usage_text("(A) Explicit row indices (1-based list):");
+  yame_usage_opt("-l <idx.txt>", "One [index1] per line (1-based). Order preserved; no sorting required.");
+  yame_usage_text("(B) Explicit genomic coordinates via row coordinate table (format 7):");
+  yame_usage_opt("-R <rows.cx>", "Row coordinate dataset (format 7; e.g. BED-like coordinates).");
+  yame_usage_opt("-L <coord.txt>", "One [chrm]_[beg1] per line (1-based beg). Requires -R.");
+  yame_usage_cont("Order preserved; no sorting required.");
+  yame_usage_opt("-1", "If -R is provided, emit the subsetted row coordinates as the FIRST dataset.");
+  yame_usage_text("(C) Mask-based filtering (binary mask):");
+  yame_usage_opt("-m <mask.cx>", "Mask file (format 0/1 only). Rows with bit=1 are kept.");
+  yame_usage_text("(D) Contiguous block by absolute row range (0-based):");
+  yame_usage_opt("-B", "<beg0>[_<end1>]");
+  yame_usage_cont("Keep rows in [beg0, end0] where end0 = end1-1.");
+  yame_usage_cont("If <end1> is omitted, keep a single row at beg0.");
+  yame_usage_text("(E) Contiguous block by block index and size (0-based):");
+  yame_usage_opt("-I", "<blockIndex0>[_<blockSize>]");
+  yame_usage_cont("Keep rows:");
+  yame_usage_cont("beg0 = blockIndex0 * blockSize");
+  yame_usage_cont("end0 = (blockIndex0+1)*blockSize - 1");
   fprintf(stderr, "         If <blockSize> is omitted, default blockSize=%"PRIu64".\n", (uint64_t)config->isize);
+  yame_usage_sec("Other options:");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_sec("Index conventions:");
+  yame_usage_text("- '0' suffix means 0-based (beg0, blockIndex0).");
+  yame_usage_text("- '1' suffix means 1-based (index1, beg1, end1).");
+  yame_usage_text("- For -B, end is provided as end1 (exclusive, 1-based), internally converted to end0.");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* For format 2 (state data), the key section is preserved when slicing.");
+  yame_usage_text("* Format 7 (row coordinates) is sliced with fmt7_* helpers.");
+  yame_usage_text("* If multiple selection options are given, the effective precedence is:");
+  yame_usage_opt("-l/-L", ">  -m  >  -B/-I  >  default.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Other options:\n");
-  fprintf(stderr, "  -h               Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Index conventions:\n");
-  fprintf(stderr, "  - '0' suffix means 0-based (beg0, blockIndex0).\n");
-  fprintf(stderr, "  - '1' suffix means 1-based (index1, beg1, end1).\n");
-  fprintf(stderr, "  - For -B, end is provided as end1 (exclusive, 1-based), internally converted to end0.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * For format 2 (state data), the key section is preserved when slicing.\n");
-  fprintf(stderr, "  * Format 7 (row coordinates) is sliced with fmt7_* helpers.\n");
-  fprintf(stderr, "  * If multiple selection options are given, the effective precedence is:\n");
-  fprintf(stderr, "      -l/-L  >  -m  >  -B/-I  >  default.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

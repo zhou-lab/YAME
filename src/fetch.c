@@ -47,54 +47,55 @@ static int usage(void) {
   char root[4096];
   yame_assets_root(NULL, NULL, root, sizeof(root));
 
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame fetch                              browse the catalogue\n");
-  fprintf(stderr, "  yame fetch [options] <source>/<target>[@tag]\n");
-  fprintf(stderr, "  yame fetch [options] -u <url> -s <sha256> -o <dest>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Browsing:\n");
-  fprintf(stderr, "  With no target on a terminal, opens a tree browser: sources unfold\n");
-  fprintf(stderr, "  into platforms, knowledgebases and files. Arrows move, right/left\n");
-  fprintf(stderr, "  open and close a row, space checks a file (or everything under a\n");
-  fprintf(stderr, "  directory), f fetches what is checked, q leaves. What is already in\n");
-  fprintf(stderr, "  the store shows as present and cannot be checked.\n");
-  fprintf(stderr, "  Piped or redirected it prints the plain listing instead, so a script\n");
-  fprintf(stderr, "  never blocks on a keystroke.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Download reference assets into the shared store that every tool in the\n");
-  fprintf(stderr, "  suite reads, verifying each file against a digest this build pins.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Store:\n");
-  fprintf(stderr, "  Resolved in order: -d, $YAME_DATA_HOME,\n");
-  fprintf(stderr, "  ${XDG_DATA_HOME:-~/.local/share}/yame\n");
-  fprintf(stderr, "  Currently: %s\n", root);
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -d <dir>      Store root, overriding the environment.\n");
-  fprintf(stderr, "  -t <tag>      Upstream tag, overriding the pinned one. Without a digest\n");
-  fprintf(stderr, "                for that tag nothing can be verified, so this needs -k.\n");
-  fprintf(stderr, "  -k            Accept an unpinned tag (no anchor check). Files are still\n");
-  fprintf(stderr, "                verified against the manifest that tag publishes.\n");
-  fprintf(stderr, "  -f            Re-download what is present, and overwrite a store that\n");
-  fprintf(stderr, "                was populated from a different tag.\n");
-  fprintf(stderr, "  -l            List what this build knows how to fetch, and exit.\n");
-  fprintf(stderr, "  -q            No progress output.\n");
-  fprintf(stderr, "  -u <url>      Single-file form: what to download.\n");
-  fprintf(stderr, "  -s <sha256>   Single-file form: the digest it must have.\n");
-  fprintf(stderr, "  -o <dest>     Single-file form: where it goes (a path, not a dir).\n");
-  fprintf(stderr, "  -h            This help.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * A directory records which upstream tag filled it, in the SHA256SUMS\n");
-  fprintf(stderr, "    it keeps. A build pinned elsewhere refuses to overwrite it rather\n");
-  fprintf(stderr, "    than start a re-download war; -f overrules that.\n");
-  fprintf(stderr, "  * `shasum -a 256 -c SHA256SUMS` in any store directory re-verifies it\n");
-  fprintf(stderr, "    by hand, with none of this code involved.\n");
+  yame_usage_head("yame fetch                              browse the catalogue");
+  yame_usage_text("yame fetch [options] <source>/<target>[@tag]");
+  yame_usage_text("yame fetch [options] -u <url> -s <sha256> -o <dest>");
+
+  yame_usage_sec("Browsing:");
+  yame_usage_text("With no target on a terminal, opens a tree browser: species, then");
+  yame_usage_text("platform or genome build, then its knowledgebase and files. Arrows");
+  yame_usage_text("move, right/left open and close a row, space or x selects (a folder");
+  yame_usage_text("takes everything under it), f fetches what is selected, h lists every");
+  yame_usage_text("key, q leaves. What is already in the store shows as present and");
+  yame_usage_text("cannot be selected.");
+  yame_usage_text("Piped or redirected it prints the plain listing instead, so a script");
+  yame_usage_text("never blocks on a keystroke.");
+
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Download reference assets into the shared store that every tool in the");
+  yame_usage_text("suite reads, verifying each file against a digest this build pins.");
+
+  yame_usage_sec("Store:");
+  yame_usage_text("Resolved in order: -d, $YAME_DATA_HOME,");
+  yame_usage_text("${XDG_DATA_HOME:-~/.local/share}/yame");
+  fprintf(stderr, "  %sYAME_DATA_HOME: %s%s\n",
+          yame_ui_green(), root, yame_ui_reset());
+
+  yame_usage_sec("Options:");
+  yame_usage_opt("-d <dir>", "Store root, overriding the environment.");
+  yame_usage_opt("-t <tag>", "Upstream tag, overriding the pinned one. Without a digest");
+  yame_usage_cont("for that tag nothing can be verified, so this needs -k.");
+  yame_usage_opt("-k", "Accept an unpinned tag (no anchor check). Files are still");
+  yame_usage_cont("verified against the manifest that tag publishes.");
+  yame_usage_opt("-f", "Re-download what is present, and overwrite a store that");
+  yame_usage_cont("was populated from a different tag.");
+  yame_usage_opt("-l", "List what this build knows how to fetch, and exit.");
+  yame_usage_opt("-q", "No progress output.");
+  yame_usage_opt("-u <url>", "Single-file form: what to download.");
+  yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
+  yame_usage_opt("-o <dest>", "Single-file form: where it goes (a path, not a dir).");
+  yame_usage_opt("-h", "This help.");
+
+  yame_usage_sec("Notes:");
+  yame_usage_text("* A directory records which upstream tag filled it, in the SHA256SUMS");
+  yame_usage_text("  it keeps. A build pinned elsewhere refuses to overwrite it rather");
+  yame_usage_text("  than start a re-download war; -f overrules that.");
+  yame_usage_text("* `shasum -a 256 -c SHA256SUMS` in any store directory re-verifies it");
+  yame_usage_text("  by hand, with none of this code involved.");
   if (!yame_assets_have_curl())
-    fprintf(stderr, "  * THIS BUILD HAS NO LIBCURL: fetching is unavailable.\n");
+    yame_usage_text("* THIS BUILD HAS NO LIBCURL: fetching is unavailable.");
   fprintf(stderr, "\n");
+
   return 1;
 }
 

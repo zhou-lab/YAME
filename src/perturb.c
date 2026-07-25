@@ -19,24 +19,23 @@
  */
 
 #include <time.h>
+#include "yame_ui.h"
 #include "cfile.h"
 
 static int usage(void) {
+  yame_usage_head("yame perturb [options] <in.cx>");
+  yame_usage_text("Randomly flip 0/1 bits for format 0 and format 6.");
+  yame_usage_text("- For format 0, each set bit (1) or unset bit (0) is independently");
+  yame_usage_text("  flipped with probability p.");
+  yame_usage_text("- For format 6, only in-universe sites are eligible; their set bit");
+  yame_usage_text("  is flipped with probability p. NA sites are left unchanged.");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-s [int]", "random seed (default: current time).");
+  yame_usage_opt("-p [float]", "fraction of CpGs to flip, in [0,1] (default: 0.05).");
+  yame_usage_opt("-o [PATH]", "output .cx file (default: stdout, no index written).");
+  yame_usage_opt("-h", "this help.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame perturb [options] <in.cx>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Randomly flip 0/1 bits for format 0 and format 6.\n");
-  fprintf(stderr, "  - For format 0, each set bit (1) or unset bit (0) is independently\n");
-  fprintf(stderr, "    flipped with probability p.\n");
-  fprintf(stderr, "  - For format 6, only in-universe sites are eligible; their set bit\n");
-  fprintf(stderr, "    is flipped with probability p. NA sites are left unchanged.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -s [int]    random seed (default: current time).\n");
-  fprintf(stderr, "    -p [float]  fraction of CpGs to flip, in [0,1] (default: 0.05).\n");
-  fprintf(stderr, "    -o [PATH]   output .cx file (default: stdout, no index written).\n");
-  fprintf(stderr, "    -h          this help.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

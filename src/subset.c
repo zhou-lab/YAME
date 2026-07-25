@@ -20,6 +20,7 @@
 
 #include "cfile.h"
 
+#include "yame_ui.h"
 /*
  * yame subset
  * ===========
@@ -252,45 +253,38 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_out, 
 }
 
 static int usage(void) {
+  yame_usage_head("yame subset [options] <in.cx> [sample1 sample2 ...] > out.cx");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Subset a multi-sample .cx by sample names (requires an index), or");
+  yame_usage_text("(with -s) convert a format-2 state track into one binary track per state.");
+  yame_usage_sec("Modes:");
+  yame_usage_text("(A) Sample subsetting (default):");
+  yame_usage_cont("Select named samples from <in.cx> and emit them in the given order.");
+  yame_usage_cont("Requires <in.cx>.cxi index.");
+  yame_usage_text("(B) Subset format-2 states (-s):");
+  yame_usage_cont("Interpret <in.cx> as a single format-2 dataset (must be fmt2).");
+  yame_usage_cont("For each requested state name, emit one format-0 bitset where");
+  yame_usage_cont("bit=1 iff row state == that term.");
+  yame_usage_sec("Input sample list:");
+  yame_usage_text("Provide sample names either:");
+  yame_usage_text("  * as trailing arguments on the command line, OR");
+  yame_usage_text("  * via -l <list.txt> (one name per line).");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-o <out.cx>", "Write output to a file. If provided, an output index (.cxi)");
+  yame_usage_cont("is also generated. If omitted, writes to stdout (no index).");
+  yame_usage_opt("-l <list>", "Path to sample/state list. Ignored if names are provided as");
+  yame_usage_cont("trailing command-line arguments.");
+  yame_usage_opt("-s", "Format-2 state filtering mode (output format 0; one record per term).");
+  yame_usage_opt("-H <N>", "If no names are provided, take the first N samples from the input index.");
+  yame_usage_opt("-T <N>", "If no names are provided, take the last  N samples from the input index.");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* -H/-T only apply when you did NOT provide an explicit name list.");
+  yame_usage_text("* -T requires an index (same as default sample subsetting).");
+  yame_usage_text("* In -s mode, the input is expected to be a single fmt2 record; the output");
+  yame_usage_text("  contains one fmt0 record per requested term/state.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame subset [options] <in.cx> [sample1 sample2 ...] > out.cx\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Subset a multi-sample .cx by sample names (requires an index), or\n");
-  fprintf(stderr, "  (with -s) convert a format-2 state track into one binary track per state.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Modes:\n");
-  fprintf(stderr, "  (A) Sample subsetting (default):\n");
-  fprintf(stderr, "      Select named samples from <in.cx> and emit them in the given order.\n");
-  fprintf(stderr, "      Requires <in.cx>.cxi index.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "  (B) Subset format-2 states (-s):\n");
-  fprintf(stderr, "      Interpret <in.cx> as a single format-2 dataset (must be fmt2).\n");
-  fprintf(stderr, "      For each requested state name, emit one format-0 bitset where\n");
-  fprintf(stderr, "      bit=1 iff row state == that term.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Input sample list:\n");
-  fprintf(stderr, "  Provide sample names either:\n");
-  fprintf(stderr, "    * as trailing arguments on the command line, OR\n");
-  fprintf(stderr, "    * via -l <list.txt> (one name per line).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -o <out.cx>  Write output to a file. If provided, an output index (.cxi)\n");
-  fprintf(stderr, "              is also generated. If omitted, writes to stdout (no index).\n");
-  fprintf(stderr, "  -l <list>    Path to sample/state list. Ignored if names are provided as\n");
-  fprintf(stderr, "              trailing command-line arguments.\n");
-  fprintf(stderr, "  -s           Format-2 state filtering mode (output format 0; one record per term).\n");
-  fprintf(stderr, "  -H <N>       If no names are provided, take the first N samples from the input index.\n");
-  fprintf(stderr, "  -T <N>       If no names are provided, take the last  N samples from the input index.\n");
-  fprintf(stderr, "  -h           Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * -H/-T only apply when you did NOT provide an explicit name list.\n");
-  fprintf(stderr, "  * -T requires an index (same as default sample subsetting).\n");
-  fprintf(stderr, "  * In -s mode, the input is expected to be a single fmt2 record; the output\n");
-  fprintf(stderr, "    contains one fmt0 record per requested term/state.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

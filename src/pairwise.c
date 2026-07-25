@@ -20,6 +20,7 @@
 
 #include "cfile.h"
 
+#include "yame_ui.h"
 /**
  * yame pairwise
  * =============
@@ -76,38 +77,32 @@
  */
 
 static int usage(void) {
+  yame_usage_head("yame pairwise [options] <MU1.cx> [MU2.cx] > out.cx");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Compute a per-site differential-methylation set between two format-3 (M/U) samples,");
+  yame_usage_text("and output it as a single format-6 track (set + universe).");
+  yame_usage_sec("Inputs:");
+  yame_usage_text("<MU1.cx>   Format-3 input (M/U counts). The first record is used as sample 1.");
+  yame_usage_text("[MU2.cx]   Optional second format-3 input. If omitted, sample 2 is read as the");
+  yame_usage_cont("SECOND record from MU1.cx (i.e., the top 2 samples in the same file).");
+  yame_usage_sec("Output:");
+  yame_usage_text("One format-6 record of length N (same as the inputs).");
+  yame_usage_text("Universe: site i is in-universe only if BOTH samples have coverage >= min_cov.");
+  yame_usage_text("Set:      site i is set if it passes the direction rule (-H) and effect threshold (-d).");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-o <out.cx>", "Write output to file (default: stdout).");
+  yame_usage_opt("-c <cov>", "Minimum coverage (M+U) in BOTH samples to include site in universe (default: 1).");
+  yame_usage_opt("-d <delta>", "Minimum absolute beta difference required to call a site differential (default: 0).");
+  yame_usage_opt("-H <mode>", "Direction mode (default: 1):");
+  yame_usage_cont("1  beta1 > beta2  (hypermethylated in sample 1)");
+  yame_usage_cont("2  beta1 < beta2  (hypomethylated  in sample 1)");
+  yame_usage_cont("3  beta1 != beta2 (any difference; with -d uses |beta1-beta2|>delta)");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* If you omit MU2.cx, MU1.cx must contain at least two records.");
+  yame_usage_text("* The output is a binary set; it does not store the delta magnitude.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame pairwise [options] <MU1.cx> [MU2.cx] > out.cx\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Compute a per-site differential-methylation set between two format-3 (M/U) samples,\n");
-  fprintf(stderr, "  and output it as a single format-6 track (set + universe).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Inputs:\n");
-  fprintf(stderr, "  <MU1.cx>   Format-3 input (M/U counts). The first record is used as sample 1.\n");
-  fprintf(stderr, "  [MU2.cx]   Optional second format-3 input. If omitted, sample 2 is read as the\n");
-  fprintf(stderr, "            SECOND record from MU1.cx (i.e., the top 2 samples in the same file).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Output:\n");
-  fprintf(stderr, "  One format-6 record of length N (same as the inputs).\n");
-  fprintf(stderr, "  Universe: site i is in-universe only if BOTH samples have coverage >= min_cov.\n");
-  fprintf(stderr, "  Set:      site i is set if it passes the direction rule (-H) and effect threshold (-d).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -o <out.cx>  Write output to file (default: stdout).\n");
-  fprintf(stderr, "  -c <cov>     Minimum coverage (M+U) in BOTH samples to include site in universe (default: 1).\n");
-  fprintf(stderr, "  -d <delta>   Minimum absolute beta difference required to call a site differential (default: 0).\n");
-  fprintf(stderr, "  -H <mode>    Direction mode (default: 1):\n");
-  fprintf(stderr, "              1  beta1 > beta2  (hypermethylated in sample 1)\n");
-  fprintf(stderr, "              2  beta1 < beta2  (hypomethylated  in sample 1)\n");
-  fprintf(stderr, "              3  beta1 != beta2 (any difference; with -d uses |beta1-beta2|>delta)\n");
-  fprintf(stderr, "  -h           Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * If you omit MU2.cx, MU1.cx must contain at least two records.\n");
-  fprintf(stderr, "  * The output is a binary set; it does not store the delta magnitude.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

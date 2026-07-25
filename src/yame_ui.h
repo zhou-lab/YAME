@@ -48,7 +48,6 @@ const char *yame_ui_green(void);
 const char *yame_ui_red(void);
 const char *yame_ui_yellow(void);
 const char *yame_ui_cyan(void);
-const char *yame_ui_blue(void);
 const char *yame_ui_reset(void);
 
 /** Glyphs: check, cross, bullet. UTF-8 or ASCII depending on locale. */
@@ -84,6 +83,24 @@ void yame_prog_done(yame_prog_t *p, const char *detail, int ok);
 /** A one-off settled line for work that did not transfer (e.g. cached). */
 void yame_ui_line(const char *glyph_color, const char *glyph,
                   const char *label, const char *detail);
+
+/* ------------------------------------------------------------- usage text */
+
+/**
+ * The shape of a subcommand's --help, so that every one of them has the same
+ * shape.
+ *
+ * They had drifted: each picked its own column for the option descriptions and
+ * none of them used colour, so the parent help and the subcommands looked like
+ * they came from different programs. Rendering them through here is what keeps
+ * a new subcommand from inventing a nineteenth layout. Colour comes from the
+ * yame_ui_* helpers, so a redirected --help is still plain text.
+ */
+void yame_usage_head(const char *invocation);   /* "yame info [options] <in.cx>" */
+void yame_usage_sec(const char *title);         /* "Options:", "Notes:" ... */
+void yame_usage_opt(const char *flag, const char *desc);
+void yame_usage_cont(const char *desc);         /* continues the line above */
+void yame_usage_text(const char *text);         /* prose, indented and dim */
 
 /* -------------------------------------------------------------- prompts */
 

@@ -19,6 +19,7 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include "cfile.h"
 
@@ -78,36 +79,30 @@
  */
 
 static int usage(void) {
+  yame_usage_head("yame binarize [options] <mu.cx>");
+  yame_usage_sec("Purpose:");
+  yame_usage_text("Convert per-site M/U counts (format 3) into a packed binary-with-universe");
+  yame_usage_text("track (format 6).");
+  yame_usage_sec("Input / Output:");
+  yame_usage_text("Input : format 3 (.cx) with per-site (M,U) stored as uint64.");
+  yame_usage_text("Output: format 6 (.cx), where each site stores two bits:");
+  yame_usage_cont("- universe bit: 1 if depth>=min_cov, else 0 (NA/outside-universe)");
+  yame_usage_cont("- set bit:      1 if methylated by rule, else 0");
+  yame_usage_sec("Binarization rules:");
+  yame_usage_text("Default: set=1 if beta > T (beta = M/(M+U)), set=0 otherwise.");
+  yame_usage_text("If -m is provided (>0): set=1 if M >= Mmin, else 0 (overrides -t).");
+  yame_usage_text("Universe is always defined by coverage: (M+U) >= min_cov.");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-t <Tmin>", "Beta threshold (default: 0.5).");
+  yame_usage_opt("-m <Mmin>", "M-count threshold (default: 0; if >0 overrides -t).");
+  yame_usage_opt("-c <cov>", "Minimum coverage (M+U) to include a site in universe (default: 1).");
+  yame_usage_opt("-o <out.cx>", "Write output to file (default: stdout).");
+  yame_usage_opt("-h", "Show this help message.");
+  yame_usage_sec("Notes:");
+  yame_usage_text("* Sites with depth < min_cov remain NA in format 6 (universe bit = 0).");
+  yame_usage_text("* If the input has a sample index and -o is used, an output index is written.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  yame binarize [options] <mu.cx>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Purpose:\n");
-  fprintf(stderr, "  Convert per-site M/U counts (format 3) into a packed binary-with-universe\n");
-  fprintf(stderr, "  track (format 6).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Input / Output:\n");
-  fprintf(stderr, "  Input : format 3 (.cx) with per-site (M,U) stored as uint64.\n");
-  fprintf(stderr, "  Output: format 6 (.cx), where each site stores two bits:\n");
-  fprintf(stderr, "          - universe bit: 1 if depth>=min_cov, else 0 (NA/outside-universe)\n");
-  fprintf(stderr, "          - set bit:      1 if methylated by rule, else 0\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Binarization rules:\n");
-  fprintf(stderr, "  Default: set=1 if beta > T (beta = M/(M+U)), set=0 otherwise.\n");
-  fprintf(stderr, "  If -m is provided (>0): set=1 if M >= Mmin, else 0 (overrides -t).\n");
-  fprintf(stderr, "  Universe is always defined by coverage: (M+U) >= min_cov.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -t <Tmin>   Beta threshold (default: 0.5).\n");
-  fprintf(stderr, "  -m <Mmin>   M-count threshold (default: 0; if >0 overrides -t).\n");
-  fprintf(stderr, "  -c <cov>    Minimum coverage (M+U) to include a site in universe (default: 1).\n");
-  fprintf(stderr, "  -o <out.cx> Write output to file (default: stdout).\n");
-  fprintf(stderr, "  -h          Show this help message.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Notes:\n");
-  fprintf(stderr, "  * Sites with depth < min_cov remain NA in format 6 (universe bit = 0).\n");
-  fprintf(stderr, "  * If the input has a sample index and -o is used, an output index is written.\n");
-  fprintf(stderr, "\n");
+
   return 1;
 }
 

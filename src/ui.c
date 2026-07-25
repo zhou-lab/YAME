@@ -128,7 +128,6 @@ COLOR(yame_ui_green,  "\033[32m")
 COLOR(yame_ui_red,    "\033[31m")
 COLOR(yame_ui_yellow, "\033[33m")
 COLOR(yame_ui_cyan,   "\033[36m")
-COLOR(yame_ui_blue,   "\033[34m")
 COLOR(yame_ui_reset,  "\033[0m")
 
 const char *yame_ui_check(void)  { return yame_ui_unicode() ? "✓" : "ok"; }
@@ -658,6 +657,37 @@ void yame_ui_line(const char *glyph_color, const char *glyph,
           LABEL_W, LABEL_W, label ? label : "",
           yame_ui_dim(), detail ? detail : "", yame_ui_reset());
   fflush(stderr);
+}
+
+/* ------------------------------------------------------------- usage text */
+
+/* The option column, wide enough for the longest flag spec in the suite
+ * ("-1 [sample name]") plus a gap. */
+enum { USAGE_OPTW = 18 };
+
+void yame_usage_head(const char *invocation) {
+  fprintf(stderr, "\n%sUsage:%s\n  %s\n",
+          yame_ui_bold(), yame_ui_reset(), invocation);
+}
+
+void yame_usage_sec(const char *title) {
+  fprintf(stderr, "\n%s%s%s\n", yame_ui_bold(), title, yame_ui_reset());
+}
+
+void yame_usage_opt(const char *flag, const char *desc) {
+  int pad = USAGE_OPTW - cells_of(flag);
+  if (pad < 1) pad = 1;
+  fprintf(stderr, "  %s%s%s%*s%s\n",
+          yame_ui_green(), flag, yame_ui_reset(), pad, "", desc);
+}
+
+void yame_usage_cont(const char *desc) {
+  fprintf(stderr, "  %*s%s%s%s\n", USAGE_OPTW, "",
+          yame_ui_dim(), desc, yame_ui_reset());
+}
+
+void yame_usage_text(const char *text) {
+  fprintf(stderr, "  %s%s%s\n", yame_ui_dim(), text, yame_ui_reset());
 }
 
 /* --------------------------------------------------------------- prompts */

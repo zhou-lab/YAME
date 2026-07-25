@@ -19,6 +19,7 @@
  */
 
 #include <string.h>
+#include "yame_ui.h"
 #include "cfile.h"
 
 /* ANSI color codes.
@@ -49,28 +50,25 @@ typedef struct {
 } chrom_info_t;
 
 static int usage(void) {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame hprint [options] <in.cx>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Modes:\n");
-  fprintf(stderr, "  -R <ref>          Whole-genome view: one column per CpG window across all chroms.\n");
-  fprintf(stderr, "  -R <ref> -r <reg> Region view: rows=samples, columns=CpG sites in region.\n");
-  fprintf(stderr, "  (neither)         Legacy full-dataset dump (fmt6 only).\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -c            Disable ANSI color output (default: color on)\n");
-  fprintf(stderr, "  -g            Granular output: 0-9 deciles instead of H/M/L\n");
-  fprintf(stderr, "  -R <ref.cr>   Reference coordinate file (format 7)\n");
-  fprintf(stderr, "  -r <region>   Genomic region: chr16  or  chr16:10000000-10100000\n");
-  fprintf(stderr, "  -l <int>      Sample label column width (default: 20)\n");
-  fprintf(stderr, "  -t <int>      Ruler tick interval in columns (default: 10)\n");
-  fprintf(stderr, "  -w <int>      Max data columns; wider views are window-averaged (default: 80)\n");
-  fprintf(stderr, "  -h            This help\n");
-  fprintf(stderr, "\n");
+  yame_usage_head("yame hprint [options] <in.cx>");
+  yame_usage_sec("Modes:");
+  yame_usage_opt("-R <ref>", "Whole-genome view: one column per CpG window across all chroms.");
+  yame_usage_opt("-R <ref> -r <reg>", "Region view: rows=samples, columns=CpG sites in region.");
+  yame_usage_text("(neither)         Legacy full-dataset dump (fmt6 only).");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
+  yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
+  yame_usage_opt("-R <ref.cr>", "Reference coordinate file (format 7)");
+  yame_usage_opt("-r <region>", "Genomic region: chr16  or  chr16:10000000-10100000");
+  yame_usage_opt("-l <int>", "Sample label column width (default: 20)");
+  yame_usage_opt("-t <int>", "Ruler tick interval in columns (default: 10)");
+  yame_usage_opt("-w <int>", "Max data columns; wider views are window-averaged (default: 80)");
+  yame_usage_opt("-h", "This help");
   fprintf(stderr, "Symbols (per-site):  fmt6: " CH_METH " meth  " CH_UNMETH " unmeth  . NA   fmt3/4: H/M/L/.   fmt0: 1/0\n");
-  fprintf(stderr, "Symbols (windowed):  H >0.67   M 0.33-0.67   L <0.33   . no coverage\n");
-  fprintf(stderr, "Annotation:          a sample whose name ends with '_' is shown without the '_' and its whole row is underlined\n");
+  yame_usage_text("Symbols (windowed):  H >0.67   M 0.33-0.67   L <0.33   . no coverage");
+  yame_usage_text("Annotation:          a sample whose name ends with '_' is shown without the '_' and its whole row is underlined");
   fprintf(stderr, "\n");
+
   return 1;
 }
 

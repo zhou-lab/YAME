@@ -19,20 +19,19 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include "cfile.h"
 
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame mask [options] <in.cg> <mask.cx>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -o        output cx file name. if missing, output to stdout without index.\n");
-  fprintf(stderr, "    -c        contextualize binary input to format 6 using '1's in mask.\n");
-  fprintf(stderr, "              if format 3 is used as mask, then use M+U>0 (coverage).\n");
-  fprintf(stderr, "              implicit for format 6 input (output is always format 6).\n");
-  fprintf(stderr, "    -v        reverse the mask (default is to mask '1's, if -v will mask '0's).\n");
-  fprintf(stderr, "    -h        This help\n");
+  yame_usage_head("yame mask [options] <in.cg> <mask.cx>");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-o", "output cx file name. if missing, output to stdout without index.");
+  yame_usage_opt("-c", "contextualize binary input to format 6 using '1's in mask.");
+  yame_usage_cont("if format 3 is used as mask, then use M+U>0 (coverage).");
+  yame_usage_cont("implicit for format 6 input (output is always format 6).");
+  yame_usage_opt("-v", "reverse the mask (default is to mask '1's, if -v will mask '0's).");
+  yame_usage_opt("-h", "This help");
   fprintf(stderr, "\n");
 
   return 1;

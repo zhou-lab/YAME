@@ -19,82 +19,74 @@
  */
 
 #include <stdlib.h>
+#include "yame_ui.h"
 #include <string.h>
 #include <zlib.h>
 #include <stdio.h>
 #include "cfile.h"
 
 static int usage() {
+  yame_usage_head("yame pack [options] <in.txt> <out.cx>");
+  yame_usage_text("Pack tab-delimited text into a compressed cx file.");
+  yame_usage_text("The input file must have one row per CpG and match the");
+  yame_usage_text("dimension and order of the reference CpG BED file.");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-f [char]", "Format specification (one of b,c,s,m,d,n,r):");
+  yame_usage_cont("(b) Binary data (format 0).");
+  yame_usage_cont("    Each entry is 0 or 1.");
+  yame_usage_cont("    Example (single-sample, one column):");
+  yame_usage_cont("        0");
+  yame_usage_cont("        1");
+  yame_usage_cont("        1");
+  yame_usage_cont("(c) Character / small integer data (format 1).");
+  yame_usage_cont("    One byte per entry, typically 0–255.");
+  yame_usage_cont("    Example:");
+  yame_usage_cont("        0");
+  yame_usage_cont("        5");
+  yame_usage_cont("        9");
+  yame_usage_cont("(s) State data (format 2).");
+  yame_usage_cont("    Categorical strings compressed via an index + RLE.");
+  yame_usage_cont("    Best for chromatin states or other labels.");
+  yame_usage_cont("    Example:");
+  yame_usage_cont("        quies");
+  yame_usage_cont("        quies");
+  yame_usage_cont("        enhA");
+  yame_usage_cont("(m) Sequencing MU data (format 3).");
+  yame_usage_cont("    Input is 2-column text: M and U counts per CpG.");
+  yame_usage_cont("    M=U=0 is treated as missing.");
+  yame_usage_cont("    Example (M U):");
+  yame_usage_cont("        10	5");
+  yame_usage_cont("        20	0");
+  yame_usage_cont("        13	17");
+  yame_usage_cont("(d) Differential / mask data (format 6).");
+  yame_usage_cont("    2-bit boolean for S (set) and U (universe).");
+  yame_usage_cont("    Input is 2-column text: S and U, each 0 or 1.");
+  yame_usage_cont("    Example (S U):");
+  yame_usage_cont("        1	1");
+  yame_usage_cont("        0	1");
+  yame_usage_cont("        0	0");
+  yame_usage_cont("(n) Fraction / beta data (format 4).");
+  yame_usage_cont("    Floating-point fraction in [0,1] or NA.");
+  yame_usage_cont("    Example:");
+  yame_usage_cont("        0.250");
+  yame_usage_cont("        NA");
+  yame_usage_cont("        1.000");
+  yame_usage_cont("(r) Reference coordinates (format 7).");
+  yame_usage_cont("    Compressed BED records for CpG coordinates.");
+  yame_usage_cont("    Input is 4-column BED: chrom, start, end, name.");
+  yame_usage_cont("    Example:");
+  yame_usage_cont("        chr1	100	101	CpG_1");
+  yame_usage_cont("        chr1	200	201	CpG_2");
+  yame_usage_cont("        chr1	300	301	CpG_3");
+  yame_usage_cont("The examples above show single-sample input.");
+  yame_usage_cont("Multi-sample input can be provided as additional");
+  yame_usage_cont("columns per row, following the same conventions.");
+  yame_usage_opt("-u [int]", "Number of bytes per unit when inflated (1-8).");
+  yame_usage_cont("Lower values are more memory efficient but may be lossier.");
+  yame_usage_cont("0 - infer from data.");
+  yame_usage_opt("-v", "Verbose mode.");
+  yame_usage_opt("-h", "Display this help message.");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame pack [options] <in.txt> <out.cx>\n");
-  fprintf(stderr, "Pack tab-delimited text into a compressed cx file.\n");
-  fprintf(stderr, "The input file must have one row per CpG and match the\n");
-  fprintf(stderr, "dimension and order of the reference CpG BED file.\n\n");
-
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -f [char] Format specification (one of b,c,s,m,d,n,r):\n");
-  fprintf(stderr, "              (b) Binary data (format 0).\n");
-  fprintf(stderr, "                  Each entry is 0 or 1.\n");
-  fprintf(stderr, "                  Example (single-sample, one column):\n");
-  fprintf(stderr, "                      0\n");
-  fprintf(stderr, "                      1\n");
-  fprintf(stderr, "                      1\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (c) Character / small integer data (format 1).\n");
-  fprintf(stderr, "                  One byte per entry, typically 0–255.\n");
-  fprintf(stderr, "                  Example:\n");
-  fprintf(stderr, "                      0\n");
-  fprintf(stderr, "                      5\n");
-  fprintf(stderr, "                      9\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (s) State data (format 2).\n");
-  fprintf(stderr, "                  Categorical strings compressed via an index + RLE.\n");
-  fprintf(stderr, "                  Best for chromatin states or other labels.\n");
-  fprintf(stderr, "                  Example:\n");
-  fprintf(stderr, "                      quies\n");
-  fprintf(stderr, "                      quies\n");
-  fprintf(stderr, "                      enhA\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (m) Sequencing MU data (format 3).\n");
-  fprintf(stderr, "                  Input is 2-column text: M and U counts per CpG.\n");
-  fprintf(stderr, "                  M=U=0 is treated as missing.\n");
-  fprintf(stderr, "                  Example (M U):\n");
-  fprintf(stderr, "                      10\t5\n");
-  fprintf(stderr, "                      20\t0\n");
-  fprintf(stderr, "                      13\t17\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (d) Differential / mask data (format 6).\n");
-  fprintf(stderr, "                  2-bit boolean for S (set) and U (universe).\n");
-  fprintf(stderr, "                  Input is 2-column text: S and U, each 0 or 1.\n");
-  fprintf(stderr, "                  Example (S U):\n");
-  fprintf(stderr, "                      1\t1\n");
-  fprintf(stderr, "                      0\t1\n");
-  fprintf(stderr, "                      0\t0\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (n) Fraction / beta data (format 4).\n");
-  fprintf(stderr, "                  Floating-point fraction in [0,1] or NA.\n");
-  fprintf(stderr, "                  Example:\n");
-  fprintf(stderr, "                      0.250\n");
-  fprintf(stderr, "                      NA\n");
-  fprintf(stderr, "                      1.000\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              (r) Reference coordinates (format 7).\n");
-  fprintf(stderr, "                  Compressed BED records for CpG coordinates.\n");
-  fprintf(stderr, "                  Input is 4-column BED: chrom, start, end, name.\n");
-  fprintf(stderr, "                  Example:\n");
-  fprintf(stderr, "                      chr1\t100\t101\tCpG_1\n");
-  fprintf(stderr, "                      chr1\t200\t201\tCpG_2\n");
-  fprintf(stderr, "                      chr1\t300\t301\tCpG_3\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "              The examples above show single-sample input.\n");
-  fprintf(stderr, "              Multi-sample input can be provided as additional\n");
-  fprintf(stderr, "              columns per row, following the same conventions.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "    -u [int]  Number of bytes per unit when inflated (1-8).\n");
-  fprintf(stderr, "              Lower values are more memory efficient but may be lossier.\n");
-  fprintf(stderr, "              0 - infer from data.\n");
-  fprintf(stderr, "    -v        Verbose mode.\n");
-  fprintf(stderr, "    -h        Display this help message.\n\n");
 
   return 1;
 }

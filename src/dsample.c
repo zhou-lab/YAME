@@ -19,32 +19,30 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include <time.h>
 #include "cfile.h"
 #include "snames.h"
 
 static int usage(void) {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame dsample [options] <in.cx> [out.cx]\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Downsample methylation data for format 3 or 6.\n");
-  fprintf(stderr, "  - For format 3, downsampling masks by setting M=U=0.\n");
-  fprintf(stderr, "  - For format 6, downsampling masks by clearing the universe bit.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -o [PATH] output .cx file name.\n");
-  fprintf(stderr, "              If missing, write to stdout (no index will be written).\n");
-  fprintf(stderr, "    -s [int]  seed for random sampling (default: current time).\n");
-  fprintf(stderr, "    -b        After sampling, randomly binarize sampled format 3 (MU)\n");
-  fprintf(stderr, "              rows. Output is still format 3.\n");
-  fprintf(stderr, "    -N [int]  number of records to sample/keep per sample (default: 100).\n");
-  fprintf(stderr, "              If N >= available records, all available records are kept.\n");
-  fprintf(stderr, "    -r [int]  number of downsampled replicates per input sample (default: 1).\n");
-  fprintf(stderr, "              Each replicate is independently re-sampled.\n");
-  fprintf(stderr, "    -p [str]  replicate sample name prefix [default: None].\n");
-  fprintf(stderr, "              If given, the out sample name is: [sname]-[pre]-[rep_id].\n");
-  fprintf(stderr, "    -h        this help.\n");
+  yame_usage_head("yame dsample [options] <in.cx> [out.cx]");
+  yame_usage_text("Downsample methylation data for format 3 or 6.");
+  yame_usage_text("- For format 3, downsampling masks by setting M=U=0.");
+  yame_usage_text("- For format 6, downsampling masks by clearing the universe bit.");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-o [PATH]", "output .cx file name.");
+  yame_usage_cont("If missing, write to stdout (no index will be written).");
+  yame_usage_opt("-s [int]", "seed for random sampling (default: current time).");
+  yame_usage_opt("-b", "After sampling, randomly binarize sampled format 3 (MU)");
+  yame_usage_cont("rows. Output is still format 3.");
+  yame_usage_opt("-N [int]", "number of records to sample/keep per sample (default: 100).");
+  yame_usage_cont("If N >= available records, all available records are kept.");
+  yame_usage_opt("-r [int]", "number of downsampled replicates per input sample (default: 1).");
+  yame_usage_cont("Each replicate is independently re-sampled.");
+  yame_usage_opt("-p [str]", "replicate sample name prefix [default: None].");
+  yame_usage_cont("If given, the out sample name is: [sname]-[pre]-[rep_id].");
+  yame_usage_opt("-h", "this help.");
   fprintf(stderr, "\n");
 
   return 1;

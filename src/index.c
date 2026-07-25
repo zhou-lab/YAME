@@ -19,6 +19,7 @@
  */
 
 #include <stdio.h>
+#include "yame_ui.h"
 #include <stdlib.h>
 #include <string.h>
 #include "kstring.h"
@@ -205,15 +206,13 @@ void writeIndex(FILE *fp, index_t *idx) {
 }
   
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame index [options] <in.cx>\n");
-  fprintf(stderr, "The index file name default to <in.cx>.idx\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -s [file path]   tab-delimited sample name list (use first column) \n");
-  fprintf(stderr, "    -1 [sample name] add one sample to the end of the index\n");
-  fprintf(stderr, "    -c               output index to console\n");
-  fprintf(stderr, "    -h               This help\n");
+  yame_usage_head("yame index [options] <in.cx>");
+  yame_usage_text("The index file name default to <in.cx>.idx");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-s [file path]", "tab-delimited sample name list (use first column)");
+  yame_usage_opt("-1 [sample name]", "add one sample to the end of the index");
+  yame_usage_opt("-c", "output index to console");
+  yame_usage_opt("-h", "This help");
   fprintf(stderr, "\n");
 
   return 1;

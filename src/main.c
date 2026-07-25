@@ -93,7 +93,9 @@ static int usage(void)
    * command, so not in the list of them, and worth seeing before them. */
   {
     const char *env = getenv("YAME_DATA_HOME");
-    fprintf(stderr, "%sYAME_DATA_HOME: %s%s%s\n", yame_ui_blue(), store,
+    /* The same green the command names use: it is the one other thing on this
+     * screen you might go and look at. */
+    fprintf(stderr, "%sYAME_DATA_HOME: %s%s%s\n", yame_ui_green(), store,
             (env && *env) ? "" : " (unset, default)", yame_ui_reset());
   }
   fprintf(stderr, "\n");

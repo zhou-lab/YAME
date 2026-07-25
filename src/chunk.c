@@ -19,17 +19,16 @@
  */
 
 #include <sys/stat.h>
+#include "yame_ui.h"
 #include <sys/types.h>
 #include "cfile.h"
 
 static int usage() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Usage: yame chunk [options] <in.cx> <outdir>\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "    -v        verbose\n");
-  fprintf(stderr, "    -s        chunk size\n");
-  fprintf(stderr, "    -h        This help\n");
+  yame_usage_head("yame chunk [options] <in.cx> <outdir>");
+  yame_usage_sec("Options:");
+  yame_usage_opt("-v", "verbose");
+  yame_usage_opt("-s", "chunk size");
+  yame_usage_opt("-h", "This help");
   fprintf(stderr, "\n");
 
   return 1;
