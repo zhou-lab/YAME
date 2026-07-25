@@ -666,6 +666,15 @@ static void info_key_of(const char *name, char *out, size_t n) {
 
 /* Keys are "<asset index>|<filename>" for a file and the plain component name
  * for a directory, which is what makes a tree path parseable back. */
+/**
+ * One file's row: its name, the tag it comes from, and its size.
+ *
+ * Every row carries its tag, not only those under a unit reporting "mixed".
+ * Showing it just where it disambiguates sounds tidier and is worse in use:
+ * it makes the absence of a tag meaningful, so reading a row correctly means
+ * first noticing what its folder said several lines above. A column that is
+ * always there is read without that step.
+ */
 static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
   size_t idx = (size_t)(e->a - YAME_ASSETS);
   int here = ent_present(b->root, e);
@@ -677,7 +686,9 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
              sz, sizeof(sz));
   snprintf(name, sizeof(name), "%s%s%s", e->f->name, e->paired ? " +" : "",
            e->paired ? e->paired + 1 : "");
-  snprintf(line, sizeof(line), "%s\t%s", name, sz);
+  /* Both fields fixed-width: the tail is right-aligned as a whole, so a size
+   * that varies in width would walk the tag column left and right. */
+  snprintf(line, sizeof(line), "%s\t%-5s %8s", name, e->a->tag, sz);
   snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
 
   out->rows[out->n]   = strdup(line);
