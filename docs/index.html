@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YAME — bit-packed DNA methylation</title>
+<meta name="description" content="YAME (Yet Another Methylation Encoder): bit-packs array and whole-genome DNA methylation into the binary CX formats, so subsetting, summarizing and enrichment testing are bitwise and fast. Ships a shared verified reference-data store.">
+<style>
+
+  :root{
+    --bg:#fbfdfd;--fg:#16232a;--muted:#55666f;--line:#e2e9ea;--soft:#eff4f5;--card:#ffffff;
+    --accent:#9f1239;--accent-2:#e11d48;--accent-soft:#ffe4e6;--on-accent:#ffffff;--code-bg:#0b1620;--code-fg:#e4eef2;--cm:#74899a;--ok:#22c55e;--warn:#b45309;
+    --shadow:0 1px 2px rgba(15,35,45,.04),0 6px 20px rgba(15,35,45,.05);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#08131a;--fg:#e4eef2;--muted:#8ea3ae;--line:#1d2f3a;--soft:#0f1e27;--card:#0f1c25;
+    --accent:#fda4af;--accent-2:#fecdd3;--accent-soft:#4c0519;--on-accent:#08131a;--code-bg:#050f16;--code-fg:#dbe9ef;--cm:#647c8c;--ok:#4ade80;--warn:#fbbf24;
+    --shadow:0 1px 2px rgba(0,0,0,.25),0 8px 26px rgba(0,0,0,.30);}}
+  :root[data-theme=light]{--bg:#fbfdfd;--fg:#16232a;--muted:#55666f;--line:#e2e9ea;--soft:#eff4f5;--card:#fff;--accent:#9f1239;--accent-2:#e11d48;--accent-soft:#ffe4e6;--on-accent:#ffffff;--code-bg:#0b1620;--code-fg:#e4eef2;--cm:#74899a;--ok:#22c55e;--warn:#b45309;--shadow:0 1px 2px rgba(15,35,45,.04),0 6px 20px rgba(15,35,45,.05);}
+  :root[data-theme=dark]{--bg:#08131a;--fg:#e4eef2;--muted:#8ea3ae;--line:#1d2f3a;--soft:#0f1e27;--card:#0f1c25;--accent:#fda4af;--accent-2:#fecdd3;--accent-soft:#4c0519;--on-accent:#08131a;--code-bg:#050f16;--code-fg:#dbe9ef;--cm:#647c8c;--ok:#4ade80;--warn:#fbbf24;--shadow:0 1px 2px rgba(0,0,0,.25),0 8px 26px rgba(0,0,0,.30);}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1520px;margin:0 auto;padding:0 22px 44px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  header{padding:32px 0 4px;margin-bottom:2px}
+  h1{font-size:1.55rem;margin:0;letter-spacing:-.01em;font-weight:400;line-height:1.2;
+     background:linear-gradient(92deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent;display:inline}
+  h1 b{font-weight:800}
+  .badge{margin-left:9px;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+     color:var(--accent);background:var(--accent-soft);border:1px solid var(--line);padding:2px 8px;border-radius:20px;vertical-align:middle}
+  .badge-ver{text-transform:none;letter-spacing:.02em;margin-left:5px;text-decoration:none}
+  /* The title line wraps as a unit so the install command can sit beside the
+     name on a wide screen and drop below it on a phone. */
+  .titlerow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+  /* install: the command itself is the button — click to copy */
+  .install{display:inline-flex;align-items:stretch;border:1px solid var(--accent);
+     border-radius:6px;overflow:hidden;margin-left:4px}
+  #install-btn{font:inherit;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+     font-size:.74rem;cursor:pointer;border:0;color:var(--on-accent);background:var(--accent);
+     padding:.42em .7em;line-height:1.15;display:inline-flex;align-items:center;gap:.5em;
+     white-space:nowrap}
+  #install-btn:hover{filter:brightness(1.08)}
+  #install-btn:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+  #install-btn .ico{opacity:.75;font-size:.92em}
+  #install-btn.done .ico::before{content:"✓"}
+  .install .ana{display:inline-flex;align-items:center;padding:.42em .55em;font-size:.72rem;
+     text-decoration:none;color:var(--accent);background:var(--accent-soft);
+     border-left:1px solid var(--accent)}
+  .install .ana:hover{filter:brightness(.96)}
+  .badge-ver:hover{background:var(--accent);color:#fff}
+  .expand{color:var(--muted);margin:8px 0 12px;font-size:.9rem;max-width:82ch}
+  /* citation: a paired button — the label opens the paper, the stub copies the PMID */
+  .cite{display:inline-flex;align-items:stretch;
+     border:1px solid var(--accent);border-radius:6px;overflow:hidden}
+  .cite a,.cite button{font:inherit;font-size:.74rem;line-height:1.15;padding:.42em .7em;
+     display:inline-flex;align-items:center;gap:.45em;white-space:nowrap;
+     text-decoration:none;border:0;cursor:pointer}
+  .cite .paper{color:var(--on-accent);background:var(--accent);font-weight:600}
+  .cite .paper:hover{filter:brightness(1.08)}
+  /* min-width keeps the button from resizing when the label flips to "copied" */
+  .cite .pmid{color:var(--accent);background:var(--accent-soft);min-width:5.2em;justify-content:center;
+     border-left:1px solid var(--accent);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .cite .pmid:hover{filter:brightness(.96)}
+  .cite a:focus-visible,.cite button:focus-visible{outline:2px solid var(--fg);outline-offset:-2px}
+  .cite .pmid.done{color:var(--on-accent);background:var(--accent)}
+  .links{font-size:.85rem;color:var(--muted)}
+  .links a{font-weight:600}.links span{opacity:.4;margin:0 8px}
+  .grid{column-count:1;column-gap:16px}
+  @media(min-width:640px){.grid{column-count:2}}
+  @media(min-width:980px){.grid{column-count:3}}
+  @media(min-width:1440px){.grid{column-count:4}}
+  .card{break-inside:avoid;margin:0 0 16px;border:1px solid var(--line);border-radius:13px;background:var(--card);
+     padding:13px 15px 15px;box-shadow:var(--shadow);transition:border-color .16s,box-shadow .16s,transform .16s}
+  .card:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));transform:translateY(-2px)}
+  .card h2{font-size:.98rem;margin:0 0 5px;letter-spacing:-.01em}
+  .card h2 .m{color:var(--muted);font-weight:400;font-size:.8rem}
+  .card p{margin:0 0 8px;color:var(--muted);font-size:.82rem}
+  .card p+pre{margin-top:2px}
+  pre{position:relative;background:var(--code-bg);color:var(--code-fg);border-radius:9px;padding:11px 12px;
+     overflow-x:auto;font-size:.75rem;line-height:1.55;margin:0}
+  pre code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .cm{color:var(--cm)}
+  .sub{color:#5eead4;font-weight:700}
+  .hl{color:#fca5a5}
+  code.inl{background:var(--accent-soft);color:var(--accent);padding:1px 5px;border-radius:5px;
+     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84em}
+  .copy{position:absolute;top:6px;right:6px;font:600 .63rem ui-monospace,SFMono-Regular,Menlo,monospace;
+     color:var(--code-fg);background:rgba(20,45,58,.95);border:1px solid rgba(255,255,255,.18);border-radius:6px;
+     padding:2px 8px;cursor:pointer;opacity:0;transition:opacity .14s,background .14s;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+  pre:hover .copy,.copy:focus{opacity:1}
+  .copy:hover{background:rgba(30,70,88,.98)}
+  .copy.ok{color:var(--ok);opacity:1}
+  .note{margin:11px 0 0;padding:9px 11px;border-left:3px solid var(--accent);background:var(--soft);
+     border-radius:0 8px 8px 0;font-size:.79rem;color:var(--muted)}
+  .note b{color:var(--fg)}
+  .note.warn{border-left-color:var(--warn)}
+  .full{border:1px solid var(--line);border-radius:13px;background:var(--card);padding:16px 18px;margin-top:22px;box-shadow:var(--shadow)}
+  .full>h2{font-size:1.1rem;margin:0 0 4px;letter-spacing:-.01em}
+  .full>h2 .m{color:var(--muted);font-weight:400;font-size:.85rem}
+  .full>p{color:var(--muted);font-size:.88rem;margin:0 0 14px;max-width:98ch}
+  .full h3{font-size:.8rem;margin:12px 0 6px;color:var(--fg);font-weight:700}
+  /* figures live in the kycg-examples repo; see the note in the gallery */
+  figure{margin:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft)}
+  figure img{width:100%;height:auto;display:block;background:#fff}
+  figcaption{font-size:.78rem;color:var(--muted);padding:8px 11px;border-top:1px solid var(--line)}
+  figcaption b{color:var(--fg)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 18px}
+  @media(max-width:900px){.cols3{grid-template-columns:1fr 1fr}}
+  @media(max-width:720px){.cols,.cols3{grid-template-columns:1fr}}
+  table.t{width:100%;border-collapse:collapse;font-size:.79rem;margin:2px 0 0}
+  table.t th{text-align:left;font-weight:700;color:var(--fg);border-bottom:1px solid var(--line);padding:5px 8px 5px 0;white-space:nowrap}
+  table.t td{padding:4px 8px 4px 0;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
+  table.t td code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--fg);font-size:.95em}
+  .scroll{overflow-x:auto}
+  footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem}
+
+
+      /* Compact by design: a manual is read in fragments, and every band of
+         empty space is a fragment that did not fit on the screen. */
+      body{font-size:.94rem;line-height:1.5}
+      .wrap{max-width:1180px;padding:0 20px 36px}
+      header{padding:20px 0 6px;margin:0}
+      .titlerow{gap:5px 9px}
+      .logo{height:44px;width:auto;flex:none}
+      h1{font-size:1.35rem}
+      .tagline{color:var(--muted);font-size:.86rem;margin:.45em 0 .3em;max-width:76ch;line-height:1.45}
+      .links{font-size:.8rem;color:var(--muted);margin:.2em 0 0}
+      .links a{font-weight:600}
+      .links span{opacity:.4;margin:0 7px}
+      /* The cite chip is a span inside .links; exempt it from the separator
+         rule above, which would otherwise fade the whole chip to 40%. */
+      .links .cite{opacity:1;margin:0 0 0 7px}
+      .rowspaces{font-size:.76rem;color:var(--muted);margin:.35em 0 0;
+        letter-spacing:.01em}
+      .rowspaces b{font-weight:600;text-transform:uppercase;font-size:.68rem;
+        letter-spacing:.07em;opacity:.75;margin-right:7px}
+      .rowspaces i{font-style:normal;opacity:.35;margin:0 2px}
+      /* Each carries its row count as a title -- the count *is* the row
+         space's identity, which is what lets -R be inferred from a file. */
+      .rowspaces span{cursor:help}
+      .rowspaces span:hover{color:var(--accent)}
+
+      .layout{display:grid;grid-template-columns:206px minmax(0,1fr);gap:26px;
+        align-items:start;margin-top:16px}
+      @media (max-width:900px){.layout{grid-template-columns:1fr}nav.toc{position:static;max-height:none}}
+      nav.toc{position:sticky;top:10px;max-height:calc(100vh - 20px);overflow:auto;
+        border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px;
+        box-shadow:var(--shadow)}
+      nav.toc a{display:block;padding:4px 8px;border-radius:5px;color:var(--muted);
+        font-size:.82rem;line-height:1.25}
+      nav.toc a:hover{background:var(--soft);text-decoration:none}
+      nav.toc a.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+      nav.toc .grp{font:600 .68rem -apple-system,sans-serif;letter-spacing:.07em;
+        text-transform:uppercase;color:var(--muted);opacity:.72;padding:9px 8px 3px}
+      #filter{width:100%;padding:6px 8px;margin-bottom:6px;border:1px solid var(--line);
+        border-radius:5px;background:var(--bg);color:var(--fg);font:inherit;font-size:.8rem}
+
+      section.doc{border-top:1px solid var(--line);padding-top:16px;margin-top:20px}
+      section.doc:first-of-type{border-top:0;margin-top:4px;padding-top:0}
+      section.doc h2{font-size:1.16rem;margin:.1em 0 .45em;letter-spacing:-.01em}
+      section.doc h3{font-size:1rem;margin:1.25em 0 .35em}
+      section.doc h4{font-size:.9rem;margin:1em 0 .25em;color:var(--muted)}
+      section.doc p{margin:.5em 0;max-width:78ch}
+      section.doc ul,section.doc ol{margin:.45em 0;padding-left:1.35em;max-width:78ch}
+      section.doc li{margin:.18em 0}
+      section.doc pre{background:var(--code-bg);color:var(--code-fg);padding:11px 13px;
+        border-radius:7px;overflow-x:auto;font-size:.8rem;line-height:1.45;margin:.6em 0}
+      section.doc :not(pre)>code{background:var(--soft);padding:.1em .36em;border-radius:4px;
+        font-size:.86em;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+      section.doc table{border-collapse:collapse;margin:.6em 0;font-size:.84rem;
+        display:block;overflow-x:auto}
+      section.doc th,section.doc td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+      section.doc th{background:var(--soft)}
+      section.doc blockquote{border-left:2px solid var(--accent);margin:.7em 0;
+        padding:.05em 0 .05em 11px;color:var(--muted);font-size:.88rem}
+      figure.dia{margin:.9em 0;padding:11px 13px}
+      .hidden{display:none}
+    
+
+      /* --- diagrams --- */
+      figure.dia{margin:1.2em 0;padding:14px 16px;border:1px solid var(--line);
+        border-radius:10px;background:var(--card);box-shadow:var(--shadow);overflow-x:auto}
+      figure.dia svg{display:block;max-width:100%;height:auto}
+      figure.dia figcaption{margin-top:10px;font-size:.83rem;color:var(--muted);line-height:1.45}
+      .dia .lbl{font:600 11px ui-monospace,"SF Mono",Menlo,Consolas,monospace;fill:var(--fg)}
+      .dia .sub{font:10px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;fill:var(--muted)}
+      .dia .tick{font:9px ui-monospace,Menlo,monospace;fill:var(--muted)}
+      .dia .box{fill:var(--soft);stroke:var(--line)}
+      .dia .hdr{fill:var(--accent-soft);stroke:var(--accent)}
+      .dia .dat{fill:var(--card);stroke:var(--line)}
+      .dia .on{fill:var(--accent);stroke:var(--accent)}
+      .dia .off{fill:var(--card);stroke:var(--line)}
+      .dia .ontxt{font:600 10px ui-monospace,Menlo,monospace;fill:var(--on-accent)}
+      .dia .offtxt{font:600 10px ui-monospace,Menlo,monospace;fill:var(--muted)}
+
+
+      /* --- glossary + tooltips --- */
+      dl.gloss{margin:0}
+      dl.gloss dt{font:600 .92rem ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+        color:var(--accent);margin-top:1.1em}
+      dl.gloss dd{margin:.3em 0 0;color:var(--fg);font-size:.9rem;line-height:1.55;max-width:78ch}
+      .tip{border-bottom:1px dotted var(--accent);cursor:help;position:relative;outline:none}
+      .tip:hover,.tip:focus-visible{background:var(--accent-soft)}
+      #tipbox{position:absolute;z-index:40;max-width:46ch;padding:9px 11px;border-radius:8px;
+        border:1px solid var(--line);background:var(--card);color:var(--fg);
+        box-shadow:var(--shadow);font-size:.83rem;line-height:1.5;display:none}
+      #tipbox b{color:var(--accent)}
+      /* copy button on every example */
+      .runnable{position:relative}
+      .runnable button.cp{position:absolute;top:7px;right:7px;font:inherit;font-size:.7rem;
+        cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:2px 7px;
+        background:var(--card);color:var(--muted);opacity:0;transition:opacity .12s}
+      .runnable:hover button.cp,.runnable button.cp:focus-visible{opacity:1}
+      .runnable button.cp.done{color:var(--ok);border-color:var(--ok)}
+
+
+      /* --- glanceable tables whose rows are the drawers --- */
+      .table{border:1px solid var(--line);border-radius:9px;overflow:hidden;
+        background:var(--card);margin:.7em 0}
+      .thead,.table summary{display:grid;gap:10px;align-items:baseline;
+        padding:7px 11px}
+      .fmts .thead,.fmts summary{grid-template-columns:minmax(0,1fr) 2.6rem 7.5rem 4rem 3.2rem}
+      .cmds .thead,.cmds summary{grid-template-columns:6.5rem minmax(0,1fr) 7.6rem}
+      .thead{font:600 .68rem -apple-system,sans-serif;letter-spacing:.07em;
+        text-transform:uppercase;color:var(--muted);background:var(--soft);
+        border-bottom:1px solid var(--line)}
+      .row{border-top:1px solid var(--line)}
+      .row:first-of-type{border-top:0}
+      .table summary{cursor:pointer;list-style:none;font-size:.87rem}
+      .table summary::-webkit-details-marker{display:none}
+      .table summary:hover{background:var(--soft)}
+      .row[open]>summary{background:var(--accent-soft);
+        border-bottom:1px solid var(--line)}
+      .table summary::before{content:"›";position:absolute;margin-left:-11px;
+        color:var(--muted);transition:transform .12s;display:inline-block}
+      .row[open]>summary::before{transform:rotate(90deg)}
+      .c-fmt b{display:inline-block;min-width:1.3em;text-align:center;
+        background:var(--accent);color:var(--on-accent);border-radius:4px;
+        font:600 .78rem ui-monospace,Menlo,monospace;padding:1px 4px}
+      .c-disk,.c-na{color:var(--muted);font-size:.8rem}
+      .c-cmd code{background:none;padding:0;font-weight:600;color:var(--accent)}
+      .c-purpose{color:var(--fg)}
+      .cmds .c-purpose code{font-size:.82em}
+      .drawer{padding:2px 13px 12px;border-top:1px dashed var(--line)}
+      .drawer h4{font-size:.82rem;text-transform:uppercase;letter-spacing:.05em;
+        color:var(--muted);margin:1em 0 .3em}
+      .drawer>p:first-child{margin-top:.7em}
+      .drawer figure.dia{margin:.7em 0}
+      p.hint{font-size:.79rem;color:var(--muted);margin:.8em 0 0;
+        padding-top:.5em;border-top:1px solid var(--line)}
+      p.aside{font-size:.82rem;color:var(--muted)}
+      /* the seven-format strip */
+      .fm{display:inline-flex;gap:2px}
+      .fm i,i.k{font-style:normal;font:600 .68rem ui-monospace,Menlo,monospace;
+        width:1.25em;height:1.25em;line-height:1.25em;text-align:center;
+        border-radius:3px;display:inline-block}
+      .fm i.n{color:var(--muted);opacity:.3;border:1px solid transparent}
+      .fm i.i,.fm i.io{background:var(--accent);color:var(--on-accent)}
+      .fm i.o{border:1px solid var(--accent);color:var(--accent)}
+      .fm i.m{border:1px dashed var(--accent);color:var(--accent)}
+      i.k{padding:0 .3em;width:auto}
+      i.i.k{background:var(--accent);color:var(--on-accent)}
+      i.o.k{border:1px solid var(--accent);color:var(--accent)}
+      i.n.k{color:var(--muted);opacity:.45}
+    </style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="titlerow">
+    <img class="logo" src="logo.png" alt="">
+    <h1><b>Y</b>et <b>A</b>nother <b>M</b>ethylation <b>E</b>ncoder</h1>
+    <span class="badge">cli</span><a class="badge badge-ver"
+      href="https://github.com/zhou-lab/YAME/releases/tag/v1.29">v1.29</a>
+    <span class="install">
+      <button id="install-btn" type="button"
+              data-cmd="conda install -c zhou-lab -c conda-forge yame"
+              title="Copy to clipboard"><span class="ico">⧉</span>conda install -c zhou-lab -c conda-forge yame</button>
+      <a class="ana" href="https://anaconda.org/zhou-lab/yame"
+         title="anaconda.org/zhou-lab/yame" rel="noopener">↗</a>
+    </span>
+  </div>
+  <p class="tagline">Bit-packing for DNA methylation. Arrays and whole genomes
+    in one binary format family, where analysis is bitwise — and so stays fast
+    across a thousandfold of scale, from 28K probes to 29M CpGs.</p>
+  <p class="links">
+    <a href="https://github.com/zhou-lab/YAME">GitHub</a><span>·</span>
+    <a href="https://bioconda.github.io/recipes/yame/README.html">bioconda</a><span>·</span>
+    <a href="https://anaconda.org/zhou-lab/yame">zhou-lab</a><span>·</span>
+    <a href="https://github.com/zhou-lab/kycg">kycg</a><span>·</span>
+    <a href="https://github.com/zwdzwd/sesame-cli">sesame-cli</a><span>·</span>
+    <a href="https://github.com/zhou-lab/cinderplot">cinderplot</a><span>·</span>
+    <span class="cite"><a class="paper"
+       href="https://doi.org/10.1126/sciadv.adw3027" rel="noopener"
+       title="Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou. KnowYourCG: facilitating base-level sparse methylome interpretation. Sci Adv 2025;11(43):eadw3027">Cite ↗</a><button
+       class="pmid" type="button" data-pmid="41134907"
+       title="Copy PMID to clipboard">PMID</button></span>
+  </p>
+  <p class="rowspaces"><b>row spaces</b>
+    <span title="29,401,795 rows">hg38</span> <i>·</i>
+    <span title="21,867,837 rows">mm10</span> <i>·</i>
+    <span title="21,889,506 rows">mm39</span> <i>·</i>
+    <span title="937,690 rows">EPICv2</span> <i>·</i>
+    <span title="866,553 rows">EPIC</span> <i>·</i>
+    <span title="486,427 rows">HM450</span> <i>·</i>
+    <span title="287,692 rows">MM285</span> <i>·</i>
+    <span title="284,309 rows">MSA</span> <i>·</i>
+    <span title="38,607 rows">Mammal40</span> <i>·</i>
+    <span title="27,722 rows">HM27</span></p>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <input id="filter" type="search" placeholder="Filter&hellip;" aria-label="Filter">
+    <a href="#idea" data-slug="idea">The idea</a>
+    <a href="#formats" data-slug="formats">Which format?</a>
+    <a href="#commands" data-slug="commands">What can you run?</a>
+    <a href="#glossary" data-slug="glossary">Glossary</a>
+  </nav>
+  <main>
+<section id="idea" class="doc">
+<h2>The idea</h2>
+<p><b>A YAME file stores no coordinates.</b> Row <i>i</i> means whatever row
+<i>i</i> of the <span class="tip" data-tip="reference" tabindex="0">reference</span> means &mdash; so the file is
+just values, in order, packed as tightly as the measurement allows.</p>
+<figure class="dia">
+<svg viewBox="0 0 700 176" role="img" aria-label="A .cr coordinate stream gives every row its position; data files are bit vectors aligned to it by row order alone.">
+  <text class="lbl" x="0" y="14">cpg_nocontig.cr</text>
+  <text class="sub" x="128" y="14">— the reference: every CpG in the genome, in order</text>
+  <rect class="hdr" x="0" y="24" width="700" height="30" rx="4"/>
+  <text class="tick" x="12"  y="43">chr1:10,468</text>
+  <text class="tick" x="120" y="43">chr1:10,470</text>
+  <text class="tick" x="228" y="43">chr1:10,483</text>
+  <text class="tick" x="336" y="43">chr1:10,489</text>
+  <text class="tick" x="444" y="43">chr1:10,493</text>
+  <text class="tick" x="552" y="43">chr1:10,497</text>
+  <text class="tick" x="656" y="43">…</text>
+
+  <text class="lbl" x="0" y="82">a .cg methylome</text>
+  <rect class="on"  x="0"   y="92" width="108" height="24"/>
+  <rect class="off" x="108" y="92" width="108" height="24"/>
+  <rect class="on"  x="216" y="92" width="108" height="24"/>
+  <rect class="on"  x="324" y="92" width="108" height="24"/>
+  <rect class="off" x="432" y="92" width="108" height="24"/>
+  <rect class="on"  x="540" y="92" width="108" height="24"/>
+  <rect class="dat" x="648" y="92" width="52"  height="24" stroke-dasharray="4 3"/>
+
+  <text class="lbl" x="0" y="140">a .cm feature set</text>
+  <rect class="off" x="0"   y="150" width="108" height="24"/>
+  <rect class="on"  x="108" y="150" width="108" height="24"/>
+  <rect class="on"  x="216" y="150" width="108" height="24"/>
+  <rect class="off" x="324" y="150" width="108" height="24"/>
+  <rect class="off" x="432" y="150" width="108" height="24"/>
+  <rect class="on"  x="540" y="150" width="108" height="24"/>
+  <rect class="dat" x="648" y="150" width="52"  height="24" stroke-dasharray="4 3"/>
+</svg>
+<figcaption><b>Position is not stored; it is implied.</b> A data file carries
+no coordinates at all — row <i>i</i> means whatever row <i>i</i> of the
+reference means. That is what makes the files small and the intersections free:
+overlapping a methylome with a feature set is a bitwise AND, not a genomic
+join. It is also why row counts have to match, and why a file's row count
+identifies its reference well enough for <code>-R</code> to be inferred.</figcaption>
+</figure>
+<p>Everything else follows from that. Intersecting a methylome with a feature
+set is a bitwise AND rather than a genomic join, so it is fast and it does not
+care how many rows there are. Two files can be compared only if they share a
+<span class="tip" data-tip="rowspace" tabindex="0">row space</span>, and since each <span class="tip" data-tip="rowspace" tabindex="0">row space</span> has a distinct
+length, <b>a row count is an identity</b>: given a file, YAME can work out
+which reference it belongs to and resolve <code>-R</code> and <code>-m</code>
+from a name instead of a path.</p>
+<p>An Infinium manifest and a whole-genome CpG set are the same kind of object
+under that rule, differing only in length &mdash; which is why the same
+commands serve array and sequencing data.</p>
+<figure class="dia">
+<svg viewBox="0 0 700 190" role="img" aria-label="A CX record: 8-byte signature, 1-byte format code, 8-byte count, then packed data; records are concatenated inside BGZF frames.">
+  <text class="sub" x="0" y="12">one .cx / .cg / .cm file</text>
+  <rect class="box" x="0" y="20" width="700" height="34" rx="5"/>
+  <text class="lbl" x="12" y="41">BGZF frames</text>
+  <text class="sub" x="110" y="41">— block-compressed, so any record can be reached without reading the rest</text>
+
+  <rect class="hdr" x="0"   y="72" width="120" height="38" rx="4"/>
+  <rect class="hdr" x="120" y="72" width="66"  height="38"/>
+  <rect class="hdr" x="186" y="72" width="120" height="38"/>
+  <rect class="dat" x="306" y="72" width="394" height="38" rx="4"/>
+  <text class="lbl" x="30"  y="90">sig</text><text class="tick" x="30"  y="104">8 bytes</text>
+  <text class="lbl" x="136" y="90">fmt</text><text class="tick" x="132" y="104">1 byte</text>
+  <text class="lbl" x="216" y="90">n</text>  <text class="tick" x="204" y="104">8 bytes</text>
+  <text class="lbl" x="480" y="90">data</text><text class="tick" x="430" y="104">packed per format, see below</text>
+
+  <text class="sub" x="0" y="132">↑ one record = one sample</text>
+  <rect class="box" x="0"   y="142" width="168" height="26" rx="4"/>
+  <rect class="box" x="176" y="142" width="168" height="26" rx="4"/>
+  <rect class="box" x="352" y="142" width="168" height="26" rx="4"/>
+  <rect class="dat" x="528" y="142" width="172" height="26" rx="4" stroke-dasharray="4 3"/>
+  <text class="lbl" x="60"  y="159">sample 1</text>
+  <text class="lbl" x="236" y="159">sample 2</text>
+  <text class="lbl" x="412" y="159">sample 3</text>
+  <text class="sub" x="596" y="159">…</text>
+</svg>
+<figcaption><b>A record is a header and a blob.</b> An 8-byte signature, the
+one-byte format code, the row count <code>n</code>, then the data packed
+according to that code. Records are concatenated, so a multi-sample file is
+just more of them, and the <code>.idx</code> beside it stores where each one
+begins — which is why <code>yame subset</code> can pull one sample out of
+hundreds without decompressing the others.</figcaption>
+</figure>
+</section><section id="formats" class="doc">
+<h2>Which format do you need?</h2>
+<p>Seven layouts, one record header. They differ only in how much space one
+row costs and what it can say &mdash; a presence/absence mask does not need a
+byte per CpG, and a coverage track cannot live in a bit. Find your data on the
+left; open a row for the layout, an example and the traps.</p>
+<div class="table fmts">
+  <div class="thead">
+    <span class="c-what">You have</span>
+    <span class="c-fmt">Fmt</span>
+    <span class="c-disk">On disk</span>
+    <span class="c-na">NA?</span>
+    <span class="c-flag">pack</span>
+  </div>
+  <details class="row fmt">
+<summary>
+  <span class="c-what">M/U counts from bisulfite sequencing</span>
+  <span class="c-fmt"><b>3</b></span>
+  <span class="c-disk">1&ndash;8 B / site</span>
+  <span class="c-na">M=U=0</span>
+  <span class="c-flag"><code>-fm</code></span>
+</summary>
+<div class="drawer">
+<p>Two integers per site: reads supporting methylated, reads supporting
+unmethylated. Coverage is M+U and the fraction is M/(M+U), so nothing is lost
+to rounding before you decide how to threshold.</p>
+<pre class="runnable"><code># input: tab-delimited, column 1 = M, column 2 = U, one row per CpG
+yame pack -fm sample_MU.txt sample.cg</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>Counts are lossy at the top end.</b> A site is stored in 1, 2 or 8
+bytes depending on how big the counts are; when they overflow the chosen
+width both M and U are right-shifted together. The ratio survives, the
+absolute depth does not.</li>
+<li><b>NA is <code>M=U=0</code></b> &mdash; there is no separate missing flag.
+Runs of uncovered sites cost 2 bytes per run, not per site, so a sparse
+single-cell methylome stays small.</li>
+<li><code>-u &lt;1-8&gt;</code> sets the in-memory width; leave it alone unless
+you know why you are changing it.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">Beta values &mdash; array, or imputed</span>
+  <span class="c-fmt"><b>4</b></span>
+  <span class="c-disk">4 B / value</span>
+  <span class="c-na">yes</span>
+  <span class="c-flag"><code>-fn</code></span>
+</summary>
+<div class="drawer">
+<p>The methylation fraction itself, one float per row. Use it when the counts
+are gone or never existed &mdash; an Infinium &beta;, or a fraction someone
+else already computed.</p>
+<pre class="runnable"><code># input: one float per line, "NA" allowed
+yame pack -fn betas.txt sample.cg</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>NA is stored as a negative value</b>, so it is distinguishable from a
+true zero &mdash; and consecutive NAs collapse into a single run, which is why
+an array manifest with large unmeasured stretches does not pay for them.</li>
+<li>Anything that does not parse as a number becomes NA. That is forgiving on
+input and silent about typos: check the row count with
+<code>yame info</code> after packing.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">A yes/no per CpG &mdash; a feature set or mask</span>
+  <span class="c-fmt"><b>0</b></span>
+  <span class="c-disk"><b>1 bit</b> / row</span>
+  <span class="c-na">no</span>
+  <span class="c-flag"><code>-fb</code></span>
+</summary>
+<div class="drawer">
+<p>The densest thing here: one bit per CpG, so a whole-genome hg38 track is
+3.5&nbsp;MB. This is what a <span class="tip" data-tip="mask" tabindex="0">mask</span> is, and what most of a
+<span class="tip" data-tip="kb" tabindex="0">knowledgebase</span> is made of.</p>
+<pre class="runnable"><code># input: one value per line, 0 or 1, one row per CpG
+yame pack -fb in_island.txt CGI.cm</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>Only <code>0</code> means zero.</b> A line is read as 1 unless its
+first character is <code>0</code> &mdash; so <code>NA</code> silently becomes
+a member of the set. Format 0 has no way to say "not measured"; if you need
+that distinction you want format 6.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">A set <i>plus</i> which sites were measured</span>
+  <span class="c-fmt"><b>6</b></span>
+  <span class="c-disk"><b>2 bits</b> / row</span>
+  <span class="c-na">yes</span>
+  <span class="c-flag"><code>-fd</code></span>
+</summary>
+<div class="drawer">
+<p>Two bits: one says the site was measured at all
+(<span class="tip" data-tip="universe" tabindex="0">the universe</span>), one says it is a member
+(<span class="tip" data-tip="set" tabindex="0">the set</span>). That second bit is the whole point &mdash; it
+separates <i>absent</i> from <i>present-and-zero</i>, which one bit cannot do
+and every enrichment test needs.</p>
+<figure class="dia">
+<svg viewBox="0 0 700 150" role="img" aria-label="Format 6 states: 00 is outside the universe, 10 is in the universe with value zero, 11 is in the universe with value one.">
+  <text class="sub" x="0" y="12">two bits per CpG: the universe bit, then the set bit</text>
+
+  <rect class="off" x="0"   y="26" width="150" height="46" rx="5"/>
+  <text class="lbl" x="20" y="48">0 0</text><text class="sub" x="60" y="48">NA</text>
+  <text class="sub" x="20" y="64">outside the universe</text>
+
+  <rect class="hdr" x="166" y="26" width="150" height="46" rx="5"/>
+  <text class="lbl" x="186" y="48">1 0</text><text class="sub" x="226" y="48">value 0</text>
+  <text class="sub" x="186" y="64">measured, not in the set</text>
+
+  <rect class="on" x="332" y="26" width="150" height="46" rx="5"/>
+  <text class="ontxt" x="352" y="48" style="font-size:11px">1 1</text>
+  <text class="ontxt" x="392" y="48">value 1</text>
+  <text class="ontxt" x="352" y="64" style="font-weight:400">measured, in the set</text>
+
+  <text class="sub" x="0" y="102">The universe bit is what separates <tspan class="lbl">absent</tspan> from <tspan class="lbl">present-and-zero</tspan> —</text>
+  <text class="sub" x="0" y="120">a distinction one bit cannot make, and every enrichment test depends on.</text>
+</svg>
+<figcaption><b>Two bits, three meanings.</b> A CpG that was never measured and
+a CpG measured as unmethylated are different facts; format 0 has to conflate
+them, format 6 does not. That is why a query and its background can travel in
+one file, and why <code>summary</code> can compute an odds ratio from a single
+record.</figcaption>
+</figure>
+<pre class="runnable"><code># input: tab-delimited, column 1 = set (0/1), column 2 = universe (0/1)
+yame pack -fd calls.txt sample.cg</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>The set bit is set only by the exact string <code>1</code>.</b>
+<code>1.0</code>, <code>TRUE</code> and <code>01</code> all read as 0. The
+universe column is more forgiving: any non-zero number counts.</li>
+<li>A query and its background travel in one file, which is why
+<code>summary</code> can produce an odds ratio from a single record.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">Categorical labels &mdash; chromatin states</span>
+  <span class="c-fmt"><b>2</b></span>
+  <span class="c-disk">dictionary + runs</span>
+  <span class="c-na">a label</span>
+  <span class="c-flag"><code>-fs</code></span>
+</summary>
+<div class="drawer">
+<p>Arbitrary string labels per row, stored once in a key table with the rows
+as indices into it, then run-length encoded. Adjacent CpGs are almost always
+in the same state, so this compresses hard.</p>
+<pre class="runnable"><code># input: one label per line -- the whole line is the label
+yame pack -fs chromhmm_states.txt ChromHMM.cm
+yame info ChromHMM.cm          # the Keys column lists every state</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b><code>NA</code> is just another label</b>, not a missing marker: empty
+lines become the literal string <code>NA</code> and get a key like any other
+state.</li>
+<li><code>yame subset -s</code> explodes one state track into a separate
+format-0 bitset per state, which is how a state file becomes testable
+sets.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">One small integer or character per CpG</span>
+  <span class="c-fmt"><b>1</b></span>
+  <span class="c-disk">3 B / run</span>
+  <span class="c-na">no</span>
+  <span class="c-flag"><code>-fc</code></span>
+</summary>
+<div class="drawer">
+<p>A single byte per row, run-length encoded. Niche &mdash; useful for a small
+per-site code where format 2's key table would be overkill.</p>
+<pre class="runnable"><code>yame pack -fc codes.txt codes.cg</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>Only the first character of each line is stored.</b> Despite what the
+range "0&ndash;255" suggests, <code>37</code> is stored as the character
+<code>3</code>. If your values are multi-digit, this is the wrong format
+&mdash; use format 3 or 4.</li>
+</ul></div>
+</details><details class="row fmt">
+<summary>
+  <span class="c-what">The coordinates themselves &mdash; a row space</span>
+  <span class="c-fmt"><b>7</b></span>
+  <span class="c-disk">delta, 1/2/8 B</span>
+  <span class="c-na">n/a</span>
+  <span class="c-flag"><code>-fr</code></span>
+</summary>
+<div class="drawer">
+<p>The <span class="tip" data-tip="reference" tabindex="0">reference</span> itself: every position in a
+<span class="tip" data-tip="rowspace" tabindex="0">row space</span>, in order, as gaps between consecutive
+positions rather than absolute coordinates. This is the <code>.cr</code> file
+that gives every other format its meaning.</p>
+<pre class="runnable"><code>yame pack -fr cpg.bed cpg_nocontig.cr</code></pre>
+<h4>Worth knowing</h4>
+<ul>
+<li><b>Only the first two columns are read</b> &mdash; chromosome and start.
+The usage text mentions a 4-column BED, but name and end are ignored.</li>
+<li><b>Input must be sorted.</b> A coordinate that goes backwards is not an
+error: it silently begins a new chromosome block, and you get a corrupt row
+space that still loads.</li>
+<li>You rarely build one of these. <code>yame fetch</code> ships the standard
+ones for all ten row spaces.</li>
+</ul></div>
+</details>
+</div>
+<figure class="dia">
+<svg viewBox="0 0 700 232" role="img" aria-label="How many CpGs fit in one byte per format: eight in format 0, four in format 6, one in format 1, and one per unit in format 3.">
+  <text class="sub" x="0" y="12">one byte, and the CpGs it holds</text>
+
+  <text class="lbl" x="0" y="46">fmt 0</text><text class="sub" x="46" y="46">binary</text>
+  <rect class="on" x="150.0" y="28" width="27.0" height="26"/><text class="ontxt" x="163.5" y="45" text-anchor="middle">1</text><rect class="off" x="177.0" y="28" width="27.0" height="26"/><text class="offtxt" x="190.5" y="45" text-anchor="middle">0</text><rect class="off" x="204.0" y="28" width="27.0" height="26"/><text class="offtxt" x="217.5" y="45" text-anchor="middle">0</text><rect class="on" x="231.0" y="28" width="27.0" height="26"/><text class="ontxt" x="244.5" y="45" text-anchor="middle">1</text><rect class="on" x="258.0" y="28" width="27.0" height="26"/><text class="ontxt" x="271.5" y="45" text-anchor="middle">1</text><rect class="off" x="285.0" y="28" width="27.0" height="26"/><text class="offtxt" x="298.5" y="45" text-anchor="middle">0</text><rect class="on" x="312.0" y="28" width="27.0" height="26"/><text class="ontxt" x="325.5" y="45" text-anchor="middle">1</text><rect class="off" x="339.0" y="28" width="27.0" height="26"/><text class="offtxt" x="352.5" y="45" text-anchor="middle">0</text>
+  <text class="sub" x="378" y="46">8 CpGs · 1 bit each</text>
+
+  <text class="lbl" x="0" y="90">fmt 6</text><text class="sub" x="46" y="90">set/universe</text>
+  <rect class="on" x="150.0" y="72" width="54.0" height="26"/><text class="ontxt" x="177.0" y="89" text-anchor="middle">11</text><rect class="on" x="204.0" y="72" width="54.0" height="26"/><text class="ontxt" x="231.0" y="89" text-anchor="middle">10</text><rect class="off" x="258.0" y="72" width="54.0" height="26"/><text class="offtxt" x="285.0" y="89" text-anchor="middle">00</text><rect class="on" x="312.0" y="72" width="54.0" height="26"/><text class="ontxt" x="339.0" y="89" text-anchor="middle">11</text>
+  <text class="sub" x="378" y="90">4 CpGs · 2 bits each</text>
+
+  <text class="lbl" x="0" y="134">fmt 1</text><text class="sub" x="46" y="134">small int</text>
+  <rect class="on" x="150.0" y="116" width="216.0" height="26"/><text class="ontxt" x="258.0" y="133" text-anchor="middle">37</text>
+  <text class="sub" x="378" y="134">1 CpG · one byte</text>
+
+  <text class="lbl" x="0" y="178">fmt 3</text><text class="sub" x="46" y="178">M/U counts</text>
+  <rect class="dat" x="150" y="160" width="216" height="26" rx="3"/>
+  <text class="lbl" x="196" y="177">M</text><text class="lbl" x="300" y="177">U</text>
+  <line x1="258" y1="160" x2="258" y2="186" stroke="var(--line)"/>
+  <text class="sub" x="378" y="178">1 CpG · `unit` bytes, M and U side by side</text>
+
+  <text class="sub" x="0" y="216">A whole-genome hg38 track is 29,401,795 rows: 3.5 MB at one bit each, 7.0 MB at two.</text>
+</svg>
+<figcaption><b>The format code is a packing density.</b> Every format lays the
+same row space down differently, which is the whole reason there is a family
+rather than one format: a presence/absence mask does not need a byte per CpG,
+and a coverage track cannot live in a bit.</figcaption>
+</figure>
+<p class="aside">Format 5 &mdash; a ternary 0/1/NA layout &mdash; is obsolete.
+Old files still decode; nothing writes it. Format 6 replaced it.</p>
+</section><section id="commands" class="doc">
+<h2>What can you run?</h2>
+<p>Eighteen commands. The strip on the right of each row is the seven formats
+&mdash; <i class="i k">filled</i> means it reads that format,
+<i class="o k">outlined</i> means it writes it, <i class="n k">faint</i> means
+it does not handle it. Open a row for the flags that matter and an example.</p>
+<h3>Get data in and out</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>pack</code></span>
+  <span class="c-purpose">Text &rarr; <code>.cx</code>, one row per CpG</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="o">0</i><i class="o">1</i><i class="o">2</i><i class="o">3</i><i class="o">4</i><i class="o">6</i><i class="o">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>The only way in. Input is a plain text/BED file with <b>one row per CpG,
+already in the reference's order</b> &mdash; nothing is sorted or matched for
+you, and nothing checks that you got it right, so a misaligned input produces
+a file that loads cleanly and means nothing.</p>
+<p>Which <code>-f</code> to use is the whole of the table above.</p>
+<pre class="runnable"><code>yame pack -fm sample_MU.txt sample.cg</code></pre>
+<p class="hint">Every flag: <code>yame pack -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>unpack</code></span>
+  <span class="c-purpose"><code>.cx</code> &rarr; text, one column per sample</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i">0</i><i class="i">1</i><i class="i">2</i><i class="i">3</i><i class="i">4</i><i class="i">6</i><i class="i">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Reads every format. By default it prints only the first record &mdash;
+<code>-a</code> is what you almost always want.</p>
+<pre class="runnable"><code>yame unpack -a -C -R hg38 sample.cg &gt; sample.tsv</code></pre>
+<ul>
+<li><code>-a</code> all samples, <code>-C</code> header line.</li>
+<li><code>-R &lt;ref|name&gt;</code> prepends the coordinate columns. <b>Not
+inferred</b> here &mdash; leaving it off is a legitimate request for a bare
+value column.</li>
+<li><code>-f</code> controls rendering: for format 3, a negative value prints
+M and U in separate columns; a positive one prints beta with a coverage
+floor.</li>
+</ul>
+<p class="hint">Every flag: <code>yame unpack -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>chunkchar</code></span>
+  <span class="c-purpose">Split a big text file by line count, before packing</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="n">0</i><i class="n">1</i><i class="n">2</i><i class="n">3</i><i class="n">4</i><i class="n">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Plain text in, plain text out &mdash; the pre-<code>pack</code> companion
+to <code>chunk</code>. Output always lands in
+<code>&lt;input&gt;_chunks/</code>.</p>
+<pre class="runnable"><code>yame chunkchar -s 1000000 big_MU.txt</code></pre>
+<p>It reads the whole file into memory first, so for very large inputs
+<code>split(1)</code> is the better tool.</p>
+<p class="hint">Every flag: <code>yame chunkchar -h</code></p></div>
+</details></div><h3>Look at it</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>info</code></span>
+  <span class="c-purpose">Row count, format, sample names &mdash; start here</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i">0</i><i class="i">1</i><i class="i">2</i><i class="i">3</i><i class="i">4</i><i class="i">6</i><i class="i">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>One line per record. The row count is the useful part: it identifies the
+<span class="tip" data-tip="rowspace" tabindex="0">row space</span>, which is what lets <code>-R</code> and <code>-m</code> be
+given as names instead of paths.</p>
+<pre class="runnable"><code>yame info -1 *.cg</code></pre>
+<p>For a format 2 file the <code>Keys</code> column lists every state label.</p>
+<p class="hint">Every flag: <code>yame info -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>hprint</code></span>
+  <span class="c-purpose">Terminal heatmap of a region or the whole genome</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i">0</i><i class="n">1</i><i class="n">2</i><i class="i">3</i><i class="i">4</i><i class="i">6</i><i class="m">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Look at the data without leaving the shell &mdash; rows are samples,
+columns are sites or windows.</p>
+<pre class="runnable"><code>yame hprint -r chr16:10000000-10100000 cohort.cg</code></pre>
+<ul>
+<li><code>-r &lt;region&gt;</code> zooms in; <code>-R</code> gives the
+whole-genome view. <b>The reference is inferred</b> from the row count when
+you give <code>-r</code> alone.</li>
+<li><code>-w</code> caps the column count; wider regions are window-averaged
+rather than truncated.</li>
+<li>Without <code>-r</code> or <code>-R</code> it only accepts format 6.</li>
+</ul>
+<p class="hint">Every flag: <code>yame hprint -h</code></p></div>
+</details></div><h3>Manage files</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>index</code></span>
+  <span class="c-purpose">Build the sample index so names work</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i">0</i><i class="i">1</i><i class="i">2</i><i class="i">3</i><i class="i">4</i><i class="i">6</i><i class="i">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Writes the <code>.idx</code> beside a <code>.cx</code>, mapping sample
+names to record offsets. Without it, a multi-sample file can only be read
+positionally.</p>
+<pre class="runnable"><code>yame index -s sample_names.txt cohort.cg</code></pre>
+<p class="hint">Every flag: <code>yame index -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>split</code></span>
+  <span class="c-purpose">One file per sample</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io">0</i><i class="io">1</i><i class="io">2</i><i class="io">3</i><i class="io">4</i><i class="io">6</i><i class="io">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Records are copied verbatim, so the output format always matches the
+input.</p>
+<pre class="runnable"><code>yame split -s sample_names.txt cohort.cg out/</code></pre>
+<p>Names come from <code>-s</code>, not from the index; without it you get
+<code>split_1.cx</code>, <code>split_2.cx</code>, &hellip;</p>
+<p class="hint">Every flag: <code>yame split -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>chunk</code></span>
+  <span class="c-purpose">Cut a file into fixed-size row blocks</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io">0</i><i class="io">1</i><i class="n">2</i><i class="io">3</i><i class="io">4</i><i class="io">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>For parallelising work over row ranges. Chunks are numbered from zero and
+concatenate back to the original.</p>
+<pre class="runnable"><code>yame chunk -s 500000 cohort.cg cohort_chunks</code></pre>
+<p>Formats 2 and 7 are refused: a state track carries a key table ahead of its
+rows and a <code>.cr</code> is a delta stream, so neither survives being cut
+at an arbitrary row. Use <code>rowsub</code>, which understands both.</p>
+<p class="hint">Every flag: <code>yame chunk -h</code></p></div>
+</details></div><h3>Subset it</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>subset</code></span>
+  <span class="c-purpose">Pick samples out of a multi-sample file</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io">0</i><i class="io">1</i><i class="io">2</i><i class="io">3</i><i class="io">4</i><i class="io">6</i><i class="io">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Columns, not rows. Needs the <code>.idx</code>.</p>
+<pre class="runnable"><code>yame subset -o sub.cg cohort.cg SampleA SampleB</code></pre>
+<ul>
+<li><code>-l &lt;list&gt;</code> a file of names; <code>-H</code>/<code>-T
+&lt;N&gt;</code> the first/last N.</li>
+<li><b><code>-s</code> is a different command in disguise:</b> on a format 2
+state track it emits one format 0 bitset per state &mdash; the usual way to
+turn chromatin states into testable sets.</li>
+<li>Writing with <code>-o</code> also builds the output index; piping to
+stdout does not.</li>
+</ul>
+<p class="hint">Every flag: <code>yame subset -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>rowsub</code></span>
+  <span class="c-purpose">Slice rows &mdash; by index, coordinate, mask or block</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io">0</i><i class="io">1</i><i class="io">2</i><i class="io">3</i><i class="io">4</i><i class="io">6</i><i class="io">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>The row-wise counterpart to <code>subset</code>, and the one that handles
+every format correctly.</p>
+<pre class="runnable"><code>yame rowsub -L targets.txt cohort.cg &gt; sub.cg</code></pre>
+<ul>
+<li><code>-l</code> row indices, <code>-L</code> genomic coordinates,
+<code>-m</code> keep where a mask bit is 1, <code>-B</code>/<code>-I</code> a
+contiguous block.</li>
+<li><b><code>-R</code> is inferred</b> from the row count when
+<code>-L</code> needs it.</li>
+<li>The mask must be format 0 or 1.</li>
+</ul>
+<p class="hint">Every flag: <code>yame rowsub -h</code></p></div>
+</details></div><h3>Compare and summarize</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>summary</code></span>
+  <span class="c-purpose">Global statistics, or a query against a feature set</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i has-m">0</i><i class="i has-m">1</i><i class="i has-m">2</i><i class="i has-m">3</i><i class="i has-m">4</i><i class="i has-m">6</i><i class="i has-m">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>The main analysis command. With no mask it describes the file; with one it
+produces the overlap table &mdash; universe, query, mask, overlap, log2 odds
+ratio, beta, depth.</p>
+<pre class="runnable"><code>yame summary sample.cg                     # global statistics
+yame summary -m ChromHMM sample.cg         # against a knowledgebase set
+yame summary -b sample.cg                  # or pick the set in the browser</code></pre>
+<ul>
+<li><b><code>-m</code> takes a name, not just a path</b> &mdash; the query's
+row count says which row space to resolve it in.</li>
+<li>Every mask sample is crossed with every query sample.</li>
+<li>A format 2 mask yields one output row per state, which is how you test
+against all chromatin states at once.</li>
+</ul>
+<p class="hint">Every flag: <code>yame summary -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>pairwise</code></span>
+  <span class="c-purpose">Differential methylation between two samples</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="n">0</i><i class="n">1</i><i class="n">2</i><i class="i">3</i><i class="n">4</i><i class="o">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Compares two format 3 samples site by site and writes the calls as a
+format 6 track &mdash; the universe bit marks sites with enough coverage in
+<i>both</i>, the set bit marks the ones that differ.</p>
+<pre class="runnable"><code>yame pairwise -H 1 -c 5 -d 0.2 tumor.cg normal.cg &gt; hyper.cg</code></pre>
+<ul>
+<li><code>-H 1|2|3</code> hyper, hypo, or any difference;
+<code>-c</code> minimum coverage; <code>-d</code> minimum |&Delta;beta|.</li>
+<li>With one input file it compares that file's first two records.</li>
+<li><b>Give it format 3.</b> Other formats are not rejected &mdash; they are
+misread.</li>
+</ul>
+<p class="hint">Every flag: <code>yame pairwise -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>rowop</code></span>
+  <span class="c-purpose">Collapse across samples at each row</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="i">0</i><i class="i">1</i><i class="n">2</i><i class="io">3</i><i class="n">4</i><i class="n">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Goes down the columns: how many samples are methylated here, what is the
+summed coverage here. This is how pseudobulks are made.</p>
+<pre class="runnable"><code>yame subset -l cluster1.txt cells.cg | yame rowop -o binasum - pseudobulk.cg</code></pre>
+<ul>
+<li><code>-o binasum</code> (the default) counts methylated vs unmethylated
+samples per row and emits format 3; it is the only op that accepts formats 0
+and 1.</li>
+<li><code>musum</code> sums M and U; <code>stat</code>, <code>binstring</code>
+and <code>cometh</code> emit text. All four need format 3.</li>
+<li><code>-c</code> sets the minimum coverage for a cell to count at all.</li>
+</ul>
+<p class="hint">Every flag: <code>yame rowop -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>binarize</code></span>
+  <span class="c-purpose">M/U &rarr; set + universe, by threshold</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="n">0</i><i class="n">1</i><i class="n">2</i><i class="i">3</i><i class="n">4</i><i class="o">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Turns counts into calls: coverage decides the universe bit, a beta or M
+threshold decides the set bit. Usually the step before
+<code>summary</code>.</p>
+<pre class="runnable"><code>yame binarize -t 0.6 -c 5 -o sample.b.cg sample.cg</code></pre>
+<ul>
+<li><code>-t</code> beta threshold (default 0.5), <code>-c</code> minimum
+coverage.</li>
+<li><code>-m &lt;Mmin&gt;</code> overrides <code>-t</code> when set above
+zero.</li>
+<li>Depth does not survive: format 6 keeps no coverage, so
+<code>summary</code> reports <code>NA</code> in that column afterwards.</li>
+</ul>
+<p class="hint">Every flag: <code>yame binarize -h</code></p></div>
+</details></div><h3>Perturb, for benchmarking</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>mask</code></span>
+  <span class="c-purpose">Invalidate specific sites from a file</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io has-m">0</i><i class="i has-m">1</i><i class="n">2</i><i class="io has-m">3</i><i class="n">4</i><i class="io">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Deterministic and file-driven &mdash; it controls <i>which</i> sites are
+valid. Format 3 sites are zeroed, format 6 sites set to NA, format 0 bits
+cleared.</p>
+<pre class="runnable"><code>yame mask -o clean.cg sample.cg blacklist.cm</code></pre>
+<ul>
+<li><b>The mask is the second positional argument</b>, not <code>-m</code>,
+and it is required.</li>
+<li>Mask and data must have identical row counts.</li>
+<li><code>-v</code> inverts; <code>-c</code> promotes a format 0 input to
+format 6, using the mask as the universe.</li>
+</ul>
+<p class="hint">Every flag: <code>yame mask -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>dsample</code></span>
+  <span class="c-purpose">Randomly keep N sites, mask the rest</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="n">0</i><i class="n">1</i><i class="n">2</i><i class="io">3</i><i class="n">4</i><i class="io">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Stochastic and rate-driven &mdash; it controls <i>how much</i> data is
+left. For coverage-titration experiments.</p>
+<pre class="runnable"><code>yame dsample -N 1000000 -r 5 -s 42 -p ds -o ds.cg sample.cg</code></pre>
+<ul>
+<li><code>-N</code> sites to keep, <code>-r</code> independent replicates per
+input sample.</li>
+<li><b><code>-s</code> fixes the seed</b> &mdash; set it, or the run is not
+reproducible.</li>
+</ul>
+<p class="hint">Every flag: <code>yame dsample -h</code></p></div>
+</details><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>perturb</code></span>
+  <span class="c-purpose">Flip bits at a given rate</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="io">0</i><i class="n">1</i><i class="n">2</i><i class="n">3</i><i class="n">4</i><i class="io">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Noise injection, for testing how far a method degrades.</p>
+<pre class="runnable"><code>yame perturb -p 0.02 -s 7 -o noisy.cg binary.cg</code></pre>
+<p><code>-p</code> is the per-bit flip probability. On format 6 only
+in-universe sites are eligible, so NA stays NA.</p>
+<p class="hint">Every flag: <code>yame perturb -h</code></p></div>
+</details></div><h3>Reference data</h3>
+<div class="table cmds"><details class="row cmd">
+<summary>
+  <span class="c-cmd"><code>fetch</code></span>
+  <span class="c-purpose">Download row spaces and knowledgebases into the store</span>
+  <span class="c-fm"><span class="fm" aria-hidden="true"><i class="n">0</i><i class="n">1</i><i class="n">2</i><i class="n">3</i><i class="n">4</i><i class="n">6</i><i class="n">7</i></span></span>
+</summary>
+<div class="drawer">
+<p>Nothing ships with the binary. This fills the shared
+<span class="tip" data-tip="store" tabindex="0">store</span> that <code>-R hg38</code> and <code>-m ChromHMM</code> resolve
+against, verifying every file against a digest compiled into this build.</p>
+<pre class="runnable"><code>yame fetch                     # browse: species, platform, then files
+yame fetch -l                  # dump the registry as TSV
+yame fetch -l | cut -f1,2 | sort -u          # every fetchable target
+yame fetch -l | awk -F'\t' '$9=="no"'        # what the store is missing</code></pre>
+<ul>
+<li>The browser needs a terminal; piped or redirected, <code>fetch</code>
+dumps the registry instead so a script never blocks.</li>
+<li>A directory records which upstream tag filled it and refuses to mix tags.
+A row reading <code>stale tag: -f</code> needs
+<code>yame fetch -f &lt;source&gt;/&lt;target&gt;</code>.</li>
+</ul>
+<p class="hint">Every flag: <code>yame fetch -h</code></p></div>
+</details></div>
+</section><section id="glossary" class="doc">
+<h2>Glossary</h2>
+<p>The words this manual leans on. Every dotted term on the page points here, and shows the same text on hover.</p>
+<dl class="gloss">
+  <dt id="gt-cx">CX format</dt>
+  <dd id="gl-cx" data-term="CX format">The family of binary layouts YAME reads and writes — formats 0 through 7. All of them share one record header and differ only in how the data after it is packed.</dd>
+  <dt id="gt-record">record</dt>
+  <dd id="gl-record" data-term="record">One header plus one blob: an 8-byte signature, the format code, the row count, then the packed data. A file is records concatenated, one per sample.</dd>
+  <dt id="gt-rowspace">row space</dt>
+  <dd id="gl-rowspace" data-term="row space">The ordered list of positions a file's rows refer to. Nothing in a data file says where row <i>i</i> is — it means whatever row <i>i</i> of the reference means, so two files intersect only if they share a row space.</dd>
+  <dt id="gt-reference">reference (.cr)</dt>
+  <dd id="gl-reference" data-term="reference (.cr)">A format-7 coordinate stream naming every position in a row space, in order. <code>cpg_nocontig.cr</code> is the whole-genome one; an array's equivalent is its probe ordering.</dd>
+  <dt id="gt-universe">universe</dt>
+  <dd id="gl-universe" data-term="universe">In format 6, the set of positions that were measured at all. The universe bit is what separates <i>not measured</i> from <i>measured and zero</i> — a distinction a plain bit vector cannot make and every enrichment test needs.</dd>
+  <dt id="gt-set">set</dt>
+  <dd id="gl-set" data-term="set">In format 6, the positions that are members — the query. Carried in the second bit, alongside the universe bit, so a query and its background travel in one file.</dd>
+  <dt id="gt-mu">M / U</dt>
+  <dd id="gl-mu" data-term="M / U">Methylated and unmethylated read counts at a position, stored side by side in format 3. Coverage is M+U; the fraction is M/(M+U).</dd>
+  <dt id="gt-beta">beta</dt>
+  <dd id="gl-beta" data-term="beta">The methylation fraction at a position, M/(M+U), between 0 and 1. Format 4 stores it directly when the counts are not needed.</dd>
+  <dt id="gt-cg">.cg / .cm</dt>
+  <dd id="gl-cg" data-term=".cg / .cm">Conventional suffixes, not different formats: a <code>.cg</code> holds methylation data for a sample, a <code>.cm</code> a feature set or mask. Both are CX records over some row space.</dd>
+  <dt id="gt-mask">mask</dt>
+  <dd id="gl-mask" data-term="mask">A second file, aligned to the same row space, that selects which rows count. Intersecting it with data is a bitwise operation rather than a genomic join.</dd>
+  <dt id="gt-kb">knowledgebase</dt>
+  <dd id="gl-kb" data-term="knowledgebase">A collection of feature sets for one row space — chromatin states, CpG islands, repeats, TF binding — that a query is tested against. Fetched into the store, not shipped with the binary.</dd>
+  <dt id="gt-store">the store</dt>
+  <dd id="gl-store" data-term="the store">Where fetched reference data lives, shared by every tool that links libyame. Its location is <code>$YAME_DATA_HOME</code>, or <code>~/.local/share/yame</code>.</dd>
+  <dt id="gt-bgzf">BGZF</dt>
+  <dd id="gl-bgzf" data-term="BGZF">The block-compressed format the records sit inside. Compression is per block, so any record can be reached without decompressing the ones before it.</dd>
+  <dt id="gt-index">index (.idx)</dt>
+  <dd id="gl-index" data-term="index (.idx)">A sidecar listing sample names and where each record starts, so one sample can be pulled from a file of hundreds without reading the rest.</dd>
+</dl>
+</section>
+  </main>
+<footer>
+  YAME bit-packs DNA methylation — array and sequencing alike — into the CX
+  format family, and is the storage layer under
+  <a href="https://github.com/zhou-lab/kycg">kycg</a>.
+  Formats, the trust model for fetched data, and full usage are in the
+  <a href="https://github.com/zhou-lab/YAME/blob/main/README.md">README</a>.
+  Supported by NIH/NIGMS 5R35GM146978. ·
+  <a href="https://github.com/zhou-lab/YAME">github.com/zhou-lab/YAME</a>
+</footer>
+</div>
+
+</div>
+<script>
+
+      // Copy the install command.
+      const btn = document.getElementById('install-btn');
+      if (btn) btn.addEventListener('click', async () => {
+        const t = btn.dataset.cmd;
+        try { await navigator.clipboard.writeText(t); }
+        catch (e) {
+          const ta = document.createElement('textarea');
+          ta.value = t; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } finally { ta.remove(); }
+        }
+        btn.classList.add('done');
+        setTimeout(() => btn.classList.remove('done'), 1200);
+      });
+
+      // The PMID chip copies the identifier, same as the kycg page.
+      document.querySelectorAll('.cite .pmid').forEach(b => {
+        const label = b.textContent;
+        b.addEventListener('click', async () => {
+          const t = b.dataset.pmid;
+          try { await navigator.clipboard.writeText(t); }
+          catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = t; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } finally { ta.remove(); }
+          }
+          b.textContent = 'copied'; b.classList.add('done');
+          setTimeout(() => { b.textContent = label; b.classList.remove('done'); }, 1200);
+        });
+      });
+
+      // Scrollspy: mark the section the reader is actually in. A manual this
+      // long is unnavigable without it -- the sidebar is the only cue to where
+      // you are.
+      const links = [...document.querySelectorAll('nav.toc a')];
+      const byId = new Map(links.map(a => [a.dataset.slug, a]));
+      const spy = new IntersectionObserver(entries => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          links.forEach(a => a.classList.remove('on'));
+          byId.get(e.target.id)?.classList.add('on');
+        }
+      }, {rootMargin: '-10% 0px -80% 0px'});
+      document.querySelectorAll('section.doc').forEach(s => spy.observe(s));
+
+      // Filter the sidebar AND the sections, so a search narrows the page
+      // rather than merely the index. Ctrl-F still works across everything
+      // visible, which is the point of one page.
+      // Narrowing the page has to reach inside the drawers: a closed
+      // <details> still holds its text, so a filter that only hid sections
+      // would report a hit the reader cannot see. Matching rows are opened,
+      // non-matching ones hidden, and clearing the box restores the closed
+      // state rather than leaving everything sprung open.
+      const filter = document.getElementById('filter');
+      if (filter) filter.addEventListener('input', () => {
+        const q = filter.value.trim().toLowerCase();
+        document.querySelectorAll('details.row').forEach(d => {
+          const hit = !q || d.textContent.toLowerCase().includes(q);
+          d.classList.toggle('hidden', !hit);
+          d.open = !!q && hit;
+        });
+        document.querySelectorAll('section.doc').forEach(sec => {
+          const hit = !q || sec.textContent.toLowerCase().includes(q);
+          sec.classList.toggle('hidden', !hit);
+          byId.get(sec.id)?.classList.toggle('hidden', !hit);
+        });
+      });
+    
+
+      // Tooltips read their text from the glossary entry they name, so a term
+      // is written once and cannot drift from its own definition.
+      const tipbox = document.createElement('div');
+      tipbox.id = 'tipbox'; document.body.appendChild(tipbox);
+      const showTip = el => {
+        const dd = document.getElementById('gl-' + el.dataset.tip);
+        if (!dd) return;
+        tipbox.innerHTML = '<b>' + (dd.dataset.term || '') + '</b> — ' + dd.innerHTML;
+        tipbox.style.display = 'block';
+        const r = el.getBoundingClientRect();
+        const top = r.bottom + window.scrollY + 6;
+        const left = Math.min(r.left + window.scrollX,
+                              window.scrollX + document.documentElement.clientWidth
+                              - tipbox.offsetWidth - 12);
+        tipbox.style.top = top + 'px';
+        tipbox.style.left = Math.max(8, left) + 'px';
+      };
+      const hideTip = () => { tipbox.style.display = 'none'; };
+      document.querySelectorAll('.tip[data-tip]').forEach(el => {
+        el.addEventListener('mouseenter', () => showTip(el));
+        el.addEventListener('focus', () => showTip(el));
+        el.addEventListener('mouseleave', hideTip);
+        el.addEventListener('blur', hideTip);
+      });
+      window.addEventListener('scroll', hideTip, {passive: true});
+
+      // Every example is runnable, so every example is copyable.
+      document.querySelectorAll('pre.runnable').forEach(pre => {
+        const b = document.createElement('button');
+        b.className = 'cp'; b.type = 'button'; b.textContent = 'copy';
+        b.addEventListener('click', async () => {
+          const txt = pre.querySelector('code').innerText;
+          try { await navigator.clipboard.writeText(txt); }
+          catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = txt; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } finally { ta.remove(); }
+          }
+          b.textContent = 'copied'; b.classList.add('done');
+          setTimeout(() => { b.textContent = 'copy'; b.classList.remove('done'); }, 1200);
+        });
+        pre.appendChild(b);
+      });
+
+</script>
+</body>
+</html>
