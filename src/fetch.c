@@ -341,6 +341,14 @@ static int companion_of(const yame_asset_reg_t *a, const char *name,
   return has_file(a, out);
 }
 
+static uint64_t companion_size(const yame_asset_reg_t *a, const char *name) {
+  char idxname[256];
+  snprintf(idxname, sizeof(idxname), "%s.idx", name);
+  for (size_t i = 0; i < a->n_files; ++i)
+    if (strcmp(a->files[i].name, idxname) == 0) return a->files[i].size;
+  return 0;
+}
+
 /* One thing the catalogue offers: a file, plus its index when it has one. */
 typedef struct {
   const yame_asset_reg_t  *a;
@@ -579,15 +587,14 @@ static void info_key_of(const char *name, char *out, size_t n) {
 
 /* ---- expanding ----
  *
- * Rows below the roots are preformatted, since the widget aligns only the
- * root columns. Units and their subdirectories share one set of column stops
- * so a unit and the KYCG inside it line up, and files share another with the
- * size right-aligned -- the two kinds of row read as two small tables rather
- * than as ragged text.
+ * Every row is "<content>\t<trailing field>", and the widget right-aligns
+ * that trailing field at the margin. So a unit's gauge, a folder's gauge and
+ * a file's size all land in one column however deep the row sits -- which
+ * padding to a fixed width cannot do, since each level of nesting spends four
+ * more cells on the indent.
  */
 
-#define UNIT_ROW_FMT "%-11s %-7s %-6s %s"
-#define FILE_ROW_W   38
+#define SUB_ROW_FMT "%-11s %s"   /* lines its label up under a unit row's KIND */
 
 /* Keys are "<asset index>|<filename>" for a file and the plain component name
  * for a directory, which is what makes a tree path parseable back. */
@@ -596,10 +603,12 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
   int here = ent_present(b->root, e);
 
   char sz[24], name[256], line[352], key[288];
-  human_size(e->f->size, sz, sizeof(sz));
+  /* A pair is one row, so it is one size too: the .idx is part of what a
+   * fetch of this row will cost. */
+  human_size(e->f->size + (e->paired ? companion_size(e->a, e->f->name) : 0),
+             sz, sizeof(sz));
   snprintf(name, sizeof(name), "%s%s", e->f->name, e->paired ? " +idx" : "");
-  if (sz[0]) snprintf(line, sizeof(line), "%-*s %8s", FILE_ROW_W, name, sz);
-  else       snprintf(line, sizeof(line), "%s", name);
+  snprintf(line, sizeof(line), "%s\t%s", name, sz);
   snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
 
   out->rows[out->n]   = strdup(line);
@@ -647,7 +656,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
 
       char note[64], line[256];
       counts_note(total, have, note, sizeof(note));
-      snprintf(line, sizeof(line), UNIT_ROW_FMT, subs[i], "sets", "", note);
+      snprintf(line, sizeof(line), SUB_ROW_FMT "\t%s", subs[i], "sets", note);
 
       out->rows[out->n]   = strdup(line);
       out->keys[out->n]   = strdup(subs[i]);
@@ -963,8 +972,10 @@ static void fp_progress(void *ud, uint64_t now, uint64_t total) {
 
 static void fp_done(void *ud, const char *name, uint64_t bytes, int ok) {
   fprog_t *p = ud;
-  (void)name; (void)bytes;
-  if (ok && p->key[0]) yame_ui_tree_progress(p->key, 1, 1);
+  (void)name; (void)bytes; (void)ok;
+  /* total == 0 settles the row: the bar goes away and the size comes back,
+   * which is the row saying it is done rather than a bar stuck at 100%. */
+  if (p->key[0]) yame_ui_tree_progress(p->key, 0, 0);
   p->key[0] = '\0';
 }
 
@@ -1119,9 +1130,11 @@ static void root_row(browse_t *b, size_t i, const char *group,
                    ? (char)(group[k] - 'a' + 'A') : group[k];
     upper[k] = '\0';
 
+    /* No counts on a heading: it is a label for the rows under it, each of
+     * which reports its own, and a third number in the same column only
+     * invited adding them up. */
     group_counts(b->root, group, &total, &have);
-    counts_note(total, have, note, sizeof(note));
-    snprintf(line, sizeof(line), "%s%s\t\t\t%s", group_mark(), upper, note);
+    snprintf(line, sizeof(line), "%s%s\t\t\t", group_mark(), upper);
   }
 
   free(b->roots[i]);

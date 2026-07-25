@@ -106,30 +106,57 @@ if [ "$refresh" = 1 ]; then
   done
 
   ## File sizes: the GitHub contents API is the only source, so this is the one
-  ## part of the catalog that cannot be rebuilt from a manifest.
-  echo "refreshing KYCGKB file sizes" >&2
-  tmp=$(mktemp)
-  {
-    echo "# Published file sizes for the KYCGKB whole-genome collections, for"
-    echo "# display only -- nothing depends on them, so a set added upstream needs"
-    echo "# no rebuild. Refreshed from the GitHub contents API (the one fact in"
-    echo "# this catalog that no manifest carries); ASCII-sorted by name, which is"
-    echo "# the order the emitted table must keep."
-    echo "#"
-    printf "# genome\tname\tsize\n"
-    rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-      curl -sfL "https://api.github.com/repos/zhou-lab/$repo/contents/?ref=$kb_tag" \
-        | python3 -c "
-import json,sys
-d = json.load(sys.stdin)
+  ## part of the catalog that cannot be rebuilt from a manifest. Every source,
+  ## because a browser that shows a size for some files and not others reads as
+  ## if the others were free.
+  echo "refreshing file sizes" >&2
+
+  ## The API rate limit is 60/hour unauthenticated and this walks ~20
+  ## directories, so use gh (5000/hour with a token) when it is there.
+  api() {
+    if command -v gh >/dev/null 2>&1; then gh api "$1" 2>/dev/null
+    else curl -sfL "https://api.github.com/$1"; fi
+  }
+
+  sizes_of() {                     ## scope repo path ref
+    api "repos/zhou-lab/$2/contents/$3?ref=$4" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(d, list): sys.exit(0)
 for f in sorted(d, key=lambda x: x['name']):
     if f.get('type') != 'file': continue
     if f['name'] in ('README.md', 'SHA256SUMS'): continue
-    print('$g\t%s\t%d' % (f['name'], f['size']))
+    print('$1\t%s\t%d' % (f['name'], f['size']))
 "
+  }
+
+  tmp=$(mktemp)
+  {
+    echo "# Published file sizes, for display only -- nothing depends on them,"
+    echo "# so a file added upstream needs no rebuild. Refreshed from the GitHub"
+    echo "# contents API (the one fact in this catalog that no manifest carries);"
+    echo "# ASCII-sorted by name within a scope, the order the emitted tables"
+    echo "# must keep."
+    echo "#"
+    echo "# scope is <source>/<subpath>: the directory the file lives in."
+    echo "#"
+    printf "# scope\tname\tsize\n"
+
+    rows_of "$cat_dir/InfiniumAnnotation.tsv" | cut -f1 | while read -r p; do
+      sizes_of "InfiniumAnnotation/$p"      InfiniumAnnotation "$p"      "$ia_tag"
+      sizes_of "InfiniumAnnotation/$p/KYCG" InfiniumAnnotation "$p/KYCG" "$ia_tag"
+    done
+    rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+      sizes_of "KYCGKB/$g" "$repo" "" "$kb_tag"
+    done
+    rows_of "$cat_dir/genomes.tsv" | cut -f1 | while read -r g; do
+      sizes_of "genomes/$g" genomes "$g" "$g_tag"
     done
   } > "$tmp"
-  mv "$tmp" "$cat_dir/seq_sizes.tsv"
+  mv "$tmp" "$cat_dir/file_sizes.tsv"
   echo "done; review the diff under tools/registry/ before committing" >&2
   exit 0
 fi
@@ -139,19 +166,20 @@ fi
 
 ## Per-directory file list, straight out of the cached manifest: the names and
 ## digests are already there, so compiling them in costs nothing and lets a
-## browser offer individual files instead of whole directories. Sizes are only
-## known for KYCGKB (catalog/seq_sizes.tsv, from the contents API); 0 means
-## "not published", and nothing depends on it.
-emit_file_table() {                ## slug source tag subpath [size_genome]
-  local slug=$1 src=$2 tg=$3 sub=$4 szg=${5:-}
+## browser offer individual files instead of whole directories. Sizes come from
+## catalog/file_sizes.tsv (the contents API); 0 means "not published", and
+## nothing depends on it.
+emit_file_table() {                ## slug source tag subpath scope
+  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-}
   local p; p=$(sums_path "$src" "$tg" "$sub")
   printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
   while read -r sha name; do
     [ -n "${name:-}" ] || continue
     local size=0
-    if [ -n "$szg" ]; then
-      size=$(rows_of "$cat_dir/seq_sizes.tsv" |
-             /usr/bin/awk -F'\t' -v g="$szg" -v n="$name" '$1==g && $2==n {print $3}')
+    if [ -n "$scope" ]; then
+      size=$(rows_of "$cat_dir/file_sizes.tsv" |
+             /usr/bin/awk -F'\t' -v g="$scope" -v n="$name" \
+                          '$1==g && $2==n {print $3}')
       [ -n "$size" ] || size=0
     fi
     printf '    { "%s", "%s", %s },\n' "$name" "$sha" "$size"
@@ -217,14 +245,16 @@ EOF
 
   ## The file tables first: the asset rows point at them.
   rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _t _b _r _o; do
-    emit_file_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation "$ia_tag" "$p"
-    emit_file_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation "$ia_tag" "$p/KYCG"
+    emit_file_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation \
+                    "$ia_tag" "$p" "InfiniumAnnotation/$p"
+    emit_file_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation \
+                    "$ia_tag" "$p/KYCG" "InfiniumAnnotation/$p/KYCG"
   done
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "$g"
+    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g"
   done
   rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
-    emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g"
+    emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g" "genomes/$g"
   done
 
   cat <<EOF
@@ -411,7 +441,7 @@ EOF
   ## in that order already, which is what keeps this emission stable).
   rows_of "$cat_dir/KYCGKB.tsv" | cut -f1 | while read -r g; do
     printf 'static const kycg_fsize_t KYCG_SIZES_%s[] = {\n' "$g"
-    rows_of "$cat_dir/seq_sizes.tsv" | awk -F'\t' -v g="$g" '$1==g {
+    rows_of "$cat_dir/file_sizes.tsv" | awk -F'\t' -v g="KYCGKB/$g" '$1==g {
       printf "    { \"%s\", %s },\n", $2, $3 }'
     printf '    { NULL, 0 }\n};\n\n'
   done
