@@ -661,8 +661,21 @@ static void info_key_of(const char *name, char *out, size_t n) {
  * more cells on the indent.
  */
 
-/* Lines its label and tag up under a unit row's KIND and TAG columns. */
-#define SUB_ROW_FMT "%-11s %-7s %s"
+/* Lines its label up under a unit row's KIND column. */
+#define SUB_ROW_FMT "%-11s %-7s"
+
+/**
+ * The trailing field, which the widget right-aligns: a tag, then whatever the
+ * row measures -- a size for a file, a gauge for anything holding files.
+ *
+ * One shape for every kind of row, because they share the column. Putting a
+ * file's tag beside its size while a folder's sat in a column forty cells to
+ * the left meant the same fact appeared in two places depending on what you
+ * were looking at, which is exactly when a column stops being readable.
+ * Fixed widths: the field is right-aligned as a whole, so anything variable
+ * inside it walks the tag back and forth down the list.
+ */
+#define TAIL_FMT "%-5s %13s"
 
 /* Keys are "<asset index>|<filename>" for a file and the plain component name
  * for a directory, which is what makes a tree path parseable back. */
@@ -688,7 +701,7 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
            e->paired ? e->paired + 1 : "");
   /* Both fields fixed-width: the tail is right-aligned as a whole, so a size
    * that varies in width would walk the tag column left and right. */
-  snprintf(line, sizeof(line), "%s\t%-5s %8s", name, e->a->tag, sz);
+  snprintf(line, sizeof(line), "%s\t" TAIL_FMT, name, e->a->tag, sz);
   snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
 
   out->rows[out->n]   = strdup(line);
@@ -736,7 +749,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
 
       char note[64], line[256];
       counts_note(total, have, note, sizeof(note));
-      snprintf(line, sizeof(line), SUB_ROW_FMT "\t%s", subs[i], "sets",
+      snprintf(line, sizeof(line), SUB_ROW_FMT "\t" TAIL_FMT, subs[i], "sets",
                path_tag(p.unit, subs[i]), note);
 
       out->rows[out->n]   = strdup(line);
@@ -1251,6 +1264,16 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
   if (bad_out) *bad_out = bad;
 }
 
+/* The header's last field spans the same two things every tail holds, laid
+ * out the same way, so it sits over the columns it names. */
+static const char *browse_header(void) {
+  static char h[128];
+  char tail[64];
+  snprintf(tail, sizeof(tail), TAIL_FMT, "TAG", "IN STORE");
+  snprintf(h, sizeof(h), "TARGET\tKIND\t%s", tail);
+  return h;
+}
+
 /* Fill in one root row: a species heading, or a unit. Every count in it is a
  * function of the store, so this is also the refresh after a fetch. */
 static void root_row(browse_t *b, size_t i, const char *group,
@@ -1261,7 +1284,7 @@ static void root_row(browse_t *b, size_t i, const char *group,
   if (unit) {
     unit_counts(b->root, unit, "", 1, &total, &have);
     counts_note(total, have, note, sizeof(note));
-    snprintf(line, sizeof(line), "%s\t%s\t%s\t%s", unit,
+    snprintf(line, sizeof(line), "%s\t%s\t" TAIL_FMT, unit,
              unit_is_array(unit) ? "array" : "genome", unit_tag(unit), note);
   } else {
     char upper[64];
@@ -1275,7 +1298,7 @@ static void root_row(browse_t *b, size_t i, const char *group,
      * which reports its own, and a third number in the same column only
      * invited adding them up. */
     group_counts(b->root, group, &total, &have);
-    snprintf(line, sizeof(line), "%s%s\t\t\t", group_mark(), upper);
+    snprintf(line, sizeof(line), "%s%s\t\t", group_mark(), upper);
   }
 
   free(b->roots[i]);
@@ -1334,7 +1357,7 @@ static int browse_catalog(const char *dopt, int force) {
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
   spec.title       = title;
-  spec.header      = "TARGET\tKIND\tTAG\tIN STORE";
+  spec.header      = browse_header();
   spec.roots       = roots;
   spec.root_styles = styles;
   spec.root_branch = branch;
@@ -1398,7 +1421,7 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
   spec.title       = title;
-  spec.header      = "TARGET\tKIND\tTAG\tIN STORE";
+  spec.header      = browse_header();
   spec.roots       = roots;
   spec.root_styles = styles;
   spec.root_branch = branch;
