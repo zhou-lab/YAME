@@ -43,6 +43,7 @@
 
 #include "assets.h"
 #include "registry.h"
+#include "yame_ui.h"
 
 static int usage(void) {
   char root[4096];
@@ -50,8 +51,17 @@ static int usage(void) {
 
   fprintf(stderr, "\n");
   fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  yame fetch                              browse the catalogue\n");
   fprintf(stderr, "  yame fetch [options] <source>/<target>[@tag]\n");
   fprintf(stderr, "  yame fetch [options] -u <url> -s <sha256> -o <dest>\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Browsing:\n");
+  fprintf(stderr, "  With no target on a terminal, opens the same tree browser as\n");
+  fprintf(stderr, "  'kycg fetch': arrows to move, right/left to open and close a source,\n");
+  fprintf(stderr, "  space to check, f to fetch what is checked, q to leave. What is\n");
+  fprintf(stderr, "  already in the store shows as present and cannot be checked.\n");
+  fprintf(stderr, "  Piped or redirected it prints the plain listing instead, so a script\n");
+  fprintf(stderr, "  never blocks on a keystroke.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Purpose:\n");
   fprintf(stderr, "  Download reference assets into the shared store that every tool in the\n");
@@ -120,6 +130,177 @@ static const yame_asset_reg_t *find_asset(const char *source, const char *target
   return NULL;
 }
 
+/* ------------------------------------------------------------ the browser
+ *
+ * The same tree widget kycg fetch uses, which is why it now lives in YAME
+ * (src/ui.c) rather than in kycg: methscope-cli had already started a second
+ * copy of it. Sources are the top level, their targets unfold underneath, and
+ * what is already in the store is shown as present and cannot be checked --
+ * there is nothing to ask for.
+ */
+
+typedef struct {
+  char   root[4096];            /* the store */
+  char   sel[64][256];          /* "source/target", from the checked rows */
+  size_t n_sel;
+  int    force;
+} browse_t;
+
+/* Is this entry's directory already filled, and by our tag? */
+static int asset_state(const char *store_root, const yame_asset_reg_t *a) {
+  char dir[4096];
+  if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0)
+    return YAME_PIN_ABSENT;
+  return yame_assets_pin_check(dir, a->anchor);
+}
+
+static void bx_expand(void *ctx, const char *row, yame_ui_kids_t *out) {
+  browse_t *b = ctx;
+  size_t cap = 0;
+
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i)
+    if (strcmp(YAME_ASSETS[i].source, row) == 0) ++cap;
+  if (!cap) return;
+
+  out->rows   = calloc(cap, sizeof(char *));
+  out->keys   = calloc(cap, sizeof(char *));
+  out->styles = calloc(cap, 1);
+  if (!out->rows || !out->keys || !out->styles) return;
+
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    if (strcmp(a->source, row) != 0) continue;
+
+    int st = asset_state(b->root, a);
+    const char *note = st == YAME_PIN_MATCH    ? "in the store"
+                     : st == YAME_PIN_CONFLICT ? "ANOTHER TAG"
+                     : st == YAME_PIN_UNKNOWN  ? "unverified"
+                                               : "not fetched";
+    char line[256], key[256];
+    snprintf(line, sizeof(line), "%-16s %-6s %s", a->target, a->tag, note);
+    snprintf(key, sizeof(key), "%s/%s", a->source, a->target);
+
+    out->rows[out->n] = strdup(line);
+    out->keys[out->n] = strdup(key);
+    /* Present rows are not checkable; a conflicting one IS, since re-fetching
+     * (with -f) is exactly how you resolve it. */
+    out->styles[out->n] = (unsigned char)(st == YAME_PIN_MATCH ? YAME_ROW_HAVE
+                                                               : YAME_ROW_MISSING);
+    ++out->n;
+  }
+}
+
+static void bx_accept(void *ctx, const char *root, const char *key) {
+  browse_t *b = ctx;
+  (void)root;
+  if (!key || b->n_sel >= sizeof(b->sel)/sizeof(b->sel[0])) return;
+  snprintf(b->sel[b->n_sel], sizeof(b->sel[0]), "%s", key);
+  ++b->n_sel;
+}
+
+/* Fetch one catalogued entry into the store. Shared by the browser and the
+ * one-shot command line so they cannot drift apart. */
+static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
+                       const char *tag, const char *anchor,
+                       const yame_fetch_opt_t *opt, char **err) {
+  char store_sub[4096];
+  if (yame_assets_join(store_sub, sizeof(store_sub), store_root, a->store_sub) != 0)
+    return -1;
+  return yame_assets_fetch_subtree(a->base_url, tag, a->remote_sub, store_sub,
+                                   anchor, opt, err);
+}
+
+/* Runs inside the widget: the tree suspends, this draws in a panel, and the
+ * tree resumes with the rows reloaded so the new state is visible. */
+static void bx_commit(void *ctx) {
+  browse_t *b = ctx;
+  int ok = 0, bad = 0;
+
+  if (!b->n_sel) return;
+
+  yame_ui_panel_open(4);
+  for (size_t i = 0; i < b->n_sel; ++i) {
+    char spec[256];
+    snprintf(spec, sizeof(spec), "%s", b->sel[i]);
+    char *slash = strchr(spec, '/');
+    /* Two slashes are possible ("InfiniumAnnotation/MSA/KYCG"): the source is
+     * everything before the FIRST one, the target everything after. */
+    if (!slash) { ++bad; continue; }
+    *slash = '\0';
+
+    const yame_asset_reg_t *a = find_asset(spec, slash + 1);
+    if (!a) { ++bad; continue; }
+
+    yame_ui_panel_line(0, "fetching %s/%s  (%zu of %zu)",
+                       a->source, a->target, i + 1, b->n_sel);
+
+    yame_fetch_opt_t opt = {0};
+    opt.force = b->force;
+    opt.quiet = 1;                 /* the panel is the only output surface */
+
+    char *err = NULL;
+    if (fetch_entry(a, b->root, a->tag, a->anchor, &opt, &err) == 0) {
+      ++ok;
+      yame_ui_panel_line(1, "ok");
+    } else {
+      ++bad;
+      yame_ui_panel_line(1, "failed: %s", err ? err : "(no detail)");
+    }
+    free(err);
+  }
+
+  yame_ui_panel_line(0, "%d fetched, %d failed", ok, bad);
+  yame_ui_panel_line(1, "");
+  yame_ui_panel_pause(2, "press any key to return to the catalogue");
+  yame_ui_panel_close();
+  b->n_sel = 0;
+}
+
+/* The catalogue as a browsable tree. Returns 0 when it ran, -1 when the
+ * terminal cannot host it and the caller should fall back to the flat list. */
+static int browse_catalog(const char *dopt, int force) {
+  static char *roots[8];
+  static unsigned char styles[8];
+  size_t n_roots = 0;
+  browse_t b;
+
+  memset(&b, 0, sizeof(b));
+  b.force = force;
+  yame_assets_root(dopt, NULL, b.root, sizeof(b.root));
+
+  /* One root per source, in catalogue order, deduplicated. */
+  for (size_t i = 0; i < YAME_ASSETS_N && n_roots < 8; ++i) {
+    int seen = 0;
+    for (size_t k = 0; k < n_roots; ++k)
+      if (strcmp(roots[k], YAME_ASSETS[i].source) == 0) { seen = 1; break; }
+    if (!seen) {
+      roots[n_roots] = strdup(YAME_ASSETS[i].source);
+      styles[n_roots] = YAME_ROW_PLAIN;
+      ++n_roots;
+    }
+  }
+
+  char title[4200];
+  snprintf(title, sizeof(title), "yame fetch  --  %s", b.root);
+
+  yame_ui_tree_t spec;
+  memset(&spec, 0, sizeof(spec));
+  spec.title       = title;
+  spec.header      = NULL;
+  spec.roots       = roots;
+  spec.root_styles = styles;
+  spec.n_roots     = n_roots;
+  spec.expand      = bx_expand;
+  spec.actions[0].key    = 'f';
+  spec.actions[0].verb   = "fetch";
+  spec.actions[0].accept = bx_accept;
+  spec.actions[0].commit = bx_commit;   /* non-NULL: the tree stays open */
+  spec.n_actions   = 1;
+  spec.ctx         = &b;
+
+  return yame_ui_tree(&spec) < 0 ? -1 : 0;
+}
+
 /* Progress: one line per file, rewritten in place while bytes move. Nothing
  * fancy -- a tool with its own renderer passes its own hooks to the library
  * instead of inheriting this one. */
@@ -186,7 +367,16 @@ int main_fetch(int argc, char *argv[]) {
     return 0;
   }
 
-  if (optind >= argc) return usage();
+  /* ---- no target: browse ----
+   *
+   * Only on a terminal. Piped or redirected, this falls back to the flat
+   * listing, so a script that runs `yame fetch` never blocks on a widget
+   * waiting for a keystroke that will not come. */
+  if (optind >= argc) {
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return list_catalog();
+    if (browse_catalog(dopt, force) == 0) return 0;
+    return list_catalog();            /* terminal cannot host the widget */
+  }
 
   /* ---- catalogued form: <source>/<target>[@tag] ---- */
   char spec[512];
@@ -251,8 +441,7 @@ int main_fetch(int argc, char *argv[]) {
   if (!quiet)
     fprintf(stderr, "%s/%s @ %s -> %s\n", a->source, a->target, tag, store_sub);
 
-  if (yame_assets_fetch_subtree(a->base_url, tag, a->remote_sub, store_sub,
-                                anchor, &opt, &err) != 0) {
+  if (fetch_entry(a, root, tag, anchor, &opt, &err) != 0) {
     fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
     free(err);
     return 1;
