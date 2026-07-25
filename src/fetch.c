@@ -92,7 +92,17 @@ static int usage(void) {
   yame_usage_text("  than start a re-download war; -f overrules that.");
   yame_usage_text("* `shasum -a 256 -c SHA256SUMS` in any store directory re-verifies it");
   yame_usage_text("  by hand, with none of this code involved.");
-  if (!yame_assets_have_curl())
+  /**
+   * Say which of the two this build is, POSITIVELY.
+   *
+   * Only the bad case used to print, so a package test could assert the good
+   * one only by grepping for the absence of a warning -- which passes on any
+   * output at all, including a yame that failed to run. A line that is there
+   * when downloading works is a thing a test can require.
+   */
+  if (yame_assets_have_curl())
+    yame_usage_text("* Built with libcurl: fetch available.");
+  else
     yame_usage_text("* THIS BUILD HAS NO LIBCURL: fetching is unavailable.");
   fprintf(stderr, "\n");
 

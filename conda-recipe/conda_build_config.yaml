@@ -1,0 +1,29 @@
+# Pin the C standard library the package is built against.
+#
+# Without this, `{{ compiler('c') }}` pulls conda-forge's gcc_linux-64, whose
+# dependency on `sysroot_linux-64` is UNVERSIONED -- the solver picks whatever
+# sysroot is newest at build time (2.39 as of this writing). That makes the
+# binary's glibc floor an accident of when CI last ran, and it silently rises as
+# conda-forge ships newer sysroots. sesame-cli shipped a linux-64 package this
+# way that died on RHEL 9 / Ubuntu 22.04 with `GLIBC_2.38' not found.
+#
+# kycg dodged the worst of it only because its CFLAGS use -std=gnu99 and never
+# define _GNU_SOURCE, so glibc's C23 strtol/strtoll redirects (the 2.38 symbols)
+# stay off. That is luck, not design -- adding -D_GNU_SOURCE to the Makefile
+# would be enough to reintroduce it. The published 0.1.0 binary still required
+# glibc 2.34, which excludes Ubuntu 20.04 and Debian 11 (both 2.31).
+#
+# 2.17 (CentOS 7) is conda-forge's own pin, so the binary runs on effectively
+# any Linux still in service. Pairing this with `{{ stdlib('c') }}` in meta.yaml
+# also stamps a `__glibc >=2.17` run constraint into the package, so conda
+# refuses to install on an incompatible host instead of failing at exec time.
+#
+# The vendored YAME and htslib Makefiles hard-assign CFLAGS and ignore the
+# caller's, but build.sh routes conda's flags through CC, and the sysroot comes
+# from the gcc_linux-64 driver itself, so this pin reaches them too.
+c_stdlib:
+  - sysroot                    # [linux]
+  - macosx_deployment_target   # [osx]
+c_stdlib_version:
+  - "2.17"                     # [linux]
+  - "11.0"                     # [osx]

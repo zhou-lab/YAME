@@ -1,0 +1,88 @@
+{% set name = "yame" %}
+{% set version = "1.29" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  # In-repo recipe: build the checked-out tree, including the vendored htslib.
+  # CI builds the pushed commit; a release build = check out the vX.Y tag, then
+  # conda build. bioconda's recipe builds the release TARBALL instead, which is
+  # the difference between the two: this channel can publish a commit, that one
+  # publishes a tag.
+  path: ..
+
+build:
+  number: 0
+  skip: true  # [win]
+  run_exports:
+    - {{ pin_subpackage(name, max_pin="x") }}
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    # Pins the glibc / macOS SDK the binary is built against (see
+    # conda_build_config.yaml) and adds the matching `__glibc >=2.17` /
+    # `__osx >=11.0` run constraint, so the package will not install on a host
+    # too old to run it.
+    - {{ stdlib('c') }}
+    - make
+  host:
+    - zlib
+    # Required, not optional. `yame fetch`, the catalogue browser, `summary -b`
+    # and resolving -R / -m against the store are all built on libcurl. Since
+    # v1.29 the Makefile refuses to build without it rather than dropping the
+    # feature quietly, so omitting this fails the build instead of publishing a
+    # yame that cannot download.
+    - libcurl
+  run:
+    # Both carry run_exports that pin the runtime automatically; listed for
+    # clarity.
+    - zlib
+    - libcurl
+
+test:
+  commands:
+    # The banner carries the compiled-in version, so this checks the binary
+    # rather than the recipe's idea of it.
+    - yame 2>&1 | grep -q "v{{ version }}"
+    # The compiled-in registry, not just the binary loading.
+    - yame fetch -l | grep -q InfiniumAnnotation
+    # Assert the STATE positively. The Makefile probes curl-config, and if that
+    # ever failed here the result would be a yame that builds, tests clean and
+    # cannot fetch. Grepping for absence of the warning would pass on any
+    # output at all -- including a yame that did not run -- so grep for the
+    # line that is only printed when downloading works.
+    - yame fetch -h 2>&1 | grep -q "fetch available"
+
+about:
+  home: https://github.com/zhou-lab/YAME
+  license: AGPL-3.0-or-later
+  license_family: AGPL
+  license_file: LICENSE
+  summary: "YAME: Yet Another Methylation Encoder."
+  description: |
+    YAME stores, subsets and summarizes whole-genome DNA methylation data in
+    compact binary CX formats — binary states, M/U counts, categorical terms,
+    fractions, set/universe bit vectors and CpG coordinate streams — held as
+    blocks inside BGZF frames. It backs the lab's bulk WGBS and single-cell
+    methylation stores and is the engine under the KnowYourCG enrichment work.
+
+    `yame fetch` is a browsable catalogue of the reference data the suite
+    reads: Infinium array annotation, whole-genome CpG knowledgebases and
+    genome annotation, arranged by species and platform. Every directory
+    publishes a SHA256SUMS whose digest is compiled into the binary, so a
+    download is verified against a pin this build carries rather than against
+    whatever the server serves. The store it fills is shared — a file fetched
+    here is found by the other tools that link libyame, without re-downloading.
+
+    Reference data is not shipped in the package; it is fetched on demand into
+    the user's own store, because the compendium is versioned independently of
+    the software and packaging it would make every data update a release.
+  dev_url: https://github.com/zhou-lab/YAME
+  doc_url: https://zhou-lab.github.io/YAME
+
+extra:
+  recipe-maintainers:
+    - zwdzwd

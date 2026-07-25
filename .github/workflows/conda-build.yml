@@ -1,0 +1,163 @@
+name: conda-build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform is built even if one fails, so a single failure gives a
+      # complete picture rather than one error. Publishing is a separate job
+      # that requires them all, so this cannot half-release a version.
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, name: linux-64}
+          - {os: macos-14,      name: osx-arm64}
+          # osx-64 (macos-13, Intel) is omitted: GitHub is retiring Intel
+          # runners, so those jobs queue indefinitely. osx-arm64 covers modern
+          # Macs, and bioconda still publishes osx-64.
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # htslib is vendored in-tree rather than a submodule, so there is
+          # nothing to recurse into -- harmless, and correct if that changes.
+          submodules: recursive
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install conda-build
+        # Pinned: the globs in the publish job assume .conda output, which is
+        # the current default but has changed before.
+        run: conda install -n base -y "conda-build>=24.9" anaconda-client
+
+      - name: Build package
+        run: conda build -c conda-forge --output-folder "$RUNNER_TEMP/bld" conda-recipe/
+
+      # The runner's glibc is far newer than users'. If the sysroot pin ever
+      # comes loose the binary picks up symbols no ordinary machine has and
+      # dies at startup -- how sesame-cli and tabl both shipped broken.
+      - name: Check glibc floor (linux-64)
+        if: matrix.name == 'linux-64'
+        run: python tools/check_glibc_floor.py "$RUNNER_TEMP/bld"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conda-${{ matrix.name }}
+          path: ${{ runner.temp }}/bld/**/*.conda
+          if-no-files-found: error
+
+  # Publishing is its own job so a version is released for every platform or
+  # for none: when each matrix leg uploaded for itself, a macOS failure beside
+  # a Linux success left a version on the channel for linux-64 only.
+  publish:
+    name: publish to zhou-lab
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install anaconda-client
+        run: conda install -n base -y anaconda-client
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: conda-*
+          merge-multiple: true
+
+      - name: Check the tag against both versions
+        run: |
+          # The tag must match BOTH the recipe version and the version compiled
+          # into the binary. Checking only meta.yaml would let a package
+          # labelled 1.29 ship a yame whose banner says 1.28.
+          #
+          # YAME_VERSION carries the leading "v" and the recipe version does
+          # not, so both are compared without it.
+          version=$(sed -n 's/.*set version = "\(.*\)".*/\1/p' conda-recipe/meta.yaml)
+          binver=$(sed -n 's/.*YAME_VERSION "v\{0,1\}\(.*\)".*/\1/p' src/yame_version.h)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "tag v$tag does not match recipe version $version; bump conda-recipe/meta.yaml" >&2
+            exit 1
+          fi
+          if [ "$binver" != "$tag" ]; then
+            echo "tag v$tag does not match YAME_VERSION $binver; bump src/yame_version.h" >&2
+            exit 1
+          fi
+
+      - name: Upload
+        env:
+          # ANACONDA_API_TOKEN is anaconda-client's own variable. Passing the
+          # token as `-t <token>` instead puts it in the runner's process table.
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: |
+          if [ -z "${ANACONDA_API_TOKEN:-}" ]; then
+            echo "ANACONDA_TOKEN secret is not set; cannot publish." >&2
+            exit 1
+          fi
+          # Retry each upload: anaconda.org has returned a 524 partway through a
+          # release, aborting with one platform published and another not --
+          # the half-release this job is shaped to prevent, arriving at the
+          # upload step rather than the build step. --force makes a retry
+          # idempotent.
+          upload_with_retry() {
+            pkg=$1
+            n=1
+            while [ "$n" -le 4 ]; do
+              if conda run -n base anaconda upload \
+                   -u zhou-lab --label main --force "$pkg"; then
+                return 0
+              fi
+              echo "upload of $pkg failed (attempt $n); retrying in $((n * 30))s" >&2
+              sleep $((n * 30))
+              n=$((n + 1))
+            done
+            echo "upload of $pkg failed after 4 attempts" >&2
+            return 1
+          }
+
+          found=0
+          failed=0
+          for pkg in dist/**/*.conda dist/*.conda; do
+            [ -f "$pkg" ] || continue
+            found=$((found + 1))
+            echo "uploading $pkg"
+            upload_with_retry "$pkg" || failed=$((failed + 1))
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no .conda packages found in the downloaded artifacts" >&2
+            exit 1
+          fi
+          # Every platform is attempted even if one is unrecoverable, so the log
+          # names all of them rather than stopping at the first.
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed of $found upload(s) failed; the release is incomplete" >&2
+            exit 1
+          fi
+          echo "published $found package(s)"
