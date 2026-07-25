@@ -260,7 +260,17 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
   c2.n = n;
   c2.compressed = 0;
 
-  if (c->fmt == '6') {
+  if (c->fmt == '0') {
+    // Format 0: 1 bit per position, packed 8 positions per byte. Without
+    // this, the unit-wise branch below treats a bit index as a byte index.
+    uint64_t out_nbytes = (n + 7) >> 3;  // ceiling(n / 8)
+    c2.s = calloc(1, out_nbytes);
+    for (int64_t i = 0; i < n; ++i) {
+      uint64_t src_i = row_indices[i] - 1;  // convert to 0-based
+      if (c->s[src_i >> 3] & (1u << (src_i & 0x7)))
+        c2.s[i >> 3] |= (uint8_t)(1u << (i & 0x7));
+    }
+  } else if (c->fmt == '6') {
     // Format 6: 2 bits per position, packed 4 positions per byte
     uint64_t out_nbytes = (n + 3) >> 2;  // ceiling(n / 4)
     c2.s = calloc(1, out_nbytes);
@@ -329,6 +339,17 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
     memcpy(c_out.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
     c_out.n = end-beg+1;
     // TODO: format 7 should be merged here, I have a separate fmt7_sliceToBlock
+  } else if (c_out.fmt == '0') {
+    // Format 0: 1 bit per position, 8 per byte -- same reason as format 6
+    // below, one bit wide instead of two.
+    uint64_t n_out = end - beg + 1;
+    c_out.s = calloc(1, (n_out + 7) >> 3);
+    for (uint64_t i = 0; i < n_out; ++i) {
+      uint64_t src_i = beg + i;
+      if (c->s[src_i >> 3] & (1u << (src_i & 0x7)))
+        c_out.s[i >> 3] |= (uint8_t)(1u << (i & 0x7));
+    }
+    c_out.n = n_out;
   } else if (c_out.fmt == '6') {
     // Format 6: 2 bits per position, packed 4 positions per byte
     // Need to extract bits from arbitrary positions and repack
@@ -400,6 +421,18 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
       if (FMT0_IN_SET(*c_mask, i)) {
         memcpy(dst, src_data + i * c->unit, c->unit);
         dst += c->unit;
+      }
+    }
+  } else if (c_out.fmt == '0') {
+    // Format 0: 1 bit per position, 8 per byte
+    if (n > 0) {
+      c_out.s = calloc(1, (n + 7) >> 3);
+      for (uint64_t i = 0, k = 0; i < c->n; ++i) {
+        if (FMT0_IN_SET(*c_mask, i)) {
+          if (c->s[i >> 3] & (1u << (i & 0x7)))
+            c_out.s[k >> 3] |= (uint8_t)(1u << (k & 0x7));
+          k++;
+        }
       }
     }
   } else if (c_out.fmt == '6') {

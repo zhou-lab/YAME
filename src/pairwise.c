@@ -144,6 +144,13 @@ int main_pairwise(int argc, char *argv[]) {
 
   if (c1.n != c2.n) wzfatal("Two inputs have different dimensions: %"PRIu64" vs %"PRIu64"\n", c1.n, c2.n);
 
+  /* f3_get_mu() below reads whatever is there as packed M/U. Any other format
+   * therefore produced numbers rather than an error -- a differential call
+   * over data that was never counts. */
+  if (c1.fmt != '3' || c2.fmt != '3')
+    wzfatal("[%s:%d] pairwise needs format 3 (M/U) on both sides, got '%c' "
+            "and '%c'.\n", __func__, __LINE__, c1.fmt, c2.fmt);
+
   cdata_t c_out = {.fmt = '6', .n = c1.n };
   c_out.s = calloc((c_out.n+3)/4, sizeof(uint8_t));
   for (uint64_t i=0; i<c1.n; ++i) {

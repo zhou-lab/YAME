@@ -71,7 +71,11 @@ int main_chunk(int argc, char *argv[]) {
     
     cdata_t c2 = decompress(c);
     cdata_t c3 = {0};
-    for (i=0; i<=(c2.n/chunk_size); ++i) {
+    /* Ceiling, not floor-plus-one: when n is an exact multiple of the chunk
+     * size, the extra iteration began at row n, slice() clamped end below
+     * beg, and the run aborted on "Slicing negative span". */
+    uint64_t n_chunks = (c2.n + chunk_size - 1) / chunk_size;
+    for (i=0; i<n_chunks; ++i) {
       c3.s = NULL;
       slice(&c2, i*chunk_size, (i+1)*chunk_size-1, &c3);
       cdata_compress(&c3);

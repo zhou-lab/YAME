@@ -204,6 +204,21 @@ cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end);
 cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices);
 cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask);
 
+/**
+ * Copy rows [beg,end] out of a decompressed record.
+ *
+ * `unit` is bytes per row for formats 1/3/4, and a flat memcpy is right for
+ * them. It is not right for everything: format 0 packs eight rows into a byte
+ * and format 6 packs four, so there `beg` is a bit offset that byte
+ * arithmetic reads as a byte offset -- silently returning the wrong rows, or
+ * running off the end of the buffer. Those two are unpacked and repacked
+ * here instead.
+ *
+ * Formats 2 and 7 are refused rather than guessed at: a format 2 record
+ * carries a key table ahead of its rows and a format 7 record is a delta
+ * stream with no fixed row width, so neither survives a positional copy.
+ * `yame rowsub` implements the structure-aware versions.
+ */
 static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_sliced) {
 
   if (c->compressed) {
@@ -214,12 +229,38 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
   if (end > c->n-1) end = c->n-1;
   if (end < beg) wzfatal("Slicing negative span.");
 
-  c_sliced->s = realloc(c_sliced->s, (end-beg+1)*c->unit);
-  memcpy(c_sliced->s, c->s+beg*c->unit, (end-beg+1)*c->unit);
-  c_sliced->n = end-beg+1;
+  uint64_t n_out = end - beg + 1;
+  c_sliced->n = n_out;
   c_sliced->compressed = 0;
   c_sliced->fmt = c->fmt;
   c_sliced->unit = c->unit;
+
+  if (c->fmt == '2' || c->fmt == '7') {
+    wzfatal("[%s:%d] Cannot slice format %c by row block: it is not a flat "
+            "row vector. Use `yame rowsub` instead.\n",
+            __func__, __LINE__, c->fmt);
+  } else if (c->fmt == '0') {            /* 1 bit per row */
+    uint64_t nb = (n_out + 7) >> 3;
+    c_sliced->s = realloc(c_sliced->s, nb);
+    memset(c_sliced->s, 0, nb);
+    for (uint64_t i = 0; i < n_out; ++i) {
+      uint64_t si = beg + i;
+      if (c->s[si >> 3] & (1u << (si & 0x7)))
+        c_sliced->s[i >> 3] |= (uint8_t)(1u << (i & 0x7));
+    }
+  } else if (c->fmt == '6') {            /* 2 bits per row */
+    uint64_t nb = (n_out + 3) >> 2;
+    c_sliced->s = realloc(c_sliced->s, nb);
+    memset(c_sliced->s, 0, nb);
+    for (uint64_t i = 0; i < n_out; ++i) {
+      uint64_t si = beg + i;
+      uint8_t v = (c->s[si >> 2] >> ((si & 0x3) * 2)) & 0x3;
+      c_sliced->s[i >> 2] |= (uint8_t)(v << ((i & 0x3) * 2));
+    }
+  } else {
+    c_sliced->s = realloc(c_sliced->s, n_out * c->unit);
+    memcpy(c_sliced->s, c->s + beg * c->unit, n_out * c->unit);
+  }
 }
 
 /**
