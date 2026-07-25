@@ -524,6 +524,22 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
                               const char *remote_sub, const char *store_sub,
                               const char *anchor_sha,
                               const yame_fetch_opt_t *opt, char **err) {
+  return yame_assets_fetch_subset(base, tag, remote_sub, store_sub, anchor_sha,
+                                  NULL, 0, opt, err);
+}
+
+static int wanted(const char *name, const char *const *only, size_t n_only) {
+  if (!only) return 1;
+  for (size_t i = 0; i < n_only; ++i)
+    if (only[i] && strcmp(only[i], name) == 0) return 1;
+  return 0;
+}
+
+int yame_assets_fetch_subset(const char *base, const char *tag,
+                             const char *remote_sub, const char *store_sub,
+                             const char *anchor_sha,
+                             const char *const *only, size_t n_only,
+                             const yame_fetch_opt_t *opt, char **err) {
   /* Whose tag filled this directory? A conflict means another tool, or an
    * older build of this one, populated it from a tag this build does not pin.
    * Overwriting would start a re-download war between the two binaries, so
@@ -583,9 +599,11 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
     return -1;
   }
 
-  int failed = 0;
+  int failed = 0, taken = 0;
   for (size_t i = 0; i < n; ++i) {
     char dest[YAME_PATH_MAX], furl[YAME_PATH_MAX];
+    if (!wanted(ents[i].name, only, n_only)) continue;
+    ++taken;
     if (yame_assets_join(dest, sizeof(dest), store_sub, ents[i].name) != 0)
       { ++failed; continue; }
     wrote = remote_sub && *remote_sub
@@ -605,7 +623,8 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
 
   /* Keep the manifest verbatim: it is what lets `shasum -a 256 -c SHA256SUMS`
    * re-verify the store with none of this code, and it is what the next tool
-   * reads to learn which tag filled this directory. */
+   * reads to learn which tag filled this directory. Written for a partial
+   * fetch too -- it describes the tag, not the subset taken from it. */
   if (!failed) {
     char sp[YAME_PATH_MAX];
     if (yame_assets_join(sp, sizeof(sp), store_sub, YAME_ASSETS_SUMS_FILE) == 0) {
@@ -618,8 +637,8 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
   free(ents);
 
   if (failed) {
-    set_err(err, "%d of %zu files failed; the manifest was not written",
-            failed, n);
+    set_err(err, "%d of %d files failed; the manifest was not written",
+            failed, taken);
     return -1;
   }
   return 0;
@@ -651,6 +670,22 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
                               const char *remote_sub, const char *store_sub,
                               const char *anchor_sha,
                               const yame_fetch_opt_t *opt, char **err) {
+  return yame_assets_fetch_subset(base, tag, remote_sub, store_sub, anchor_sha,
+                                  NULL, 0, opt, err);
+}
+
+static int wanted(const char *name, const char *const *only, size_t n_only) {
+  if (!only) return 1;
+  for (size_t i = 0; i < n_only; ++i)
+    if (only[i] && strcmp(only[i], name) == 0) return 1;
+  return 0;
+}
+
+int yame_assets_fetch_subset(const char *base, const char *tag,
+                             const char *remote_sub, const char *store_sub,
+                             const char *anchor_sha,
+                             const char *const *only, size_t n_only,
+                             const yame_fetch_opt_t *opt, char **err) {
   (void)base; (void)tag; (void)remote_sub; (void)anchor_sha; (void)opt;
   set_err(err, "%s: %s", NO_CURL, store_sub);
   return -1;

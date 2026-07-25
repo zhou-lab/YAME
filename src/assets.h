@@ -216,4 +216,21 @@ int yame_assets_fetch_subtree(const char *base, const char *tag,
                               const char *anchor_sha,
                               const yame_fetch_opt_t *opt, char **err);
 
+/**
+ * As above, but only the entries named in `only` (n_only of them). Passing
+ * only == NULL fetches everything, which is exactly what fetch_subtree does.
+ *
+ * A partial directory is a normal state, not a degraded one: a knowledgebase
+ * directory can hold dozens of sets and most callers want a few. The manifest
+ * is still written verbatim, because it describes the TAG rather than what was
+ * taken from it -- that is what keeps the pin check meaningful, and
+ * `shasum -a 256 -c SHA256SUMS` then reports the ones not taken as missing,
+ * which is the truth.
+ */
+int yame_assets_fetch_subset(const char *base, const char *tag,
+                             const char *remote_sub, const char *store_sub,
+                             const char *anchor_sha,
+                             const char *const *only, size_t n_only,
+                             const yame_fetch_opt_t *opt, char **err);
+
 #endif /* _YAME_ASSETS_H */

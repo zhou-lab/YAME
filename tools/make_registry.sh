@@ -136,6 +136,32 @@ fi
 
 [ -n "$tool" ] || { sed -n '2,9p' "$0" | sed 's/^## \{0,1\}//' >&2; exit 1; }
 
+
+## Per-directory file list, straight out of the cached manifest: the names and
+## digests are already there, so compiling them in costs nothing and lets a
+## browser offer individual files instead of whole directories. Sizes are only
+## known for KYCGKB (catalog/seq_sizes.tsv, from the contents API); 0 means
+## "not published", and nothing depends on it.
+emit_file_table() {                ## slug source tag subpath [size_genome]
+  local slug=$1 src=$2 tg=$3 sub=$4 szg=${5:-}
+  local p; p=$(sums_path "$src" "$tg" "$sub")
+  printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
+  while read -r sha name; do
+    [ -n "${name:-}" ] || continue
+    local size=0
+    if [ -n "$szg" ]; then
+      size=$(rows_of "$cat_dir/seq_sizes.tsv" |
+             /usr/bin/awk -F'\t' -v g="$szg" -v n="$name" '$1==g && $2==n {print $3}')
+      [ -n "$size" ] || size=0
+    fi
+    printf '    { "%s", "%s", %s },\n' "$name" "$sha" "$size"
+  done < "$p"
+  printf '    { NULL, NULL, 0 }\n};\n\n'
+}
+
+## A C identifier for "<source>/<target>".
+slug_of() { echo "$1/$2" | tr -c 'A-Za-z0-9\n' '_'; }
+
 # ------------------------------------------------------------------ emitters
 
 emit_yame() {
@@ -164,6 +190,16 @@ emit_yame() {
 #define _YAME_REGISTRY_H
 
 #include <stddef.h>
+#include <stdint.h>
+
+/* One file a directory publishes, with the digest it must have. */
+typedef struct {
+    const char *name;
+    const char *sha256;
+    uint64_t    size;        /* 0 when upstream does not publish one */
+} yame_asset_file_t;
+
+#define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
 
 typedef struct {
     const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
@@ -173,34 +209,54 @@ typedef struct {
     const char *remote_sub;  /* "" when the manifest is at the repo root */
     const char *store_sub;   /* path under the store root */
     const char *anchor;      /* sha256 of that directory's SHA256SUMS */
+    const yame_asset_file_t *files;  /* what the directory holds */
+    size_t      n_files;
 } yame_asset_reg_t;
 
+EOF
+
+  ## The file tables first: the asset rows point at them.
+  rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _t _b _r _o; do
+    emit_file_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation "$ia_tag" "$p"
+    emit_file_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation "$ia_tag" "$p/KYCG"
+  done
+  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "$g"
+  done
+  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
+    emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g"
+  done
+
+  cat <<EOF
 static const yame_asset_reg_t YAME_ASSETS[] = {
 EOF
 
   ## Array platforms: the platform directory, then its KYCG/ subdirectory.
   ## Both are fetchable on their own -- sesame wants the first, kycg wants both.
   rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _t _b _r _o; do
-    printf '    { "InfiniumAnnotation", "%s", "%s", "%s", "%s", "InfiniumAnnotation/%s", "%s" },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p")"
-    printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "InfiniumAnnotation/%s/KYCG", "%s" },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")"
+    s1=$(slug_of InfiniumAnnotation "$p"); s2=$(slug_of InfiniumAnnotation "$p/KYCG")
+    printf '    { "InfiniumAnnotation", "%s", "%s", "%s", "%s", "InfiniumAnnotation/%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
+      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p")" "$s1" "$s1"
+    printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "InfiniumAnnotation/%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
+      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")" "$s2" "$s2"
   done
 
   ## Whole-genome knowledgebases: one repo each, manifest at the repo root.
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "KYCGKB/%s", "%s" },\n' \
-      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")"
+    s=$(slug_of KYCGKB "$g")
+    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "KYCGKB/%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
+      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$s" "$s"
   done
 
   ## Genome-level annotation (seqinfo / gaps / cytoband).
   rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
-    printf '    { "genomes", "%s", "%s", "%s", "%s", "genomes/%s", "%s" },\n' \
-      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")"
+    s=$(slug_of genomes "$g")
+    printf '    { "genomes", "%s", "%s", "%s", "%s", "genomes/%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
+      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")" "$s" "$s"
   done
 
   cat <<'EOF'
-    { NULL, NULL, NULL, NULL, NULL, NULL, NULL }
+    { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
 };
 
 #define YAME_ASSETS_N (sizeof(YAME_ASSETS)/sizeof(YAME_ASSETS[0]) - 1)
