@@ -1397,6 +1397,42 @@ static void tn_prefix(const tnode_t *n, char *out, size_t cap) {
   }
 }
 
+/* ---- search ----
+ *
+ * Reading order, ignoring folds: a match inside a closed node is still a
+ * match, and landing on one opens whatever it takes to see it. A search that
+ * found only what was already on screen would be a search for nothing.
+ */
+
+static int flat_push(tnode_t ***arr, size_t *n, size_t *cap, tnode_t *t);
+
+static void tn_collect_matches(tnode_t *n, const char *q, tnode_t ***hits,
+                               size_t *nh, size_t *cap) {
+  if (n->depth >= 0 && n->row && strcasestr(n->row, q))
+    flat_push(hits, nh, cap, n);
+  for (size_t i = 0; i < n->n_kids; ++i)
+    tn_collect_matches(n->kids[i], q, hits, nh, cap);
+}
+
+/* Open everything above a node, so the cursor can be put on it. */
+static void tn_reveal(tnode_t *n) {
+  for (tnode_t *p = n->parent; p && p->depth >= 0; p = p->parent)
+    p->expanded = 1;
+}
+
+/* Recompute the hit list and aim the cursor at hit `*hit_i`. */
+static void search_apply(tnode_t *forest, const char *q, tnode_t ***hits,
+                         size_t *nh, size_t *cap, size_t *hit_i,
+                         tnode_t **want_cur) {
+  *nh = 0;
+  if (!*q) return;
+  tn_collect_matches(forest, q, hits, nh, cap);
+  if (!*nh) return;
+  if (*hit_i >= *nh) *hit_i = 0;
+  tn_reveal((*hits)[*hit_i]);
+  *want_cur = (*hits)[*hit_i];
+}
+
 /* ---- the flattened view ---- */
 
 static int flat_push(tnode_t ***arr, size_t *n, size_t *cap, tnode_t *t) {
@@ -1576,6 +1612,14 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   size_t flat_cap = 0;
   tnode_t *want_cur = NULL;      /* land here once the view is flattened */
 
+  /* Search state. The hit list holds node pointers, so anything that frees
+   * nodes must drop it. */
+  char     query[128] = "";
+  int      searching = 0;
+  tnode_t *search_home = NULL;   /* where the cursor was when / was pressed */
+  tnode_t **hits = NULL;
+  size_t   n_hits = 0, hits_cap = 0, hit_i = 0;
+
   /* A named target arrives open and chosen: the user sees exactly what will
    * happen and presses f, or unpicks first. That is the same screen the
    * catalogue uses, rather than a second confirmation flow beside it. */
@@ -1623,6 +1667,11 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       int cap = rowsz / 2;
       if (cap < 0) cap = 0;
       if ((int)det.n > cap && cap > 0) {
+        /* Free what is being dropped first: shrinking det.n is also the loss
+         * of the only pointers to those rows, and this runs on every redraw
+         * -- so a pane taller than half the screen leaked a line per
+         * keystroke. */
+        for (size_t d = (size_t)cap; d < det.n; ++d) free(det.rows[d]);
         /* Say that it was cut. Silently stopping mid-sentence reads as the
          * whole of what is recorded, which for provenance is the wrong
          * impression to leave. */
@@ -1761,7 +1810,20 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       }
     }
 
-    if (picking) {
+    if (searching) {
+      /* One line, like every other footer: a search box that added a row
+       * would shift the whole list the moment you started typing. */
+      char found[64];
+      if (!query[0])   snprintf(found, sizeof(found), "type to search");
+      else if (n_hits) snprintf(found, sizeof(found), "%zu of %zu",
+                                hit_i + 1, n_hits);
+      else             snprintf(found, sizeof(found), "no match");
+
+      frame_line(&f, "%s  /%s%s%s%s  %s  %s  %s next  enter keep  esc cancel%s",
+                 yame_ui_dim(), yame_ui_bold(), query, yame_ui_reset(),
+                 yame_ui_dim(), yame_ui_bullet(), found,
+                 yame_ui_unicode() ? "↑↓" : "up/down", yame_ui_reset());
+    } else if (picking) {
       size_t nsel = tn_count_checked(&forest);
       char acts[160];
       size_t ao = 0;
@@ -1777,7 +1839,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "%c %s  ",
                                spec->actions[a].key, spec->actions[a].verb);
       frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %s open  "
-                     "%s close  space select  %s%s%s q quit%s",
+                     "%s close  space select  / search  %s%s%s q quit%s",
                  yame_ui_dim(), nflat ? cur + 1 : 0, nflat,
                  yame_ui_bullet(), nsel, yame_ui_bullet(),
                  yame_ui_unicode() ? "→" : "right",
@@ -1800,6 +1862,49 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     if (interrupted) break;
 
     tnode_t *sel = nflat ? flat[cur] : NULL;
+
+    /* While the search box is open it takes every printable key, so typing a
+     * name cannot trip over j/k/q/f. */
+    if (searching) {
+      if (key == K_CHAR) {
+        size_t l = strlen(query);
+        if (l + 1 < sizeof(query)) { query[l] = ch; query[l + 1] = '\0'; }
+        hit_i = 0;
+        search_apply(&forest, query, &hits, &n_hits, &hits_cap, &hit_i,
+                     &want_cur);
+        continue;
+      }
+      if (key == K_BACKSPACE) {
+        size_t l = strlen(query);
+        if (l) query[l - 1] = '\0';
+        hit_i = 0;
+        search_apply(&forest, query, &hits, &n_hits, &hits_cap, &hit_i,
+                     &want_cur);
+        continue;
+      }
+      if (key == K_DOWN || key == K_UP) {
+        if (n_hits) {
+          hit_i = (key == K_DOWN) ? (hit_i + 1) % n_hits
+                                  : (hit_i ? hit_i - 1 : n_hits - 1);
+          tn_reveal(hits[hit_i]);
+          want_cur = hits[hit_i];
+        }
+        continue;
+      }
+      if (key == K_ENTER) { searching = 0; continue; }
+      if (key == K_ESC) {
+        /* Put the cursor back where it was. What the search opened along the
+         * way stays open -- collapsing it again would hide a row the user has
+         * now seen, and folds are cheap to undo by hand. */
+        searching = 0;
+        query[0] = '\0';
+        n_hits = 0;
+        want_cur = search_home;
+        continue;
+      }
+      if (key == K_NONE) break;
+      searching = 0;              /* anything else leaves the box and acts */
+    }
 
     int want_open = (key == K_RIGHT || key == K_ENTER ||
                      (key == K_CHAR && ch == 'l'));
@@ -1850,6 +1955,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         act->commit(ctx);
         yame_ui_panel_close();
         tn_refresh(&forest, spec, roots, root_styles, n_roots, 1);
+        /* The hit list points at nodes that no longer exist. */
+        n_hits = 0; query[0] = '\0'; search_home = NULL;
         continue;
       }
     }
@@ -1872,6 +1979,25 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       else if (picking && find_action(spec, ch) >= 0) { /* above */ }
       else if (ch == 'j') { if (cur + 1 < nflat) ++cur; }
       else if (ch == 'k') { if (cur) --cur; }
+      else if (ch == '/') {
+        /* Load the whole tree first. Searching only what happens to be open
+         * would miss the thing being looked for nearly every time -- the
+         * reason to search a catalogue is that you do not know where in it to
+         * look. Expansion is a table scan per node, so this is affordable at
+         * catalogue scale; it would not be over a filesystem. */
+        tn_load_deep(&forest, spec);
+        searching = 1;
+        query[0] = '\0';
+        n_hits = 0;
+        hit_i = 0;
+        search_home = sel;
+      }
+      else if (query[0] && n_hits && (ch == 'n' || ch == 'N')) {
+        hit_i = (ch == 'n') ? (hit_i + 1) % n_hits
+                            : (hit_i ? hit_i - 1 : n_hits - 1);
+        tn_reveal(hits[hit_i]);
+        want_cur = hits[hit_i];
+      }
       else if (picking && spec->recommend && ch == 'r' && sel) {
         /* Scoped to the collection under the cursor, which for a leaf means
          * the one holding it. Recommending across the whole catalogue would
@@ -1891,6 +2017,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
          * included. */
         yame_ui_panel_close();
         tn_refresh(&forest, spec, roots, root_styles, n_roots, 0);
+        n_hits = 0; query[0] = '\0'; search_home = NULL;
         cur = top = 0;
       }
     }
@@ -1898,6 +2025,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
 
   tn_free_kids(&forest);
   free(flat);
+  free(hits);
   raw_leave();
   for (size_t d = 0; d < det.n; ++d) free(det.rows[d]);
   free(det.rows);

@@ -40,6 +40,7 @@
 
 #include "assets.h"
 #include "registry.h"
+#include "assetinfo.h"
 #include "yame_ui.h"
 
 static int usage(void) {
@@ -132,22 +133,33 @@ static const yame_asset_reg_t *find_asset(const char *source, const char *target
  *
  * The tree widget from src/ui.c, over the registry.
  *
- * The nesting is the registry's own: a source, the platform or build under it,
- * the knowledgebase under that, and the files at the bottom. It used to be
- * flattened to one row per directory -- twenty strings like
- * "InfiniumAnnotation/EPIC/KYCG", the shared prefix repeated on every line and
- * nothing to fold away. Unfolding one platform at a time is the difference
- * between reading a catalogue and searching a wall.
+ * Arranged the way someone thinks about the data -- species, then platform or
+ * build, then its knowledgebase -- rather than the way it is published. The
+ * registry is keyed on the upstream repo (InfiniumAnnotation/EPIC,
+ * InfiniumAnnotation/EPIC/KYCG, KYCGKB/hg38, genomes/hg38), which is right for
+ * fetching and wrong for choosing: two repos supply one genome, nobody thinks
+ * of a knowledgebase as living somewhere other than the platform it is indexed
+ * against, and nobody working on mouse wants to read past six human arrays.
+ * The store paths are untouched by any of this.
  *
- * What is already in the store is shown as present and cannot be checked,
- * since there is nothing to ask for.
+ *   human                       group
+ *   +- hg38                     unit: a genome build or an array platform
+ *   |  +- cpg_nocontig.cr       the unit index -- comes with anything else
+ *   |  +- KYCG                  its knowledgebase
+ *   |  |  +- CGI.20220904.cm    a set, with its .idx folded in
+ *   |  +- seqinfo.tsv.gz
+ *   +- MSA
  */
 
 typedef struct {
+  size_t asset;                 /* index into YAME_ASSETS */
+  char   name[256];             /* the file within it */
+} pick_t;
+
+typedef struct {
   char   root[4096];            /* the store */
-  size_t sel_asset[512];        /* index into YAME_ASSETS ... */
-  char   sel_file[512][192];    /* ... and the file within it */
-  size_t n_sel;
+  pick_t pick[512];
+  size_t n_pick;
   int    force;
 } browse_t;
 
@@ -159,7 +171,7 @@ static int file_present(const char *store_root, const yame_asset_reg_t *a,
   return yame_assets_is_file(path);
 }
 
-static void human(uint64_t b, char *out, size_t n) {
+static void human_size(uint64_t b, char *out, size_t n) {
   static const char *u[] = { "B", "KB", "MB", "GB" };
   double v = (double)b; int i = 0;
   while (v >= 1024.0 && i < 3) { v /= 1024.0; ++i; }
@@ -168,49 +180,246 @@ static void human(uint64_t b, char *out, size_t n) {
   else snprintf(out, n, "%.1f %s", v, u[i]);
 }
 
-/* ---- the registry, read as a tree ----
+/* ---- how the catalogue is arranged ----
  *
- * A tree path is <source>[/<target components>], and a registry row's target
- * already carries its own nesting ("EPIC", "EPIC/KYCG"), so the two line up
- * without a second structure to keep in step with the generated table. */
+ * Presentation only: the registry stays the truth. A unit this table does not
+ * name still appears, under "other" -- a platform added upstream must show up
+ * unannounced rather than vanish because nobody edited a list here.
+ */
+static const struct { const char *group, *unit; } UNIT_ORDER[] = {
+  { "human",        "hg38"     },   /* the build first, then arrays newest */
+  { "human",        "MSA"      },   /* first, since that is how anyone */
+  { "human",        "EPICv2"   },   /* chooses one */
+  { "human",        "EPIC"     },
+  { "human",        "HM450"    },
+  { "human",        "HM27"     },
+  { "mouse",        "mm39"     },
+  { "mouse",        "mm10"     },
+  { "mouse",        "MM285"    },
+  { "multispecies", "Mammal40" },
+  { NULL, NULL }
+};
 
-/* Does `target` name this directory or one below it? "" is the whole source. */
-static int target_under(const char *target, const char *rest) {
-  if (!*rest) return 1;
-  size_t l = strlen(rest);
-  return strncmp(target, rest, l) == 0 && (target[l] == '\0' || target[l] == '/');
+/* ---- registry rows, read as units ---- */
+
+/* Which unit a registry row belongs to, and where it sits inside it. */
+static void unit_of(const yame_asset_reg_t *a, char *unit, size_t nu,
+                    char *sub, size_t ns) {
+  /* A genome's knowledgebase is its own upstream repo, so the mapping cannot
+   * come from the target alone. */
+  if (strcmp(a->source, "KYCGKB") == 0) {
+    snprintf(unit, nu, "%s", a->target);
+    snprintf(sub, ns, "KYCG");
+    return;
+  }
+  const char *slash = strchr(a->target, '/');
+  if (slash) {
+    size_t l = (size_t)(slash - a->target);
+    if (l >= nu) l = nu - 1;
+    memcpy(unit, a->target, l);
+    unit[l] = '\0';
+    snprintf(sub, ns, "%s", slash + 1);
+  } else {
+    snprintf(unit, nu, "%s", a->target);
+    sub[0] = '\0';
+  }
 }
 
-/* The one path component of `target` that sits directly below `rest`, into
- * `buf`. Returns 0 when target IS rest, which is how a directory that also
- * holds files is told from the subdirectories beside them. */
-static int next_component(const char *target, const char *rest,
-                          char *buf, size_t n) {
-  if (strcmp(target, rest) == 0) return 0;
-  const char *p = target + (*rest ? strlen(rest) + 1 : 0);
-  if (!*p) return 0;
-  const char *slash = strchr(p, '/');
-  size_t len = slash ? (size_t)(slash - p) : strlen(p);
-  if (len + 1 > n) len = n - 1;
-  memcpy(buf, p, len);
-  buf[len] = '\0';
+/* An array platform, or a genome build? Decides which recommended list
+ * applies and what the row calls itself. */
+static int unit_is_array(const char *unit) {
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) == 0)
+      return strcmp(YAME_ASSETS[i].source, "InfiniumAnnotation") == 0;
+  }
+  return 0;
+}
+
+static const char *group_of(const char *unit) {
+  for (size_t i = 0; UNIT_ORDER[i].unit; ++i)
+    if (strcmp(UNIT_ORDER[i].unit, unit) == 0) return UNIT_ORDER[i].group;
+  return "other";
+}
+
+static int unit_known(const char *unit) {
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) == 0) return 1;
+  }
+  return 0;
+}
+
+/* The units of one group, in the table's order. */
+static size_t group_units(const char *group, char units[][128], size_t cap) {
+  size_t n = 0;
+  if (strcmp(group, "other") != 0) {
+    for (size_t i = 0; UNIT_ORDER[i].unit && n < cap; ++i)
+      if (strcmp(UNIT_ORDER[i].group, group) == 0 &&
+          unit_known(UNIT_ORDER[i].unit))
+        snprintf(units[n++], 128, "%s", UNIT_ORDER[i].unit);
+    return n;
+  }
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(group_of(u), "other") != 0) continue;
+    size_t k = 0;
+    for (; k < n; ++k) if (strcmp(units[k], u) == 0) break;
+    if (k == n) snprintf(units[n++], 128, "%s", u);
+  }
+  return n;
+}
+
+static size_t all_groups(char groups[][64], size_t cap) {
+  size_t n = 0;
+  for (size_t i = 0; UNIT_ORDER[i].group && n < cap; ++i) {
+    size_t k = 0;
+    for (; k < n; ++k) if (strcmp(groups[k], UNIT_ORDER[i].group) == 0) break;
+    if (k < n) continue;
+    char units[32][128];
+    if (group_units(UNIT_ORDER[i].group, units, 32))
+      snprintf(groups[n++], 64, "%s", UNIT_ORDER[i].group);
+  }
+  char units[32][128];
+  if (n < cap && group_units("other", units, 32))
+    snprintf(groups[n++], 64, "%s", "other");
+  return n;
+}
+
+/**
+ * The file a unit cannot be read without: the probe ordering for an array,
+ * the CpG coordinate stream for a genome.
+ *
+ * Everything else in the unit is a bit vector indexed against it, so it comes
+ * along with any fetch from that unit rather than being something to
+ * remember. It is shown at the top of the unit even when it is published
+ * inside the knowledgebase repo -- where it came from is not the useful fact
+ * about it.
+ */
+static int is_unit_index(const char *name) {
+  return strstr(name, ".ordering.tsv.gz") != NULL ||
+         strcmp(name, "cpg_nocontig.cr") == 0;
+}
+
+static int has_file(const yame_asset_reg_t *a, const char *name) {
+  for (size_t i = 0; i < a->n_files; ++i)
+    if (strcmp(a->files[i].name, name) == 0) return 1;
+  return 0;
+}
+
+/* A ".cm.idx" whose ".cm" is in the same directory rides with it rather than
+ * being offered: the index is unreadable alone and the set unusable without
+ * it, so listing them apart only invited picking one. */
+static int is_companion(const yame_asset_reg_t *a, const char *name) {
+  size_t l = strlen(name);
+  char base[256];
+  if (l < 5 || strcmp(name + l - 4, ".idx") != 0) return 0;
+  if (l - 4 >= sizeof(base)) return 0;
+  memcpy(base, name, l - 4);
+  base[l - 4] = '\0';
+  return has_file(a, base);
+}
+
+static int companion_of(const yame_asset_reg_t *a, const char *name,
+                        char *out, size_t n) {
+  snprintf(out, n, "%s.idx", name);
+  return has_file(a, out);
+}
+
+/* One thing the catalogue offers: a file, plus its index when it has one. */
+typedef struct {
+  const yame_asset_reg_t  *a;
+  const yame_asset_file_t *f;
+  int paired;
+  int required;
+} ent_t;
+
+/**
+ * The entries one path publishes.
+ *
+ * `sub` is "" for the unit itself or "KYCG" for the node inside it; with
+ * `recursive` it is ignored and the whole unit is walked, which is how a
+ * folded row counts what is underneath it. Rows and counts come from this one
+ * walk, so they cannot disagree.
+ */
+static size_t unit_entries(const char *unit, const char *sub, int recursive,
+                           ent_t *out, size_t cap) {
+  size_t n = 0;
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    char u[128], s[128];
+    unit_of(a, u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) != 0) continue;
+
+    for (size_t j = 0; j < a->n_files && n < cap; ++j) {
+      const yame_asset_file_t *f = &a->files[j];
+      if (is_companion(a, f->name)) continue;
+
+      int required = is_unit_index(f->name);
+      /* The index renders at the top of the unit wherever it is published. */
+      const char *at = required ? "" : s;
+      if (!recursive && strcmp(at, sub) != 0) continue;
+
+      char idxname[256];
+      out[n].a = a;
+      out[n].f = f;
+      out[n].paired = companion_of(a, f->name, idxname, sizeof(idxname));
+      out[n].required = required;
+      ++n;
+    }
+  }
+  return n;
+}
+
+/* The subdirectories directly below a unit -- in practice KYCG, but derived
+ * rather than assumed. */
+static size_t unit_subs(const char *unit, char subs[][128], size_t cap) {
+  size_t n = 0;
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) != 0 || !s[0]) continue;
+
+    size_t k = 0;
+    for (; k < n; ++k) if (strcmp(subs[k], s) == 0) break;
+    if (k == n) snprintf(subs[n++], 128, "%s", s);
+  }
+  return n;
+}
+
+static int ent_present(const char *store_root, const ent_t *e) {
+  if (!file_present(store_root, e->a, e->f->name)) return 0;
+  if (e->paired) {
+    char idxname[256];
+    snprintf(idxname, sizeof(idxname), "%s.idx", e->f->name);
+    if (!file_present(store_root, e->a, idxname)) return 0;
+  }
   return 1;
 }
 
-/* How many files live at or below one path, and how many are already here.
- * A folded row says this rather than nothing, so "do I already have EPIC"
- * does not require opening it. */
-static void subtree_counts(const char *store_root, const char *source,
-                           const char *rest, size_t *total, size_t *have) {
+static void unit_counts(const char *store_root, const char *unit,
+                        const char *sub, int recursive,
+                        size_t *total, size_t *have) {
+  static ent_t ents[1024];
+  size_t n = unit_entries(unit, sub, recursive, ents, 1024);
+  *total = n;
+  *have = 0;
+  for (size_t i = 0; i < n; ++i) if (ent_present(store_root, &ents[i])) ++*have;
+}
+
+static void group_counts(const char *store_root, const char *group,
+                         size_t *total, size_t *have) {
+  char units[32][128];
+  size_t nu = group_units(group, units, 32);
   *total = 0; *have = 0;
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    if (strcmp(a->source, source) != 0) continue;
-    if (!target_under(a->target, rest)) continue;
-    for (size_t j = 0; j < a->n_files; ++j) {
-      ++*total;
-      if (file_present(store_root, a, a->files[j].name)) ++*have;
-    }
+  for (size_t i = 0; i < nu; ++i) {
+    size_t t, h;
+    unit_counts(store_root, units[i], "", 1, &t, &h);
+    *total += t;
+    *have += h;
   }
 }
 
@@ -220,34 +429,168 @@ static unsigned char count_style(size_t total, size_t have) {
   return YAME_ROW_PLAIN;      /* partly here: neither claim is true */
 }
 
+/**
+ * A five-cell gauge of how much of something is already in the store.
+ *
+ * Reading "12/36" takes a moment; seeing a half-filled bar does not, and the
+ * question the browser mostly answers is "what am I still missing". Any
+ * progress at all lights the first cell, so "a few of these" never looks
+ * identical to "none of these".
+ */
+static void have_bar(size_t total, size_t have, char *out, size_t n) {
+  const int cells = 5;
+  int uni = yame_ui_unicode();
+  const char *full = uni ? "▰" : "#";
+  const char *empty = uni ? "▱" : ".";
+
+  int on = 0;
+  if (total && have) {
+    on = (int)((have * (size_t)cells) / total);
+    if (!on) on = 1;
+    if (have == total) on = cells;
+  }
+
+  size_t o = 0;
+  out[0] = '\0';
+  for (int i = 0; i < cells; ++i) {
+    const char *g = (i < on) ? full : empty;
+    size_t l = strlen(g);
+    if (o + l + 1 >= n) break;
+    memcpy(out + o, g, l);
+    o += l;
+    out[o] = '\0';
+  }
+}
+
 static void counts_note(size_t total, size_t have, char *out, size_t n) {
-  if (!have) snprintf(out, n, "%zu files", total);
-  else if (have == total) snprintf(out, n, "%zu files, all present", total);
-  else snprintf(out, n, "%zu files, %zu present", total, have);
+  char bar[32];
+  have_bar(total, have, bar, sizeof(bar));
+  snprintf(out, n, "%s %3zu/%zu", bar, have, total);
+}
+
+/* The tag a unit is pinned at, or "mixed" when its repos disagree. */
+static const char *unit_tag(const char *unit) {
+  const char *tag = NULL;
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) != 0) continue;
+    if (!tag) tag = YAME_ASSETS[i].tag;
+    else if (strcmp(tag, YAME_ASSETS[i].tag) != 0) return "mixed";
+  }
+  return tag ? tag : "-";
+}
+
+/* ---- tree paths ---- */
+
+/* <group>[/<unit>[/<sub>]] -- the chain of keys the widget hands back. */
+typedef struct {
+  char group[64];
+  char unit[128];
+  char sub[128];
+} bpath_t;
+
+static void bpath_parse(const char *path, bpath_t *p) {
+  p->group[0] = p->unit[0] = p->sub[0] = '\0';
+
+  const char *a = path, *b = strchr(a, '/');
+  size_t l = b ? (size_t)(b - a) : strlen(a);
+  if (l >= sizeof(p->group)) l = sizeof(p->group) - 1;
+  memcpy(p->group, a, l);
+  p->group[l] = '\0';
+  if (!b) return;
+
+  a = b + 1;
+  b = strchr(a, '/');
+  l = b ? (size_t)(b - a) : strlen(a);
+  if (l >= sizeof(p->unit)) l = sizeof(p->unit) - 1;
+  memcpy(p->unit, a, l);
+  p->unit[l] = '\0';
+  if (!b) return;
+
+  snprintf(p->sub, sizeof(p->sub), "%s", b + 1);
+}
+
+/* ---- what data/assets.tsv calls a file ---- */
+
+/**
+ * The key a filename is described under.
+ *
+ * A knowledgebase set is named by the part before the first dot, so one row
+ * covers every platform publishing it. Everything else is named by its role,
+ * because "EPIC.hg38.mask.cm" and "MM285.mm39.mask.cm" are the same kind of
+ * thing and describing them once is the point.
+ */
+static void info_key_of(const char *name, char *out, size_t n) {
+  static const struct { const char *needle, *key; } roles[] = {
+    { ".ordering.",    "ordering" },
+    { ".coord.",       "coord" },
+    { ".snp.",         "snp" },
+    { ".typeI_ext.",   "typeI_ext" },
+    { ".mask.",        "mask" },
+    { "seqinfo.",      "seqinfo" },
+    { "gaps.",         "gaps" },
+    { "cytoband.",     "cytoband" },
+    { "cpg_nocontig.", "cpg_nocontig" },
+    { NULL, NULL }
+  };
+  for (size_t i = 0; roles[i].needle; ++i)
+    if (strstr(name, roles[i].needle)) {
+      snprintf(out, n, "%s", roles[i].key);
+      return;
+    }
+
+  const char *dot = strchr(name, '.');
+  size_t l = dot ? (size_t)(dot - name) : strlen(name);
+  if (l >= n) l = n - 1;
+  memcpy(out, name, l);
+  out[l] = '\0';
+}
+
+/* ---- expanding ----
+ *
+ * Rows below the roots are preformatted, since the widget aligns only the
+ * root columns. Units and their subdirectories share one set of column stops
+ * so a unit and the KYCG inside it line up, and files share another with the
+ * size right-aligned -- the two kinds of row read as two small tables rather
+ * than as ragged text.
+ */
+
+#define UNIT_ROW_FMT "%-11s %-7s %-6s %s"
+#define FILE_ROW_W   38
+
+/* Keys are "<asset index>|<filename>" for a file and the plain component name
+ * for a directory, which is what makes a tree path parseable back. */
+static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
+  size_t idx = (size_t)(e->a - YAME_ASSETS);
+  int here = ent_present(b->root, e);
+
+  char sz[24], name[256], line[352], key[288];
+  human_size(e->f->size, sz, sizeof(sz));
+  snprintf(name, sizeof(name), "%s%s", e->f->name, e->paired ? " +idx" : "");
+  if (sz[0]) snprintf(line, sizeof(line), "%-*s %8s", FILE_ROW_W, name, sz);
+  else       snprintf(line, sizeof(line), "%s", name);
+  snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
+
+  out->rows[out->n]   = strdup(line);
+  out->keys[out->n]   = strdup(key);
+  out->styles[out->n] = (unsigned char)(here ? YAME_ROW_HAVE
+                                             : e->required ? YAME_ROW_REQUIRED
+                                                           : YAME_ROW_MISSING);
+  ++out->n;
 }
 
 /**
- * One level of the catalogue: the directories directly below `path`, then the
- * files of the directory `path` names exactly.
+ * One level: the units of a group, or a unit's index, subdirectories and
+ * files.
  *
  * Files are offered per file rather than per directory because a
  * knowledgebase holds dozens of sets and most callers want a few.
  */
 static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   browse_t *b = ctx;
-
-  char source[128], rest[512];
-  const char *slash = strchr(path, '/');
-  if (slash) {
-    size_t l = (size_t)(slash - path);
-    if (l >= sizeof(source)) return;
-    memcpy(source, path, l);
-    source[l] = '\0';
-    snprintf(rest, sizeof(rest), "%s", slash + 1);
-  } else {
-    snprintf(source, sizeof(source), "%s", path);
-    rest[0] = '\0';
-  }
+  bpath_t p;
+  bpath_parse(path, &p);
 
   enum { CAP = 512 };
   out->rows   = calloc(CAP, sizeof(char *));
@@ -256,71 +599,321 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   out->branch = calloc(CAP, 1);
   if (!out->rows || !out->keys || !out->styles || !out->branch) return;
 
-  /* Subdirectories, each named once however many registry rows mention it. */
-  char seen[64][128];
-  size_t n_seen = 0;
-  for (size_t i = 0; i < YAME_ASSETS_N && out->n < CAP; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    if (strcmp(a->source, source) != 0) continue;
-    if (!target_under(a->target, rest)) continue;
+  /* A group: its platforms and builds. */
+  if (!p.unit[0]) {
+    char units[32][128];
+    size_t nu = group_units(p.group, units, 32);
+    for (size_t i = 0; i < nu && out->n < CAP; ++i) {
+      size_t total, have;
+      unit_counts(b->root, units[i], "", 1, &total, &have);
 
-    char comp[128];
-    if (!next_component(a->target, rest, comp, sizeof(comp))) continue;
+      char note[64], line[256];
+      counts_note(total, have, note, sizeof(note));
+      snprintf(line, sizeof(line), UNIT_ROW_FMT, units[i],
+               unit_is_array(units[i]) ? "array" : "genome",
+               unit_tag(units[i]), note);
 
-    size_t s = 0;
-    for (; s < n_seen; ++s) if (strcmp(seen[s], comp) == 0) break;
-    if (s < n_seen) continue;
-    if (n_seen < 64) snprintf(seen[n_seen++], sizeof(seen[0]), "%s", comp);
+      out->rows[out->n]   = strdup(line);
+      out->keys[out->n]   = strdup(units[i]);
+      out->styles[out->n] = count_style(total, have);
+      out->branch[out->n] = 1;
+      ++out->n;
+    }
+    return;
+  }
 
-    char sub[512];
-    if (*rest) snprintf(sub, sizeof(sub), "%s/%s", rest, comp);
-    else       snprintf(sub, sizeof(sub), "%s", comp);
+  static ent_t ents[CAP];
+  size_t n_ents = unit_entries(p.unit, p.sub, 0, ents, CAP);
+
+  /* The index first: it is what everything below it is addressed against. */
+  for (size_t i = 0; i < n_ents && out->n < CAP; ++i)
+    if (ents[i].required) emit_entry(b, out, &ents[i]);
+
+  /* Then the subdirectories, only at the top of a unit. */
+  if (!p.sub[0]) {
+    char subs[8][128];
+    size_t n_subs = unit_subs(p.unit, subs, 8);
+    for (size_t i = 0; i < n_subs && out->n < CAP; ++i) {
+      size_t total, have;
+      unit_counts(b->root, p.unit, subs[i], 0, &total, &have);
+      if (!total) continue;
+
+      char note[64], line[256];
+      counts_note(total, have, note, sizeof(note));
+      snprintf(line, sizeof(line), UNIT_ROW_FMT, subs[i], "sets", "", note);
+
+      out->rows[out->n]   = strdup(line);
+      out->keys[out->n]   = strdup(subs[i]);
+      out->styles[out->n] = count_style(total, have);
+      out->branch[out->n] = 1;
+      ++out->n;
+    }
+  }
+
+  for (size_t i = 0; i < n_ents && out->n < CAP; ++i)
+    if (!ents[i].required) emit_entry(b, out, &ents[i]);
+}
+
+/* ---- the info pane ----
+ *
+ * A detail callback rather than a modal panel, so the arrow keys keep working
+ * while it is open and the text follows the cursor. It runs on every redraw,
+ * which is affordable because the lookup is a scan of a compiled-in table and
+ * the wrapping is a few hundred bytes of formatting.
+ *
+ * Ported from kycg, which is also where data/assets.tsv started.
+ */
+
+#define INFO_MAX_LINES 64
+
+typedef struct {
+  char *line[INFO_MAX_LINES];
+  int   n;
+  int   cols;
+} info_lay_t;
+
+static void lay_push(info_lay_t *L, const char *s) {
+  if (L->n >= INFO_MAX_LINES) return;
+  L->line[L->n] = strdup(s ? s : "");
+  if (L->line[L->n]) ++L->n;
+}
+
+static void lay_free(info_lay_t *L) {
+  for (int i = 0; i < L->n; ++i) free(L->line[i]);
+  L->n = 0;
+}
+
+/* Name in bold, what it is in cyan beside it, then a blank line. */
+static void lay_head(info_lay_t *L, const char *name, const char *title) {
+  char buf[1024];
+  snprintf(buf, sizeof(buf), "  %s%s%s   %s%s%s", yame_ui_bold(), name,
+           yame_ui_reset(), yame_ui_cyan(), title ? title : "",
+           yame_ui_reset());
+  lay_push(L, buf);
+  lay_push(L, "");
+}
+
+/**
+ * Wrap `text` into the pane, under an optional dim label.
+ *
+ * NULL `label` means running prose at the left margin; otherwise the label is
+ * printed once in a fixed-width gutter and continuation lines align under the
+ * text rather than under the label, so a three-line citation reads as one
+ * field.
+ */
+static void lay_wrap(info_lay_t *L, const char *label, const char *text) {
+  if (!text || !*text) return;
+
+  const int gutter = label ? 14 : 2;   /* "  processing  " is the widest */
+  int avail = (L->cols > 0 ? L->cols : yame_ui_cols()) - gutter - 2;
+  if (avail < 20) avail = 20;
+
+  const char *p = text;
+  int first = 1;
+  while (*p) {
+    while (*p == ' ') ++p;
+    if (!*p) break;
+
+    /* Longest prefix that fits, broken at the last space; a single word
+     * longer than the line is emitted whole and allowed to be truncated,
+     * which beats hyphenating a DOI. */
+    size_t rest = strlen(p), take = rest;
+    if (rest > (size_t)avail) {
+      size_t brk = 0;
+      for (size_t i = 0; i < (size_t)avail; ++i) if (p[i] == ' ') brk = i;
+      take = brk ? brk : (size_t)avail;
+    }
+
+    char buf[1024], head[64];
+    if (label && first)
+      snprintf(head, sizeof(head), "  %s%-*s%s", yame_ui_dim(), gutter - 4,
+               label, yame_ui_reset());
+    else
+      snprintf(head, sizeof(head), "%*s", gutter, "");
+
+    snprintf(buf, sizeof(buf), "%s%s%.*s", head, label && first ? "  " : "",
+             (int)take, p);
+    lay_push(L, buf);
+
+    p += take;
+    first = 0;
+  }
+  lay_push(L, "");
+}
+
+/* Where a file comes from and where it lands. Facts from the registry, so
+ * every file says something even when the table describes none of them. */
+static void lay_provenance(info_lay_t *L, const yame_asset_reg_t *a,
+                           const yame_asset_file_t *f, int paired) {
+  char buf[1024];
+
+  snprintf(buf, sizeof(buf), "%s @ %s", a->base_url, a->tag);
+  lay_wrap(L, "upstream", buf);
+
+  snprintf(buf, sizeof(buf), "%s/%s", a->store_sub, f ? f->name : "");
+  lay_wrap(L, "store", buf);
+
+  if (f) {
+    snprintf(buf, sizeof(buf), "%.16s...%s", f->sha256,
+             paired ? "   ships with its .idx companion" : "");
+    lay_wrap(L, "sha256", buf);
+  }
+}
+
+static void bx_detail(void *ctx, const char *path, const char *key, int cols,
+                      yame_ui_detail_t *out) {
+  browse_t *b = ctx;
+  out->rows = NULL;
+  out->n = 0;
+
+  info_lay_t L = {0};
+  L.cols = cols > 20 ? cols : 20;
+
+  bpath_t p;
+  bpath_parse(path, &p);
+
+  const char *bar = key ? strchr(key, '|') : NULL;
+
+  if (!p.unit[0]) {
+    /* A species group. */
+    char units[32][128], list[512] = "";
+    size_t nu = group_units(p.group, units, 32);
+    for (size_t i = 0; i < nu; ++i) {
+      strncat(list, units[i], sizeof(list) - strlen(list) - 1);
+      if (i + 1 < nu) strncat(list, ", ", sizeof(list) - strlen(list) - 1);
+    }
 
     size_t total, have;
-    subtree_counts(b->root, source, sub, &total, &have);
+    group_counts(b->root, p.group, &total, &have);
 
-    char note[64], line[256];
-    counts_note(total, have, note, sizeof(note));
-    snprintf(line, sizeof(line), "%-22s %s", comp, note);
+    lay_head(&L, p.group, "genome builds and array platforms");
+    lay_wrap(&L, NULL, list);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%zu of %zu files already in the store",
+             have, total);
+    lay_wrap(&L, "in store", buf);
+  } else if (!bar) {
+    /* A unit, or the knowledgebase inside one. */
+    size_t total, have;
+    unit_counts(b->root, p.unit, p.sub, p.sub[0] ? 0 : 1, &total, &have);
 
-    out->rows[out->n]   = strdup(line);
-    out->keys[out->n]   = strdup(comp);
-    out->styles[out->n] = count_style(total, have);
-    out->branch[out->n] = 1;
-    ++out->n;
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "%s%s%s", p.unit, p.sub[0] ? "/" : "", p.sub);
+    lay_head(&L, buf, p.sub[0] ? "knowledgebase"
+                               : unit_is_array(p.unit) ? "array platform"
+                                                       : "genome build");
+
+    if (p.sub[0])
+      lay_wrap(&L, NULL, "Annotations projected onto this unit's row space, "
+                         "one .cm per set, each with its .idx. What `kycg "
+                         "test` enriches against.");
+    else
+      lay_wrap(&L, NULL, "Everything here is indexed against one row space. "
+                         "The index at the top of the list is fetched with "
+                         "anything else taken from this unit.");
+
+    snprintf(buf, sizeof(buf), "%zu of %zu files already in the store",
+             have, total);
+    lay_wrap(&L, "in store", buf);
+    lay_wrap(&L, "tag", unit_tag(p.unit));
+  } else {
+    size_t idx = (size_t)strtoul(key, NULL, 10);
+    const char *name = bar + 1;
+    if (idx >= YAME_ASSETS_N) { lay_free(&L); return; }
+    const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+
+    const yame_asset_file_t *f = NULL;
+    for (size_t i = 0; i < a->n_files; ++i)
+      if (strcmp(a->files[i].name, name) == 0) { f = &a->files[i]; break; }
+
+    char idxname[256];
+    int paired = companion_of(a, name, idxname, sizeof(idxname));
+
+    char ikey[256];
+    info_key_of(name, ikey, sizeof(ikey));
+    const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
+
+    if (k) {
+      lay_head(&L, name, k->title);
+      lay_wrap(&L, NULL, k->biology);
+      lay_wrap(&L, "source", k->source);
+      lay_wrap(&L, "citation", k->citation);
+      lay_wrap(&L, "processing", k->processing);
+    } else {
+      char buf[512];
+      snprintf(buf, sizeof(buf), "  %s%s%s   %s(nothing recorded about this "
+               "file)%s", yame_ui_bold(), name, yame_ui_reset(),
+               yame_ui_dim(), yame_ui_reset());
+      lay_push(&L, buf);
+      lay_push(&L, "");
+    }
+    lay_provenance(&L, a, f, paired);
   }
 
-  /* Then this directory's own files, if it is one. */
-  const yame_asset_reg_t *a = *rest ? find_asset(source, rest) : NULL;
-  if (!a) return;
+  out->rows = malloc((size_t)(L.n ? L.n : 1) * sizeof(char *));
+  if (!out->rows) { lay_free(&L); return; }
+  for (int i = 0; i < L.n; ++i) out->rows[i] = L.line[i];
+  out->n = (size_t)L.n;
+  /* Ownership moves to the widget; do not free the strings here. */
+  L.n = 0;
+  lay_free(&L);
+}
 
-  size_t idx = (size_t)(a - YAME_ASSETS);
-  for (size_t i = 0; i < a->n_files && out->n < CAP; ++i) {
-    const yame_asset_file_t *fl = &a->files[i];
-    int have = file_present(b->root, a, fl->name);
-    char sz[24], line[288], key[224];
-    human(fl->size, sz, sizeof(sz));
-    if (sz[0]) snprintf(line, sizeof(line), "%-40s %9s", fl->name, sz);
-    else       snprintf(line, sizeof(line), "%s", fl->name);
-    snprintf(key, sizeof(key), "%zu|%s", idx, fl->name);
+/** Is this file part of its unit's recommended selection? */
+static int bx_recommend(void *ctx, const char *path, const char *key) {
+  (void)ctx;
+  const char *bar = key ? strchr(key, '|') : NULL;
+  if (!bar) return 0;
 
-    out->rows[out->n]   = strdup(line);
-    out->keys[out->n]   = strdup(key);
-    out->styles[out->n] = (unsigned char)(have ? YAME_ROW_HAVE : YAME_ROW_MISSING);
-    ++out->n;
-  }
+  bpath_t p;
+  bpath_parse(path, &p);
+  if (!p.unit[0]) return 0;
+
+  char ikey[256];
+  info_key_of(bar + 1, ikey, sizeof(ikey));
+  /* Every array platform shares one recommended list: the sets are the same
+   * annotation projected onto different probe orderings. */
+  return yame_assetinfo_recommended(ikey,
+                                    unit_is_array(p.unit) ? "array" : p.unit);
+}
+
+/* ---- choosing and fetching ---- */
+
+static void pick_add(browse_t *b, size_t asset, const char *name) {
+  if (b->n_pick >= sizeof(b->pick) / sizeof(b->pick[0])) return;
+  for (size_t i = 0; i < b->n_pick; ++i)
+    if (b->pick[i].asset == asset && strcmp(b->pick[i].name, name) == 0) return;
+  b->pick[b->n_pick].asset = asset;
+  snprintf(b->pick[b->n_pick].name, sizeof(b->pick[0].name), "%s", name);
+  ++b->n_pick;
 }
 
 static void bx_accept(void *ctx, const char *path, const char *key) {
   browse_t *b = ctx;
   (void)path;
-  if (!key || b->n_sel >= sizeof(b->sel_asset)/sizeof(b->sel_asset[0])) return;
-
-  char *bar = strchr(key, '|');
+  const char *bar = key ? strchr(key, '|') : NULL;
   if (!bar) return;
-  b->sel_asset[b->n_sel] = (size_t)strtoul(key, NULL, 10);
-  snprintf(b->sel_file[b->n_sel], sizeof(b->sel_file[0]), "%s", bar + 1);
-  ++b->n_sel;
+
+  size_t idx = (size_t)strtoul(key, NULL, 10);
+  if (idx >= YAME_ASSETS_N) return;
+  const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+  const char *name = bar + 1;
+  pick_add(b, idx, name);
+
+  /* The pieces that are not choices. A .cm without its .idx is unusable, and
+   * everything in a unit is addressed against that unit's index -- so both
+   * come along rather than being something to remember. */
+  char idxname[256];
+  if (companion_of(a, name, idxname, sizeof(idxname)))
+    pick_add(b, idx, idxname);
+
+  char unit[128], sub[128];
+  unit_of(a, unit, sizeof(unit), sub, sizeof(sub));
+  static ent_t ents[512];
+  size_t n = unit_entries(unit, "", 0, ents, 512);
+  for (size_t i = 0; i < n; ++i)
+    if (ents[i].required)
+      pick_add(b, (size_t)(ents[i].a - YAME_ASSETS), ents[i].f->name);
 }
 
 /* Runs inside the widget: the tree suspends, this draws in a panel, and the
@@ -330,11 +923,11 @@ static void bx_commit(void *ctx) {
   browse_t *b = ctx;
   int ok = 0, bad = 0;
 
-  if (!b->n_sel) return;
+  if (!b->n_pick) return;
   yame_ui_panel_open(4);
 
-  for (size_t i = 0; i < b->n_sel; ++i) {
-    size_t idx = b->sel_asset[i];
+  for (size_t i = 0; i < b->n_pick; ++i) {
+    size_t idx = b->pick[i].asset;
     /* Already fetched as part of an earlier entry's group. Not a failure --
      * counting it as one is what made three successful files report "3
      * fetched, 2 failed". */
@@ -345,10 +938,10 @@ static void bx_commit(void *ctx) {
      * consumed so the group is only fetched once. */
     const char *names[512];
     size_t n_names = 0;
-    for (size_t j = i; j < b->n_sel && n_names < 512; ++j) {
-      if (b->sel_asset[j] != idx || !b->sel_file[j][0]) continue;
-      names[n_names++] = b->sel_file[j];
-      if (j != i) b->sel_asset[j] = (size_t)-1;   /* consumed */
+    for (size_t j = i; j < b->n_pick && n_names < 512; ++j) {
+      if (b->pick[j].asset != idx || !b->pick[j].name[0]) continue;
+      names[n_names++] = b->pick[j].name;
+      if (j != i) b->pick[j].asset = (size_t)-1;   /* consumed */
     }
     if (!n_names) continue;
 
@@ -382,15 +975,15 @@ static void bx_commit(void *ctx) {
   yame_ui_panel_line(1, "");
   yame_ui_panel_pause(2, "press any key to return to the catalogue");
   yame_ui_panel_close();
-  b->n_sel = 0;
+  b->n_pick = 0;
 }
 
-/* The catalogue as a browsable tree: one row per upstream source, unfolding
- * into platforms, knowledgebases and files. Returns 0 when it ran, -1 when the
- * terminal cannot host it and the caller should fall back to the flat list. */
+/* The catalogue as a browsable tree: species, then platform or build, then
+ * what each publishes. Returns 0 when it ran, -1 when the terminal cannot
+ * host it and the caller should print the list instead. */
 static int browse_catalog(const char *dopt, int force) {
-  static char *roots[32];
-  static unsigned char styles[32];
+  static char *roots[16];
+  static unsigned char styles[16];
   size_t n_roots = 0;
   static browse_t b;
 
@@ -398,30 +991,19 @@ static int browse_catalog(const char *dopt, int force) {
   b.force = force;
   yame_assets_root(dopt, NULL, b.root, sizeof(b.root));
 
-  /* One root per source, in registry order, each named once. */
-  for (size_t i = 0; i < YAME_ASSETS_N && n_roots < 32; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-
-    size_t s = 0;
-    for (; s < n_roots; ++s)
-      if (strncmp(roots[s], a->source, strlen(a->source)) == 0 &&
-          roots[s][strlen(a->source)] == '\t') break;
-    if (s < n_roots) continue;
+  char groups[16][64];
+  size_t ng = all_groups(groups, 16);
+  for (size_t i = 0; i < ng && n_roots < 16; ++i) {
+    char units[32][128];
+    size_t nu = group_units(groups[i], units, 32);
 
     size_t total, have;
-    subtree_counts(b.root, a->source, "", &total, &have);
-
-    /* The tag belongs on this row only while the whole source is pinned at
-     * one: naming the first row's tag for a source pinned at several would be
-     * a claim about directories it does not describe. */
-    const char *tag = a->tag;
-    for (size_t j = 0; j < YAME_ASSETS_N; ++j)
-      if (strcmp(YAME_ASSETS[j].source, a->source) == 0 &&
-          strcmp(YAME_ASSETS[j].tag, a->tag) != 0) { tag = "mixed"; break; }
+    group_counts(b.root, groups[i], &total, &have);
 
     char note[64], line[256];
     counts_note(total, have, note, sizeof(note));
-    snprintf(line, sizeof(line), "%s\t%s\t%s", a->source, tag, note);
+    snprintf(line, sizeof(line), "%s\t%zu target%s\t%s", groups[i], nu,
+             nu == 1 ? "" : "s", note);
 
     roots[n_roots] = strdup(line);
     styles[n_roots] = count_style(total, have);
@@ -429,16 +1011,23 @@ static int browse_catalog(const char *dopt, int force) {
   }
 
   static char title[4200];
-  snprintf(title, sizeof(title), "yame fetch  --  %s", b.root);
+  snprintf(title, sizeof(title), "yame fetch   %s   %s", yame_ui_bullet(),
+           b.root);
 
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
   spec.title       = title;
-  spec.header      = "SOURCE\tTAG\tCONTENTS";
+  spec.header      = "SPECIES\tTARGETS\tIN STORE";
   spec.roots       = roots;
   spec.root_styles = styles;
   spec.n_roots     = n_roots;
   spec.expand      = bx_expand;
+  spec.detail      = bx_detail;
+  spec.detail_key  = 'i';
+  spec.detail_verb = "info";
+  spec.recommend   = bx_recommend;
+  spec.hint        = yame_ui_unicode() ? "● index, always fetched"
+                                       : "* index, always fetched";
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";
   spec.actions[0].accept = bx_accept;

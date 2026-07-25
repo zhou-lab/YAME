@@ -89,6 +89,14 @@ static int usage(void)
 
   sec("Usage:");
   fprintf(stderr, "  yame <command> [options] [args]\n");
+  /* Not a command, so it does not belong in a list of them -- but it is the
+   * one piece of state the whole suite shares, and a reader wants it before
+   * the commands rather than after. */
+  fprintf(stderr, "  %sstore%s  %s%s%s\n",
+          yame_ui_dim(), yame_ui_reset(),
+          yame_ui_dim(), store, yame_ui_reset());
+  fprintf(stderr, "  %s       $YAME_DATA_HOME overrides; shared with the "
+                  "other tools%s\n", yame_ui_dim(), yame_ui_reset());
   fprintf(stderr, "\n");
 
   sec("Core I/O:");
@@ -128,10 +136,6 @@ static int usage(void)
   sec("Reference data:");
   cmd("fetch", "Download reference assets into the shared store");
   cmd2("('yame fetch' to browse, 'yame fetch -l' to list)");
-  fprintf(stderr, "  %sstore%s        %s%s%s\n",
-          yame_ui_cyan(), yame_ui_reset(),
-          yame_ui_dim(), store, yame_ui_reset());
-  cmd2("$YAME_DATA_HOME overrides; shared with the other tools");
   fprintf(stderr, "\n");
 
   fprintf(stderr, "Run '%syame <command> -h%s' for command-specific options.\n",
