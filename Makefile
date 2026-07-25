@@ -32,9 +32,21 @@ CFLAGS += -I$(SRC_DIR) -I$(LHTSLIB_DIR)
 
 # libcurl, for `yame fetch` and the shared asset store (src/assets.c).
 #
-# Optional by design: without it YAME still builds and every format command
-# works, and only fetching reports that it is unavailable. `make CURL=0`
-# forces it off; any other value is the curl-config to use.
+# A DEPENDENCY, not a bonus. It used to be detected and silently dropped, so a
+# build environment without it produced a yame that looked complete and told
+# nobody: `yame fetch` -- and with it the catalogue browser, `summary -b`, and
+# resolving -R / -m against the store -- reported itself unavailable at run
+# time, on a binary already shipped. A packager cannot notice what the build
+# never mentioned, so a missing libcurl now stops the build and says what to
+# do about it.
+#
+# Building without it stays possible, but only on purpose:
+#
+#   make CURL=0                     no libcurl; fetching is compiled out
+#   make CURL=/path/to/curl-config  a specific one, if it is not on PATH
+#   make CURL_LIBS="$(curl-config --libs)" CURL_CFLAGS="$(curl-config --cflags)"
+#                                   spell it out, for a cross build where the
+#                                   host's curl-config cannot be run
 #
 # libyame.a carries objects only, so a downstream link must still add -lcurl
 # itself -- kycg and sesame-cli already do.
@@ -53,6 +65,15 @@ endif
 ifneq ($(CURL_LIBS),)
   CFLAGS += -DYAME_HAVE_CURL $(CURL_CFLAGS)
   CLIB   += $(CURL_LIBS)
+else ifneq ($(CURL),0)
+  # Not while merely tidying up: `make clean` must work anywhere.
+  ifeq ($(filter clean,$(MAKECMDGOALS)),)
+    $(error libcurl not found: no curl-config on PATH. \
+      yame fetch needs it. Install libcurl development files (conda: add \
+      `libcurl` to the recipe host deps; Debian: libcurl4-openssl-dev; \
+      RHEL: libcurl-devel), or point at one with `make CURL=/path/to/curl-config`, \
+      or build deliberately without fetching using `make CURL=0`)
+  endif
 endif
 
 .PHONY: all build debug clean lib
