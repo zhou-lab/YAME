@@ -97,3 +97,10 @@ Thumbs.db
 *.a
 # The yame CLI binary (no extension)
 /yame
+
+# -----------------------------------------------------------------------------
+# Scratch
+# -----------------------------------------------------------------------------
+# Working notes and design drops. Never tracked: the durable record is the lab
+# journal org file, and this directory is deleted once the work lands.
+/tmp/
