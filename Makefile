@@ -59,10 +59,22 @@ endif
 
 all: build
 
-build: exportcf $(PROG)
+build: exportcf $(PROG) yame-config
 
 # Build just the static library (used by MethScope2).
-lib: exportcf $(LIB)
+lib: exportcf $(LIB) yame-config
+
+# What a downstream tool should compile and link against. Generated so the
+# answer reflects this build -- in particular whether libcurl was found and
+# which one -- instead of each consumer hardcoding its own guess.
+yame-config: yame-config.in Makefile src/yame_version.h
+	@sed -e 's|@PREFIX@|$(CURDIR)|g' \
+	     -e 's|@VERSION@|$(shell sed -n 's/.*YAME_VERSION "\(.*\)".*/\1/p' src/yame_version.h)|g' \
+	     -e 's|@CURL_CFLAGS@|$(CURL_CFLAGS)|g' \
+	     -e 's|@CURL_LIBS@|$(CURL_LIBS)|g' \
+	     -e 's|@CLIB@|$(CLIB)|g' \
+	     yame-config.in > $@
+	@chmod +x $@
 
 exportcf:
 	$(eval export CF_OPTIMIZE)
