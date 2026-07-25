@@ -396,11 +396,33 @@ static int cells_of(const char *s) {
   return n;
 }
 
-/* Truncate to `cols` display cells, ASCII-safe and multi-byte tolerant. */
+/**
+ * Truncate to `cols` display cells, ASCII-safe and multi-byte tolerant.
+ *
+ * An escape sequence is copied whole and counted as nothing, because that is
+ * what it occupies. Row text is normally plain -- colour is applied around
+ * already-measured text, exactly so this cannot happen -- but the detail pane
+ * builds its own coloured lines, and counting their escapes as cells cut the
+ * last several characters off any line near the full width. A GENCODE release
+ * "M31" arriving as "M3" is the kind of thing that costs an afternoon.
+ */
 static void fit(const char *s, int cols, char *out, size_t outsz) {
   int cells = 0;
   size_t i = 0, o = 0;
   while (s[i] && cells < cols && o + 4 < outsz) {
+    if ((unsigned char)s[i] == 0x1b) {         /* ESC: copy, count nothing */
+      size_t start = i++;
+      if (s[i] == '[') {
+        ++i;
+        while (s[i] && !(s[i] >= '@' && s[i] <= '~')) ++i;
+        if (s[i]) ++i;
+      }
+      size_t len = i - start;
+      if (o + len + 1 >= outsz) break;
+      memcpy(out + o, s + start, len);
+      o += len;
+      continue;
+    }
     unsigned char c = (unsigned char)s[i];
     size_t len = 1;
     if      ((c & 0xE0) == 0xC0) len = 2;

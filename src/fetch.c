@@ -525,18 +525,47 @@ static void counts_note(size_t total, size_t have, char *out, size_t n) {
   snprintf(out, n, "%s %7s", bar, ratio);
 }
 
-/* The tag a unit is pinned at, or "mixed" when its repos disagree. */
-static const char *unit_tag(const char *unit) {
+/**
+ * What a path is pinned at, and where it comes from.
+ *
+ * Both can be ambiguous, and for the same reason: a unit may draw on more
+ * than one repo -- hg38 takes its knowledgebase from KYCGKB and its
+ * annotation from zhou-lab/genomes, which are separately tagged. Naming one
+ * of them for a row that spans two would be worse than saying nothing, so a
+ * disagreement returns "mixed" for the tag and NULL for the upstream, and
+ * the caller leaves the line out.
+ *
+ * `sub` NULL means the whole unit; "" means the unit's own directory; "KYCG"
+ * means that node, which is where an answer is usually unambiguous even when
+ * the unit's is not.
+ */
+static const char *path_tag(const char *unit, const char *sub) {
   const char *tag = NULL;
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
     char u[128], s[128];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) != 0) continue;
+    if (sub && strcmp(s, sub) != 0) continue;
     if (!tag) tag = YAME_ASSETS[i].tag;
     else if (strcmp(tag, YAME_ASSETS[i].tag) != 0) return "mixed";
   }
   return tag ? tag : "-";
 }
+
+static const char *path_upstream(const char *unit, const char *sub) {
+  const char *url = NULL;
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    char u[128], s[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (strcmp(u, unit) != 0) continue;
+    if (sub && strcmp(s, sub) != 0) continue;
+    if (!url) url = YAME_ASSETS[i].base_url;
+    else if (strcmp(url, YAME_ASSETS[i].base_url) != 0) return NULL;
+  }
+  return url;
+}
+
+static const char *unit_tag(const char *unit) { return path_tag(unit, NULL); }
 
 /* ---- tree paths ---- */
 
@@ -607,6 +636,7 @@ static void info_key_of(const char *name, char *out, size_t n) {
     { "gaps.",         "gaps" },
     { "cytoband.",     "cytoband" },
     { "cpg_nocontig.", "cpg_nocontig" },
+    { "genes.",        "genes" },
     { NULL, NULL }
   };
   for (size_t i = 0; roles[i].needle; ++i)
@@ -631,7 +661,8 @@ static void info_key_of(const char *name, char *out, size_t n) {
  * more cells on the indent.
  */
 
-#define SUB_ROW_FMT "%-11s %s"   /* lines its label up under a unit row's KIND */
+/* Lines its label and tag up under a unit row's KIND and TAG columns. */
+#define SUB_ROW_FMT "%-11s %-7s %s"
 
 /* Keys are "<asset index>|<filename>" for a file and the plain component name
  * for a directory, which is what makes a tree path parseable back. */
@@ -694,7 +725,8 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
 
       char note[64], line[256];
       counts_note(total, have, note, sizeof(note));
-      snprintf(line, sizeof(line), SUB_ROW_FMT "\t%s", subs[i], "sets", note);
+      snprintf(line, sizeof(line), SUB_ROW_FMT "\t%s", subs[i], "sets",
+               path_tag(p.unit, subs[i]), note);
 
       out->rows[out->n]   = strdup(line);
       out->keys[out->n]   = strdup(subs[i]);
@@ -872,7 +904,19 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
     snprintf(buf, sizeof(buf), "%zu of %zu files already in the store",
              have, total);
     lay_wrap(&L, "in store", buf);
-    lay_wrap(&L, "tag", unit_tag(p.unit));
+
+    /* Only when it is one answer: a unit spanning two repos gets neither
+     * line rather than one repo's name standing for both. */
+    const char *sub = p.sub[0] ? p.sub : NULL;
+    const char *up = path_upstream(p.unit, sub);
+    const char *tg = path_tag(p.unit, sub);
+    if (up) {
+      snprintf(buf, sizeof(buf), "%s @ %s", up, tg);
+      lay_wrap(&L, "upstream", buf);
+    } else {
+      lay_wrap(&L, "upstream", "several repos -- open a row to see which");
+    }
+    lay_wrap(&L, "tag", tg);
   } else {
     size_t idx = (size_t)strtoul(key, NULL, 10);
     const char *name = bar + 1;
