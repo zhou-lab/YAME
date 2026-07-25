@@ -6,7 +6,7 @@
 
 # YAME — Yet Another Methylation Encoder
 
-[![Install with Bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg)](https://bioconda.github.io/recipes/yame/README.html)
+[![Install from zhou-lab](https://img.shields.io/badge/install-zhou--lab-brightgreen.svg)](https://anaconda.org/zhou-lab/yame)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
 A bit-packing toolkit for DNA methylation. Arrays and whole genomes go into one binary format family, where the analysis is bitwise — and so stays fast across a thousandfold of scale, from 28K probes to 29M CpGs.
@@ -31,11 +31,15 @@ The payoff is that questions become bit operations. A data file stores no coordi
 
 ## Installation
 
-Install YAME using conda from the bioconda channel:
-
 ```bash
-conda install yame -c bioconda
+conda install -c zhou-lab -c conda-forge yame
 ```
+
+The `zhou-lab` channel is published by CI on every release tag, so it is
+always current. The [bioconda recipe](https://bioconda.github.io/recipes/yame/README.html)
+lags well behind and its build predates `yame fetch`, so it cannot download
+the reference data the other commands resolve `-R` and `-m` against — prefer
+the channel above until that catches up.
 
 ## Citation
 
