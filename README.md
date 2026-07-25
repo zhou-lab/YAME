@@ -9,7 +9,7 @@
 [![Install from zhou-lab](https://img.shields.io/badge/install-zhou--lab-brightgreen.svg)](https://anaconda.org/zhou-lab/yame)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
-A bit-packing toolkit for DNA methylation. Arrays and whole genomes go into one binary format family, where the analysis is bitwise — and so stays fast across a thousandfold of scale, from 28K probes to 29M CpGs.
+A bit-packer for DNA methylation data — arrays and whole genomes, where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.
 
 For detailed documentation, tutorials, and usage examples, visit the [YAME User Guide](https://zhou-lab.github.io/YAME/).
 
