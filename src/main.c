@@ -140,7 +140,7 @@ static int usage(void)
 
   sec("Reference data:");
   cmd("fetch", "Download reference assets into the shared store");
-  cmd2("('yame fetch' to browse, 'yame fetch -l' to list)");
+  cmd2("('yame fetch' to browse, 'yame fetch -l' to dump the registry)");
   fprintf(stderr, "\n");
 
   fprintf(stderr, "Run '%syame <command> -h%s' for command-specific options.\n",

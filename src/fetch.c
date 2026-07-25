@@ -58,8 +58,8 @@ static int usage(void) {
   yame_usage_text("takes everything under it), f fetches what is selected, h lists every");
   yame_usage_text("key, q leaves. What is already in the store shows as present and");
   yame_usage_text("cannot be selected.");
-  yame_usage_text("Piped or redirected it prints the plain listing instead, so a script");
-  yame_usage_text("never blocks on a keystroke.");
+  yame_usage_text("Piped or redirected it dumps the registry as TSV instead (same as");
+  yame_usage_text("-l), so a script never blocks on a keystroke.");
 
   yame_usage_sec("Purpose:");
   yame_usage_text("Download reference assets into the shared store that every tool in the");
@@ -79,7 +79,9 @@ static int usage(void) {
   yame_usage_cont("verified against the manifest that tag publishes.");
   yame_usage_opt("-f", "Re-download what is present, and overwrite a store that");
   yame_usage_cont("was populated from a different tag.");
-  yame_usage_opt("-l", "List what this build knows how to fetch, and exit.");
+  yame_usage_opt("-l", "Dump the registry as TSV and exit: every file this build");
+  yame_usage_cont("knows, with its size, digest, description and whether the");
+  yame_usage_cont("store already has it. One row per file, for cut and grep.");
   yame_usage_opt("-q", "No progress output.");
   yame_usage_opt("-u <url>", "Single-file form: what to download.");
   yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
@@ -107,29 +109,6 @@ static int usage(void) {
   fprintf(stderr, "\n");
 
   return 1;
-}
-
-static int list_catalog(void) {
-  char root[4096];
-  yame_assets_root(NULL, NULL, root, sizeof(root));
-
-  printf("%-20s %-14s %-8s %s\n", "SOURCE", "TARGET", "TAG", "STORE");
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    char dir[4096];
-    yame_assets_join(dir, sizeof(dir), root, a->store_sub);
-
-    const char *state = "-";
-    switch (yame_assets_pin_check(dir, a->anchor)) {
-    case YAME_PIN_MATCH:    state = "present";  break;
-    case YAME_PIN_CONFLICT: state = "OTHER TAG"; break;
-    case YAME_PIN_UNKNOWN:  state = "unpinned"; break;
-    default:                state = "-";        break;
-    }
-    printf("%-20s %-14s %-8s %s [%s]\n",
-           a->source, a->target, a->tag, a->store_sub, state);
-  }
-  return 0;
 }
 
 static const yame_asset_reg_t *find_asset(const char *source, const char *target) {
@@ -673,6 +652,70 @@ static void info_key_of(const char *name, char *out, size_t n) {
   if (l >= n) l = n - 1;
   memcpy(out, name, l);
   out[l] = '\0';
+}
+
+/**
+ * Every file this build knows about, one per line, as TSV.
+ *
+ * The browser is the only other thing that can see individual files, and it
+ * needs a terminal and a person. Anything else -- a script, a CI job, an
+ * agent -- could previously enumerate the twenty fetchable specs and nothing
+ * below them, so "is there a ChromHMM set for MSA?" had no non-interactive
+ * answer. This is that answer: the registry, dumped.
+ *
+ * TSV rather than the aligned columns the summary uses, because the consumer
+ * here is cut(1), not an eye. Descriptions come from data/assets.tsv keyed by
+ * role, so one row describes `mask` for every platform that publishes one.
+ */
+static int dump_registry(const char *dopt) {
+  char root[4096];
+  yame_assets_root(dopt, NULL, root, sizeof(root));
+
+  printf("source\ttarget\ttag\tstore_path\tfile\tbytes\tsha256\tdir_state\t"
+         "local\tdescription\n");
+
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    char dir[4096];
+    yame_assets_join(dir, sizeof(dir), root, a->store_sub);
+
+    const char *state = "-";
+    switch (yame_assets_pin_check(dir, a->anchor)) {
+    case YAME_PIN_MATCH:    state = "present";   break;
+    case YAME_PIN_CONFLICT: state = "other_tag"; break;
+    case YAME_PIN_UNKNOWN:  state = "unpinned";  break;
+    default:                state = "-";         break;
+    }
+
+    for (size_t j = 0; j < a->n_files; ++j) {
+      const yame_asset_file_t *f = &a->files[j];
+
+      char path[4096];
+      yame_assets_join(path, sizeof(path), dir, f->name);
+
+      char ikey[256];
+      info_key_of(f->name, ikey, sizeof(ikey));
+      const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
+
+      /* A tab or newline inside a title would shift every later column, so
+       * fold whitespace to single spaces on the way out. */
+      char title[512];
+      const char *src = k && k->title ? k->title : "-";
+      size_t n = 0;
+      for (; *src && n + 1 < sizeof(title); ++src) {
+        char c = (*src == '\t' || *src == '\n' || *src == '\r') ? ' ' : *src;
+        if (c == ' ' && n && title[n - 1] == ' ') continue;
+        title[n++] = c;
+      }
+      title[n] = '\0';
+
+      printf("%s\t%s\t%s\t%s\t%s\t%" PRIu64 "\t%s\t%s\t%s\t%s\n",
+             a->source, a->target, a->tag, a->store_sub, f->name,
+             f->size, f->sha256 ? f->sha256 : "-", state,
+             yame_assets_is_file(path) ? "yes" : "no", title);
+    }
+  }
+  return 0;
 }
 
 /* ---- expanding ----
@@ -1588,7 +1631,7 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
 int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
-  int force = 0, quiet = 0, unpinned_ok = 0;
+  int force = 0, quiet = 0, unpinned_ok = 0, list = 0;
   int c;
 
   while ((c = getopt(argc, argv, "d:t:kflqu:s:o:h")) >= 0) {
@@ -1597,7 +1640,7 @@ int main_fetch(int argc, char *argv[]) {
     case 't': tag_override = optarg; break;
     case 'k': unpinned_ok = 1; break;
     case 'f': force = 1; break;
-    case 'l': return list_catalog();
+    case 'l': list = 1; break;
     case 'q': quiet = 1; break;
     case 'u': url = optarg; break;
     case 's': sha = optarg; break;
@@ -1606,6 +1649,11 @@ int main_fetch(int argc, char *argv[]) {
     default: return usage();
     }
   }
+
+  /* After the loop, not inside it, so `-l -d <dir>` reports presence against
+   * the store that was actually asked for. Returning from the case label read
+   * fine until -d could change the answer. */
+  if (list) return dump_registry(dopt);
 
   /* About to actually use the store, so this is where the one-time notice
    * about a pre-consolidation cache belongs -- not in every path that merely
@@ -1644,9 +1692,10 @@ int main_fetch(int argc, char *argv[]) {
    * listing, so a script that runs `yame fetch` never blocks on a widget
    * waiting for a keystroke that will not come. */
   if (optind >= argc) {
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return list_catalog();
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
+      return dump_registry(dopt);
     if (browse_catalog(dopt, force) == 0) return 0;
-    return list_catalog();            /* terminal cannot host the widget */
+    return dump_registry(dopt);       /* terminal cannot host the widget */
   }
 
   /* ---- catalogued form: <source>/<target>[@tag] ---- */
@@ -1663,7 +1712,8 @@ int main_fetch(int argc, char *argv[]) {
   if (!slash) {
     fprintf(stderr,
             "yame fetch: expected <source>/<target>, e.g. "
-            "InfiniumAnnotation/MSA. Run `yame fetch -l` for the list.\n");
+            "InfiniumAnnotation/MSA.\n"
+            "  `yame fetch -l | cut -f1,2 | sort -u` lists every valid one.\n");
     return 1;
   }
   *slash = '\0';
@@ -1671,8 +1721,9 @@ int main_fetch(int argc, char *argv[]) {
   const yame_asset_reg_t *a = find_asset(spec, slash + 1);
   if (!a) {
     fprintf(stderr,
-            "yame fetch: this build knows nothing about %s/%s. "
-            "Run `yame fetch -l` for the list.\n", spec, slash + 1);
+            "yame fetch: this build knows nothing about %s/%s.\n"
+            "  `yame fetch -l | cut -f1,2 | sort -u` lists every valid one.\n",
+            spec, slash + 1);
     return 1;
   }
 
