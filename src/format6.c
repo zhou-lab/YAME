@@ -167,8 +167,7 @@ static stats_t* summarize1_queryfmt6_SU(
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c,i)) {
         st[0].n_u++;
-        st[0].n_m++;
-        st[0].sum_depth++;
+        st[0].n_m++;         /* no mask: the universe plays the mask role */
         if (FMT6_IN_SET(*c,i)) {
           st[0].n_q++;
           st[0].n_o++;
@@ -391,7 +390,10 @@ static stats_t* summarize1_queryfmt6_2bit(
 stats_t* summarize1_queryfmt6(
   cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
-  if (config->f6_as_2bit)
+  /* The set and meth views count identically — universe and set bits give the
+     same four cells either way — and differ only in how summary.c names and
+     derives the reported columns. */
+  if (config->f6_view == F6_VIEW_2BIT)
     return summarize1_queryfmt6_2bit(c, c_mask, n_st, sm, sq, config);
   else
     return summarize1_queryfmt6_SU(c, c_mask, n_st, sm, sq, config);

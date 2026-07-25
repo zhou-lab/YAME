@@ -37,12 +37,25 @@ typedef struct stats_t {
   char* sq;                     // query name
 } stats_t;
 
+/**
+ * How the two bits of a format-6 record are to be read. The same encoding is
+ * produced with different meanings: `pack -f b` / feature sets mean
+ * universe=tested background and set=member, while `binarize` means
+ * universe=covered and set=methylated. The counts are the same either way; the
+ * view decides how the summary columns are named and derived.
+ */
+typedef enum {
+  F6_VIEW_SET = 0,              // universe = background, set = feature member
+  F6_VIEW_METH,                 // universe = covered,    set = methylated
+  F6_VIEW_2BIT,                 // four quaternary states counted separately
+} f6_view_t;
+
 typedef struct config_t {
   int full_name;
   int section_name;
   int in_memory;
   int no_header;
-  int f6_as_2bit;   // if format 6 should be interpreted as a 2-bit quaternary instead of set/universe?
+  f6_view_t f6_view;            // how to read format 6 (-V)
   char *fname_mask;
   char *fname_snames;
   char *fname_qry_stdin;

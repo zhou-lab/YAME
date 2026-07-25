@@ -32,6 +32,8 @@ For each query sample, YAME reports:
 
 Mask files may contain multiple masks; each is evaluated independently.
 
+These are the default (`-V set`) column names; a format-6 query read as a binarized methylome renames them — see [Format-6 Views](#format-6-views--v) below.
+
 ---
 
 # Supported Input Formats
@@ -43,11 +45,38 @@ The query `.cx` file may be in any of the following internal YAME formats:
 | **0 / 1** | Binary vectors           | Presence/absence                       |
 | **2**     | State labels             | Multi-class state-specific summary     |
 | **3**     | Methylation (M/U counts) | Beta, depth, overlap                   |
-| **6**     | Binary with universe bit | Sparse methylation (e.g., single cell) |
+| **6**     | Binary with universe bit | Feature set, or binarized methylation — see views below |
 
 Masks (`-m`) may also be in formats 0, 1, 2, or 6.
 
 Format 7 (BED-like coordinates) is ignored by summary.
+
+---
+
+# Format-6 Views (`-V`)
+
+The two bits of format 6 are used with more than one meaning, and the summary columns have to be named for one of them:
+
+* a **feature set** (`yame pack -f b`, the KYCG knowledge bases) means *universe = tested background*, *set = member of the feature*
+* a **binarized methylome** (`yame binarize`) means *universe = covered*, *set = methylated*
+
+Both are counted identically, so `-V` changes only how the numbers are labelled and which derived columns are reported:
+
+| View            | Columns 5–11                                                                       |
+| --------------- | ---------------------------------------------------------------------------------- |
+| `set` (default) | `N_univ` `N_query` `N_mask` `N_overlap` `Log2OddsRatio` `Beta` `Depth`               |
+| `meth`          | `N_covered` `N_meth` `N_covered_in_mask` `N_meth_in_mask` `Log2OddsRatio` `Beta` `Beta_bg` |
+| `2bit`          | as `set`, but each of the four quaternary states gets its own row                    |
+
+```bash
+yame summary -V meth -m Tss.cm binarized.cg
+```
+
+Under `-V meth`, `Beta` is the methylated fraction inside the mask (of the whole sample when no mask is given) and `Beta_bg` is the same fraction outside the mask, so the two together say whether the feature is hyper- or hypomethylated relative to its background. Without a mask, `N_covered_in_mask` and `N_meth_in_mask` would merely repeat `N_covered` and `N_meth`, so they are reported as `NA`.
+
+`Log2OddsRatio` is *not* changed by the view — it always crosses set-vs-not with mask-vs-not, which under the meth reading is methylated-vs-unmethylated inside-vs-outside the mask. Note this differs from the format-3 summary of the same data, where the odds ratio tests whether *coverage* is enriched in the mask.
+
+Because a single header line describes every row of a run, `-V meth` rejects query records that are not format 6. `-6` is a deprecated alias for `-V 2bit`.
 
 ---
 
@@ -152,7 +181,7 @@ Average methylation or binary fraction inside the mask:
 
 ### **11. `Depth`**
 
-Average sequencing depth (M+U) across mask sites (format 3 only).
+Average sequencing depth (M+U) across mask sites (format 3 only). Format 6 keeps no depth — `binarize` discards it — so the column is `NA` there. Under `-V meth` this slot is `Beta_bg` instead.
 
 ---
 

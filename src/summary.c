@@ -88,6 +88,28 @@
  *   as implemented in the corresponding summarize1_queryfmt*.
  * - Depth:
  *   When available, reports mean depth over masked sites (or over universe when no mask).
+ *   Format 6 carries no depth (binarize discards it), so the column is NA there.
+ *
+ * Format-6 views (-V)
+ * -------------------
+ * The two bits of format 6 are used with more than one meaning. A feature set
+ * (pack -f b, KYCG knowledge bases) means universe=background, set=member; a
+ * binarized methylome (yame binarize) means universe=covered, set=methylated.
+ * The counting is identical either way, so -V only selects how the columns are
+ * named and derived:
+ *
+ *   -V set  (default)  N_univ N_query N_mask N_overlap Log2OddsRatio Beta Depth
+ *   -V meth            N_covered N_meth N_covered_in_mask N_meth_in_mask
+ *                      Log2OddsRatio Beta Beta_bg
+ *   -V 2bit            like -V set, but each of the 4 quaternary states gets its
+ *                      own row (this was the old -6)
+ *
+ * Under -V meth, Beta is the methylated fraction inside the mask (whole sample
+ * when no mask is given) and Beta_bg the same fraction outside it. The odds
+ * ratio is not changed by the view: it always crosses set-vs-not with
+ * mask-vs-not, which reads as methylated-vs-unmethylated inside-vs-outside the
+ * mask. Because one header describes every row of a run, -V meth rejects query
+ * records that are not format 6.
  *
  * State (fmt2) naming
  * -------------------
@@ -133,16 +155,27 @@ static int usage(void) {
   fprintf(stderr, "Stdin helpers:\n");
   fprintf(stderr, "  -q <name>      Backup query file name used only when <query.cx> is '-'.\n");
   fprintf(stderr, "\n");
+  fprintf(stderr, "Format-6 view (the 2 bits are used with more than one meaning):\n");
+  fprintf(stderr, "  -V <view>      set  (default) universe = background, set = feature member\n");
+  fprintf(stderr, "                 meth          universe = covered,    set = methylated\n");
+  fprintf(stderr, "                 2bit          count the 4 quaternary states separately\n");
+  fprintf(stderr, "  -6             Deprecated alias for -V 2bit.\n");
+  fprintf(stderr, "\n");
   fprintf(stderr, "Other:\n");
-  fprintf(stderr, "  -6             Treat format-6 query as 2bit quaternary than set/universe.\n");
   fprintf(stderr, "  -h             Show this help message.\n");
   fprintf(stderr, "\n");
-  fprintf(stderr, "Output columns:\n");
+  fprintf(stderr, "Output columns (-V set, the default; also -V 2bit):\n");
   fprintf(stderr, "  QFile  Query  MFile  Mask  N_univ  N_query  N_mask  N_overlap  Log2OddsRatio  Beta  Depth\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Output columns (-V meth):\n");
+  fprintf(stderr, "  QFile  Query  MFile  Mask  N_covered  N_meth  N_covered_in_mask  N_meth_in_mask  Log2OddsRatio  Beta  Beta_bg\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Notes:\n");
   fprintf(stderr, "  * For state masks (format 2), summary is emitted per state key (one row per key).\n");
   fprintf(stderr, "  * When no mask is given, Mask is reported as 'global'.\n");
+  fprintf(stderr, "  * -V meth requires every query record to be format 6; Beta is then the\n");
+  fprintf(stderr, "    methylated fraction inside the mask (whole sample when no mask is given)\n");
+  fprintf(stderr, "    and Beta_bg the same fraction outside the mask.\n");
   fprintf(stderr, "\n");
   return 1;
 }
@@ -157,6 +190,11 @@ stats_t* summarize1_queryfmt6(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char 
 stats_t* summarize1_queryfmt7(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 
 stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
+
+  /* The meth view renames the shared header, so it cannot describe a record of
+     any other format sitting in the same run. */
+  if (config->f6_view == F6_VIEW_METH && c->fmt != '6')
+    wzfatal("[%s:%d] -V meth needs a format 6 query, got format %c (%s).\n", __func__, __LINE__, c->fmt, sq);
 
   switch (c->fmt) {
   case '0': return summarize1_queryfmt0(c, c_mask, n_st, sm, sq, config);
@@ -193,22 +231,41 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
       odds_ratio = tmp.s;
       fmask = "NA";
     }
-    fprintf(stdout,
-            "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s",
-            fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
-    if (s.beta >=0) {
-      fprintf(stdout, "\t%1.3f", s.beta);
-    } else {
-      fputs("\tNA", stdout);
-    }
-    if (s.sum_depth) {
-      if (s.n_m) {
-        fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_m);
+    if (config->f6_view == F6_VIEW_METH) {
+      /* universe = covered, set = methylated. Without a mask the two mask
+         columns would merely repeat N_covered and N_meth, so they are NA. */
+      fprintf(stdout, "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64,
+              fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q);
+      if (config->fname_mask) {
+        fprintf(stdout, "\t%"PRIu64"\t%"PRIu64"\t%s", s.n_m, s.n_o, odds_ratio);
       } else {
-        fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_u);
+        fputs("\tNA\tNA\tNA", stdout);
+      }
+      if (s.beta >= 0) fprintf(stdout, "\t%1.3f", s.beta);
+      else fputs("\tNA", stdout);
+      if (config->fname_mask && s.n_u > s.n_m) {
+        fprintf(stdout, "\t%1.3f", (double) (s.n_q - s.n_o) / (s.n_u - s.n_m));
+      } else {
+        fputs("\tNA", stdout);
       }
     } else {
-      fputs("\tNA", stdout);
+      fprintf(stdout,
+              "%s\t%s\t%s\t%s\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%"PRIu64"\t%s",
+              fname_qry, s.sq, fmask, s.sm, s.n_u, s.n_q, s.n_m, s.n_o, odds_ratio);
+      if (s.beta >=0) {
+        fprintf(stdout, "\t%1.3f", s.beta);
+      } else {
+        fputs("\tNA", stdout);
+      }
+      if (s.sum_depth) {
+        if (s.n_m) {
+          fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_m);
+        } else {
+          fprintf(stdout, "\t%1.3f", (double) s.sum_depth / s.n_u);
+        }
+      } else {
+        fputs("\tNA", stdout);
+      }
     }
     fputc('\n', stdout);
     free(odds_ratio);
@@ -235,11 +292,20 @@ void prepare_mask(cdata_t *c) {
 int main_summary(int argc, char *argv[]) {
   int c;
   config_t config = {0};
-  while ((c = getopt(argc, argv, "m:u:MHFTs:6q:h"))>=0) {
+  while ((c = getopt(argc, argv, "m:u:MHFTs:V:6q:h"))>=0) {
     switch (c) {
     case 'm': config.fname_mask = strdup(optarg); break;
     case 'M': config.in_memory = 1; break;
-    case '6': config.f6_as_2bit = 1; break;
+    case 'V':
+      if (strcmp(optarg, "set") == 0) config.f6_view = F6_VIEW_SET;
+      else if (strcmp(optarg, "meth") == 0) config.f6_view = F6_VIEW_METH;
+      else if (strcmp(optarg, "2bit") == 0) config.f6_view = F6_VIEW_2BIT;
+      else { usage(); wzfatal("Unknown -V view: %s (use set, meth or 2bit).\n", optarg); }
+      break;
+    case '6':
+      fprintf(stderr, "[%s:%d] Warning: -6 is deprecated, use -V 2bit.\n", __func__, __LINE__);
+      config.f6_view = F6_VIEW_2BIT;
+      break;
     case 'H': config.no_header = 1; break;
     case 'F': config.full_name = 1; break;
     case 'T': config.section_name = 1; break;
@@ -277,7 +343,11 @@ int main_summary(int argc, char *argv[]) {
   }
   
   if (!config.no_header) {
-    fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\tDepth\n", stdout);
+    if (config.f6_view == F6_VIEW_METH) {
+      fputs("QFile\tQuery\tMFile\tMask\tN_covered\tN_meth\tN_covered_in_mask\tN_meth_in_mask\tLog2OddsRatio\tBeta\tBeta_bg\n", stdout);
+    } else {
+      fputs("QFile\tQuery\tMFile\tMask\tN_univ\tN_query\tN_mask\tN_overlap\tLog2OddsRatio\tBeta\tDepth\n", stdout);
+    }
   }
 
   for (int j = optind; j < argc; ++j) {
