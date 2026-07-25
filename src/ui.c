@@ -128,6 +128,7 @@ COLOR(yame_ui_green,  "\033[32m")
 COLOR(yame_ui_red,    "\033[31m")
 COLOR(yame_ui_yellow, "\033[33m")
 COLOR(yame_ui_cyan,   "\033[36m")
+COLOR(yame_ui_blue,   "\033[34m")
 COLOR(yame_ui_reset,  "\033[0m")
 
 const char *yame_ui_check(void)  { return yame_ui_unicode() ? "✓" : "ok"; }
@@ -1265,6 +1266,45 @@ typedef struct tnode_s {
   size_t n_kids;
 } tnode_t;
 
+/**
+ * A root that cannot open is a heading: a label for the rows beneath it.
+ *
+ * It gets neither a fold marker nor a checkbox -- it is not a thing to open
+ * or take -- so it is drawn flush left instead of indented past columns that
+ * say nothing about it, and the cursor steps over it rather than landing on a
+ * row where every key is a no-op.
+ */
+static int tn_is_heading(const tnode_t *n) {
+  return n->depth == 0 && !n->branch;
+}
+
+/**
+ * Move `cur` off a heading, preferring `dir` (+1 down, -1 up).
+ *
+ * A heading is a label: landing on it means every key does nothing, and
+ * arrowing through the list would stop three times for no reason. Falls back
+ * to the other direction at the ends of the list.
+ */
+static size_t cursor_skip(tnode_t **flat, size_t nflat, size_t cur, int dir) {
+  if (!nflat) return 0;
+  if (cur >= nflat) cur = nflat - 1;
+  if (!tn_is_heading(flat[cur])) return cur;
+
+  size_t c = cur;
+  while (tn_is_heading(flat[c])) {
+    if (dir >= 0) { if (c + 1 >= nflat) break; ++c; }
+    else          { if (c == 0) break; --c; }
+  }
+  if (!tn_is_heading(flat[c])) return c;
+
+  c = cur;                            /* ran out that way; try the other */
+  while (tn_is_heading(flat[c])) {
+    if (dir >= 0) { if (c == 0) break; --c; }
+    else          { if (c + 1 >= nflat) break; ++c; }
+  }
+  return c;
+}
+
 /** Index of the action bound to `ch`, or -1. */
 static int find_action(const yame_ui_tree_t *spec, char ch) {
   for (size_t i = 0; i < spec->n_actions; ++i)
@@ -1588,6 +1628,7 @@ static void draw_help(const yame_ui_tree_t *spec, int picking) {
   if (picking) {
     frame_line(&f, "  %sCHOOSING%s", cyan, rst);
     help_row(&f, "space   x", "select the row, or everything under a folder");
+    help_row(&f, "a", "select everything, or clear the selection");
     if (spec->recommend)
       help_row(&f, "r", "the recommended selection for what the cursor is on");
     for (size_t a = 0; a < spec->n_actions; ++a) {
@@ -1635,6 +1676,20 @@ static void draw_help(const yame_ui_tree_t *spec, int picking) {
 }
 
 /**
+ * The width the row layout uses, which is not always the terminal's.
+ *
+ * A field right-aligned at the margin of a 200-column terminal sits half a
+ * screen from the name it belongs to, and nothing pairs them by eye. Past
+ * this the layout simply stops growing and the rest of the line is empty
+ * space, which is what a wide terminal is for.
+ */
+enum { LAYOUT_MAX = 92 };
+
+static int layout_cols(int cols) {
+  return cols < LAYOUT_MAX ? cols : LAYOUT_MAX;
+}
+
+/**
  * Build one row's line.
  *
  * The LAST tab-separated field of a row is held back and right-aligned at the
@@ -1677,8 +1732,10 @@ static void build_row(char *out, size_t cap, const tnode_t *nd, int is_cur,
     content[n] = '\0';
   }
 
-  int lead = 2 + 4 * nd->depth + 2 + (picking ? 4 : 0);
+  int heading = tn_is_heading(nd);
+  int lead = heading ? 2 : 2 + 4 * nd->depth + 2 + (picking ? 4 : 0);
   int tailc = cells_of(tail);
+  cols = layout_cols(cols);
   int room = cols - lead - tailc - 3;
   if (room < 8) room = 8;
 
@@ -1687,13 +1744,20 @@ static void build_row(char *out, size_t cap, const tnode_t *nd, int is_cur,
   int gap = cols - lead - cells_of(cut) - tailc - 2;
   if (gap < 1) gap = 1;
 
-  snprintf(out, cap, "%s%s%s %s%s%s%s%s%s %s%s%s%s%*s%s%s%s",
-           yame_ui_cyan(), arrow, yame_ui_reset(),
-           yame_ui_dim(), pre, yame_ui_reset(),
-           yame_ui_cyan(), fold, yame_ui_reset(),
-           is_cur ? yame_ui_bold() : "", style_color1(nd->style), box, cut,
-           gap, "", tail_color ? tail_color : yame_ui_dim(), tail,
-           yame_ui_reset());
+  if (heading)
+    snprintf(out, cap, "%s%s%s %s%s%s%*s%s%s%s",
+             yame_ui_cyan(), arrow, yame_ui_reset(),
+             is_cur ? yame_ui_bold() : "", style_color1(nd->style), cut,
+             gap, "", tail_color ? tail_color : yame_ui_dim(), tail,
+             yame_ui_reset());
+  else
+    snprintf(out, cap, "%s%s%s %s%s%s%s%s%s %s%s%s%s%*s%s%s%s",
+             yame_ui_cyan(), arrow, yame_ui_reset(),
+             yame_ui_dim(), pre, yame_ui_reset(),
+             yame_ui_cyan(), fold, yame_ui_reset(),
+             is_cur ? yame_ui_bold() : "", style_color1(nd->style), box, cut,
+             gap, "", tail_color ? tail_color : yame_ui_dim(), tail,
+             yame_ui_reset());
 }
 
 /* ---- painting one row while an action runs ----
@@ -1724,8 +1788,6 @@ int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
     char line[1400];
 
     if (!total) {
-      /* Settled: the row goes back to saying what it says, which for a file
-       * just fetched is its size. */
       build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec,
                 term_cols(), vis_w, vis_ncol, NULL, NULL);
     } else {
@@ -1756,6 +1818,31 @@ int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
     /* Save the cursor, paint the one line, put it back: the panel below is
      * drawing too, and it positions relative to where it left off. */
     fprintf(stderr, "\033[s\033[%d;1H\033[2K%s\033[u", row, line);
+    fflush(stderr);
+    return 1;
+  }
+  return 0;
+}
+
+int yame_ui_tree_settle(const char *key, int now_present) {
+  if (!vis_flat || !key || !raw_active) return 0;
+
+  for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
+    tnode_t *nd = vis_flat[i];
+    if (!nd->key || strcmp(nd->key, key) != 0) continue;
+
+    if (now_present) {
+      /* What the reload would have said, said now: it is here, so it is no
+       * longer something to ask for. */
+      nd->style = YAME_ROW_HAVE;
+      nd->checked = 0;
+    }
+
+    char line[1400];
+    build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec, term_cols(),
+              vis_w, vis_ncol, NULL, NULL);
+    fprintf(stderr, "\033[s\033[%d;1H\033[2K%s\033[u",
+            VIS_ROW0 + (int)(i - vis_top), line);
     fflush(stderr);
     return 1;
   }
@@ -1950,6 +2037,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
 
   /* Search state. The hit list holds node pointers, so anything that frees
    * nodes must drop it. */
+  int      nav_dir = 1;          /* which way to step off a heading */
   char     query[128] = "";
   int      searching = 0;
   tnode_t *search_home = NULL;   /* where the cursor was when / was pressed */
@@ -1984,6 +2072,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       want_cur = NULL;
     }
     if (cur >= nflat) cur = nflat ? nflat - 1 : 0;
+    cur = cursor_skip(flat, nflat, cur, nav_dir);
 
     /* Rebuild the detail pane before laying out, so its height is known and
      * the list shrinks to fit rather than the pane running off the screen. */
@@ -2049,9 +2138,10 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       ht = ht ? ht + 1 : "";
 
       int lead = 4 + (picking ? 4 : 0);
+      int hcols = layout_cols(cols);
       char cut[1024];
-      fit(buf, cols - lead - cells_of(ht) - 3, cut, sizeof(cut));
-      int gap = cols - lead - cells_of(cut) - cells_of(ht) - 2;
+      fit(buf, hcols - lead - cells_of(ht) - 3, cut, sizeof(cut));
+      int gap = hcols - lead - cells_of(cut) - cells_of(ht) - 2;
       if (gap < 1) gap = 1;
 
       frame_line(&f, "    %s%s%s%*s%s%s", picking ? "    " : "",
@@ -2235,12 +2325,12 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         continue;
       }
     }
-    else if (key == K_DOWN) { if (cur + 1 < nflat) ++cur; }
-    else if (key == K_UP)   { if (cur) --cur; }
-    else if (key == K_PGDN) { cur += (size_t)avail; if (cur >= nflat) cur = nflat ? nflat-1 : 0; }
-    else if (key == K_PGUP) { cur = (cur > (size_t)avail) ? cur - (size_t)avail : 0; }
-    else if (key == K_HOME) cur = 0;
-    else if (key == K_END)  cur = nflat ? nflat - 1 : 0;
+    else if (key == K_DOWN) { nav_dir = 1; if (cur + 1 < nflat) ++cur; }
+    else if (key == K_UP)   { nav_dir = -1; if (cur) --cur; }
+    else if (key == K_PGDN) { nav_dir = 1; cur += (size_t)avail; if (cur >= nflat) cur = nflat ? nflat-1 : 0; }
+    else if (key == K_PGUP) { nav_dir = -1; cur = (cur > (size_t)avail) ? cur - (size_t)avail : 0; }
+    else if (key == K_HOME) { nav_dir = 1; cur = 0; }
+    else if (key == K_END)  { nav_dir = -1; cur = nflat ? nflat - 1 : 0; }
     /* ESC closes the pane first, then leaves the widget. */
     else if (key == K_ESC)  { if (detail_open) detail_open = 0; else break; }
     else if (key == K_NONE) break;
@@ -2253,8 +2343,16 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         detail_open = !detail_open;
       else if (picking && find_action(spec, ch) >= 0) { /* above */ }
       else if (picking && ch == 'x') { /* handled above, with space */ }
-      else if (ch == 'j') { if (cur + 1 < nflat) ++cur; }
-      else if (ch == 'k') { if (cur) --cur; }
+      else if (ch == 'j') { nav_dir = 1; if (cur + 1 < nflat) ++cur; }
+      else if (ch == 'k') { nav_dir = -1; if (cur) --cur; }
+      else if (picking && ch == 'a') {
+        /* Everything, or nothing. Scoped selection is already what space on a
+         * folder does, so the key worth having is the one that reaches rows
+         * no cursor is near -- which means loading the tree, as search does.
+         * The plan shown by `f` is what keeps that from being dangerous. */
+        tn_load_deep(&forest, spec);
+        tn_set_checked(&forest, spec, tn_count_checked(&forest) ? 0 : 1);
+      }
       else if (ch == 'h' || ch == '?') {
         /* Takes 'h' from vim-style close; the left arrow still does that, and
          * a cheatsheet nobody can find is not one. */

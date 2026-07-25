@@ -482,10 +482,19 @@ static void have_bar(size_t total, size_t have, char *out, size_t n) {
   }
 }
 
+/**
+ * The gauge, at a fixed width.
+ *
+ * The widget right-aligns this, which aligns its right edge -- so a ratio
+ * that is three characters on one row and six on the next walks the bar left
+ * and right down the column. Padding the ratio to a constant width pins both
+ * ends of the field.
+ */
 static void counts_note(size_t total, size_t have, char *out, size_t n) {
-  char bar[32];
+  char bar[32], ratio[32];
   have_bar(total, have, bar, sizeof(bar));
-  snprintf(out, n, "%s %3zu/%zu", bar, have, total);
+  snprintf(ratio, sizeof(ratio), "%zu/%zu", have, total);
+  snprintf(out, n, "%s %7s", bar, ratio);
 }
 
 /* The tag a unit is pinned at, or "mixed" when its repos disagree. */
@@ -972,10 +981,24 @@ static void fp_progress(void *ud, uint64_t now, uint64_t total) {
 
 static void fp_done(void *ud, const char *name, uint64_t bytes, int ok) {
   fprog_t *p = ud;
-  (void)name; (void)bytes; (void)ok;
-  /* total == 0 settles the row: the bar goes away and the size comes back,
-   * which is the row saying it is done rather than a bar stuck at 100%. */
-  if (p->key[0]) yame_ui_tree_progress(p->key, 0, 0);
+  (void)bytes;
+  if (!p->key[0]) return;
+
+  /**
+   * Green as soon as THIS file lands, not when the batch does.
+   *
+   * A row standing for a pair waits for the .idx: the .cm arriving is not the
+   * row arriving, and a green row whose index is still in flight is a claim
+   * the store cannot honour. The .idx is the second of the two, so settling
+   * on it settles the pair.
+   */
+  int done = ok;
+  if (ok && p->asset < YAME_ASSETS_N) {
+    char idxname[256];
+    if (companion_of(&YAME_ASSETS[p->asset], name, idxname, sizeof(idxname)))
+      done = 0;                    /* its .idx is still to come */
+  }
+  yame_ui_tree_settle(p->key, done);
   p->key[0] = '\0';
 }
 

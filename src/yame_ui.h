@@ -48,6 +48,7 @@ const char *yame_ui_green(void);
 const char *yame_ui_red(void);
 const char *yame_ui_yellow(void);
 const char *yame_ui_cyan(void);
+const char *yame_ui_blue(void);
 const char *yame_ui_reset(void);
 
 /** Glyphs: check, cross, bullet. UTF-8 or ASCII depending on locale. */
@@ -290,6 +291,21 @@ int yame_ui_panel_ask(int line, const char *prompt, char *buf, size_t n);
  * screen. Pass now == total to settle the row.
  */
 int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total);
+
+/**
+ * Settle the row carrying `key`: the bar goes away and the row says what it
+ * says again -- for a file just fetched, its size.
+ *
+ * With `now_present`, the row is also marked as being in the store, so it
+ * turns green with a check the moment ITS OWN transfer lands rather than when
+ * the whole batch does. Waiting for the batch is the difference between a
+ * list that reports progress and one that reports it afterwards.
+ *
+ * Returns 0 when the row is folded away or scrolled off. The tree is reloaded
+ * from the caller's data after the action finishes, so this is presentation
+ * running ahead of that reload, never a substitute for it.
+ */
+int yame_ui_tree_settle(const char *key, int now_present);
 
 /**
  * Called once, after every checked row has been reported through `accept`.

@@ -83,20 +83,23 @@ static int usage(void)
   fprintf(stderr, "%syame%s (Yet Another Methylation Encoder)  %s%s%s\n",
           yame_ui_bold(), yame_ui_reset(),
           yame_ui_dim(), PACKAGE_VERSION, yame_ui_reset());
-  fprintf(stderr, "Whole-genome DNA methylation data management using CX formats.\n");
-  fprintf(stderr, "Contact: Wanding Zhou <wanding.zhou@pennmedicine.upenn.edu>\n");
+  fprintf(stderr, "%sWhole-genome DNA methylation data management using CX "
+                  "formats.%s\n", yame_ui_dim(), yame_ui_reset());
+  fprintf(stderr, "%sContact: Wanding Zhou <wanding.zhou@pennmedicine.upenn.edu>"
+                  "%s\n", yame_ui_dim(), yame_ui_reset());
+  fprintf(stderr, "\n");
+
+  /* Where the reference data is, named by the variable that moves it -- not a
+   * command, so not in the list of them, and worth seeing before them. */
+  {
+    const char *env = getenv("YAME_DATA_HOME");
+    fprintf(stderr, "%sYAME_DATA_HOME: %s%s%s\n", yame_ui_blue(), store,
+            (env && *env) ? "" : " (unset, default)", yame_ui_reset());
+  }
   fprintf(stderr, "\n");
 
   sec("Usage:");
   fprintf(stderr, "  yame <command> [options] [args]\n");
-  /* Not a command, so it does not belong in a list of them -- but it is the
-   * one piece of state the whole suite shares, and a reader wants it before
-   * the commands rather than after. */
-  fprintf(stderr, "  %sstore%s  %s%s%s\n",
-          yame_ui_dim(), yame_ui_reset(),
-          yame_ui_dim(), store, yame_ui_reset());
-  fprintf(stderr, "  %s       $YAME_DATA_HOME overrides; shared with the "
-                  "other tools%s\n", yame_ui_dim(), yame_ui_reset());
   fprintf(stderr, "\n");
 
   sec("Core I/O:");
