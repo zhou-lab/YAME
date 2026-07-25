@@ -438,7 +438,7 @@ static void group_counts(const char *store_root, const char *group,
 static unsigned char count_style(size_t total, size_t have) {
   if (total && have == total) return YAME_ROW_HAVE;
   if (!have) return YAME_ROW_MISSING;
-  return YAME_ROW_PLAIN;      /* partly here: neither claim is true */
+  return YAME_ROW_PARTIAL;    /* partly here: neither claim is true */
 }
 
 /**
@@ -1190,8 +1190,6 @@ static int browse_catalog(const char *dopt, int force) {
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
   spec.recommend   = bx_recommend;
-  spec.hint        = yame_ui_unicode() ? "● index, always fetched"
-                                       : "* index, always fetched";
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";
   spec.actions[0].accept = bx_accept;

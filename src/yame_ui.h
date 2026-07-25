@@ -132,6 +132,16 @@ typedef enum {
   YAME_ROW_HAVE,      /* present locally -- green */
   YAME_ROW_MISSING,   /* not present -- dimmed */
   YAME_ROW_REQUIRED,  /* comes with any fetch, not selectable -- red */
+  /**
+   * Some of it is here -- yellow.
+   *
+   * Only a row standing for several things can be in this state, and the
+   * distinction matters most there: a directory holding thirty sets of which
+   * three are downloaded is neither present nor absent, and colouring it as
+   * either is the reading that sends someone looking for files they do not
+   * have.
+   */
+  YAME_ROW_PARTIAL,
 } yame_row_style_t;
 
 /**

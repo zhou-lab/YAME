@@ -1043,6 +1043,7 @@ static const char *style_color(const unsigned char *styles, size_t i) {
   case YAME_ROW_HAVE:     return yame_ui_green();
   case YAME_ROW_MISSING:  return yame_ui_dim();
   case YAME_ROW_REQUIRED: return yame_ui_red();
+  case YAME_ROW_PARTIAL:  return yame_ui_yellow();
   default:               return "";
   }
 }
@@ -1420,14 +1421,31 @@ static void node_box(const tnode_t *n, const yame_ui_tree_t *spec,
   int uni = yame_ui_unicode();
 
   if (!tn_is_leaf(n)) {
-    /* Unopened: nothing is checked under it yet, whatever it holds. */
-    if (!n->loaded) { snprintf(out, cap, "[ ] "); return; }
+    /**
+     * A folder's marker answers "how much of this do I have", then "how much
+     * of the rest have I asked for" -- in that order, because the first is
+     * true whether or not anyone has touched the row, and the colour beside
+     * it says which of the two the [*] is about.
+     *
+     * Both readings come from the caller's counts, so they hold before the
+     * row has ever been opened.
+     */
+    int all_here  = (n->style == YAME_ROW_HAVE && !spec->have_selectable);
+    int some_here = (n->style == YAME_ROW_PARTIAL);
+
+    if (all_here) { snprintf(out, cap, "%s", uni ? " ✓  " : " ok "); return; }
+    if (!n->loaded) {
+      snprintf(out, cap, "%s", some_here ? "[*] " : "[ ] ");
+      return;
+    }
+
     size_t sel = tn_count_selectable(n, spec);
     size_t chk = tn_count_checked(n);
-    if (!sel)            snprintf(out, cap, "    ");  /* nothing to ask for */
-    else if (!chk)       snprintf(out, cap, "[ ] ");
-    else if (chk >= sel) snprintf(out, cap, "[x] ");
-    else                 snprintf(out, cap, "[*] ");
+    if (!sel)                  snprintf(out, cap, "%s",
+                                        some_here ? "[*] " : "    ");
+    else if (chk >= sel)       snprintf(out, cap, "[x] ");
+    else if (chk || some_here) snprintf(out, cap, "[*] ");
+    else                       snprintf(out, cap, "[ ] ");
     return;
   }
 
@@ -1524,6 +1542,95 @@ static void search_apply(tnode_t *forest, const char *q, tnode_t ***hits,
   if (*hit_i >= *nh) *hit_i = 0;
   tn_reveal((*hits)[*hit_i]);
   *want_cur = (*hits)[*hit_i];
+}
+
+/**
+ * The key cheatsheet, as its own screen.
+ *
+ * The footer used to carry every binding, which made it the longest line on
+ * screen and still incomplete -- it had no room to say what a marker or a
+ * colour meant. One line that says where the rest is beats a wrapped line
+ * that says most of it.
+ */
+/* One cheatsheet line: keys, then what they do, in a fixed column measured
+ * in cells -- "↑ ↓   j k" is nine of them and thirteen bytes. */
+static void help_row(frame_t *f, const char *keys, const char *what) {
+  enum { KEYW = 20 };
+  char pad[KEYW + 1];
+  int n = KEYW - cells_of(keys);
+  if (n < 1) n = 1;
+  memset(pad, ' ', (size_t)n);
+  pad[n] = '\0';
+  frame_line(f, "    %s%s%s", keys, pad, what);
+}
+
+static void draw_help(const yame_ui_tree_t *spec, int picking) {
+  frame_t f = {0};
+  int uni = yame_ui_unicode();
+  const char *dim = yame_ui_dim(), *rst = yame_ui_reset();
+  const char *cyan = yame_ui_cyan(), *bold = yame_ui_bold();
+  char buf[256];
+
+  frame_begin(&f);
+  frame_line(&f, "%s%s%s", bold, spec->title ? spec->title : "keys", rst);
+  frame_line(&f, "");
+
+  frame_line(&f, "  %sMOVING%s", cyan, rst);
+  help_row(&f, uni ? "↑ ↓   j k" : "up down   j k", "move");
+  help_row(&f, uni ? "→   enter   l" : "right   enter   l", "open");
+  help_row(&f, uni ? "←" : "left",
+           "close, or close the parent when already closed");
+  help_row(&f, "PgUp PgDn", "page");
+  help_row(&f, "Home End", "first, last");
+  frame_line(&f, "");
+
+  if (picking) {
+    frame_line(&f, "  %sCHOOSING%s", cyan, rst);
+    help_row(&f, "space   x", "select the row, or everything under a folder");
+    if (spec->recommend)
+      help_row(&f, "r", "the recommended selection for what the cursor is on");
+    for (size_t a = 0; a < spec->n_actions; ++a) {
+      char k[2] = { spec->actions[a].key, '\0' };
+      snprintf(buf, sizeof(buf), "%s what is selected",
+               spec->actions[a].verb ? spec->actions[a].verb : "use");
+      help_row(&f, k, buf);
+    }
+    frame_line(&f, "");
+
+    frame_line(&f, "  %sMARKERS%s", cyan, rst);
+    help_row(&f, "[ ]", "none of it here or chosen");
+    help_row(&f, "[*]", "some of it here, or some of it chosen");
+    help_row(&f, "[x]", "everything still missing is chosen");
+    help_row(&f, uni ? "✓" : "ok", "all of it already in the store");
+    help_row(&f, uni ? "●" : "**", "comes with any fetch, not a choice");
+    snprintf(buf, sizeof(buf), "%sall%s / %ssome%s / %snone%s of it in the store",
+             yame_ui_green(), rst, yame_ui_yellow(), rst, dim, rst);
+    help_row(&f, "colour", buf);
+    frame_line(&f, "");
+  }
+
+  frame_line(&f, "  %sFINDING%s", cyan, rst);
+  help_row(&f, "/", "search everything, opened or not");
+  help_row(&f, "n   N", "next / previous match");
+  frame_line(&f, "");
+
+  frame_line(&f, "  %sOTHER%s", cyan, rst);
+  if (spec->detail && spec->detail_key) {
+    char k[2] = { spec->detail_key, '\0' };
+    snprintf(buf, sizeof(buf), "%s pane",
+             spec->detail_verb ? spec->detail_verb : "info");
+    help_row(&f, k, buf);
+  }
+  help_row(&f, "h   ?", "this list");
+  help_row(&f, "q", "quit");
+  if (spec->hint) {
+    frame_line(&f, "");
+    frame_line(&f, "  %s%s%s", dim, spec->hint, rst);
+  }
+  frame_line(&f, "");
+  frame_line(&f, "%s  any key to go back%s", dim, rst);
+  frame_finish(&f);
+  fflush(stderr);
 }
 
 /* ---- painting one row while an action runs ----
@@ -1968,8 +2075,6 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       size_t nsel = tn_count_checked(&forest);
       char acts[160];
       size_t ao = 0;
-      if (spec->recommend)
-        ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "r recommended  ");
       if (spec->detail && spec->detail_key)
         ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "%c %s  ",
                                spec->detail_key,
@@ -1979,19 +2084,17 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       for (size_t a = 0; a < spec->n_actions && ao + 24 < sizeof(acts); ++a)
         ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "%c %s  ",
                                spec->actions[a].key, spec->actions[a].verb);
-      frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %s open  "
-                     "%s close  space/x select  / search  %s%s%s q quit%s",
+      /* `acts` already ends in two spaces, so nothing is added here. */
+      frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %sh keys  "
+                     "q quit%s",
                  yame_ui_dim(), nflat ? cur + 1 : 0, nflat,
                  yame_ui_bullet(), nsel, yame_ui_bullet(),
-                 yame_ui_unicode() ? "→" : "right",
-                 yame_ui_unicode() ? "←" : "left",
-                 acts, spec->hint ? spec->hint : "", spec->hint ? "  " : "",
-                 yame_ui_reset());
+                 acts, yame_ui_reset());
     } else {
-      frame_line(&f, "%s  row %zu of %zu   %s  %s open  %s close  q quit%s",
+      frame_line(&f, "%s  row %zu of %zu  %s  %s  %s  h keys  q quit%s",
                  yame_ui_dim(), nflat ? cur + 1 : 0, nflat, motion,
-                 yame_ui_unicode() ? "→" : "right",
-                 yame_ui_unicode() ? "←" : "left",
+                 yame_ui_bullet(), yame_ui_unicode() ? "→ ← open close"
+                                                     : "right left open close",
                  yame_ui_reset());
     }
 
@@ -2049,7 +2152,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
 
     int want_open = (key == K_RIGHT || key == K_ENTER ||
                      (key == K_CHAR && ch == 'l'));
-    int want_close = (key == K_LEFT || (key == K_CHAR && ch == 'h'));
+    int want_close = (key == K_LEFT);
 
     /* Opening is lazy: children are asked for the first time a row unfolds. */
     if (want_open && sel) {
@@ -2124,6 +2227,13 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       else if (picking && ch == 'x') { /* handled above, with space */ }
       else if (ch == 'j') { if (cur + 1 < nflat) ++cur; }
       else if (ch == 'k') { if (cur) --cur; }
+      else if (ch == 'h' || ch == '?') {
+        /* Takes 'h' from vim-style close; the left arrow still does that, and
+         * a cheatsheet nobody can find is not one. */
+        draw_help(spec, picking);
+        char c2 = 0;
+        read_key(&c2);
+      }
       else if (ch == '/') {
         /* Load the whole tree first. Searching only what happens to be open
          * would miss the thing being looked for nearly every time -- the
