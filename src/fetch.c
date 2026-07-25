@@ -53,10 +53,11 @@ static int usage(void) {
   fprintf(stderr, "  yame fetch [options] -u <url> -s <sha256> -o <dest>\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Browsing:\n");
-  fprintf(stderr, "  With no target on a terminal, opens a tree browser: arrows move,\n");
-  fprintf(stderr, "  right/left open and close a source, space checks a row, f fetches\n");
-  fprintf(stderr, "  what is checked, q leaves. What is already in the store shows as\n");
-  fprintf(stderr, "  present and cannot be checked.\n");
+  fprintf(stderr, "  With no target on a terminal, opens a tree browser: sources unfold\n");
+  fprintf(stderr, "  into platforms, knowledgebases and files. Arrows move, right/left\n");
+  fprintf(stderr, "  open and close a row, space checks a file (or everything under a\n");
+  fprintf(stderr, "  directory), f fetches what is checked, q leaves. What is already in\n");
+  fprintf(stderr, "  the store shows as present and cannot be checked.\n");
   fprintf(stderr, "  Piped or redirected it prints the plain listing instead, so a script\n");
   fprintf(stderr, "  never blocks on a keystroke.\n");
   fprintf(stderr, "\n");
@@ -129,9 +130,17 @@ static const yame_asset_reg_t *find_asset(const char *source, const char *target
 
 /* ------------------------------------------------------------ the browser
  *
- * The tree widget from src/ui.c. Sources are the top level and their targets
- * unfold underneath; what is already in the store is shown as present and
- * cannot be checked, since there is nothing to ask for.
+ * The tree widget from src/ui.c, over the registry.
+ *
+ * The nesting is the registry's own: a source, the platform or build under it,
+ * the knowledgebase under that, and the files at the bottom. It used to be
+ * flattened to one row per directory -- twenty strings like
+ * "InfiniumAnnotation/EPIC/KYCG", the shared prefix repeated on every line and
+ * nothing to fold away. Unfolding one platform at a time is the difference
+ * between reading a catalogue and searching a wall.
+ *
+ * What is already in the store is shown as present and cannot be checked,
+ * since there is nothing to ask for.
  */
 
 typedef struct {
@@ -142,30 +151,12 @@ typedef struct {
   int    force;
 } browse_t;
 
-/* Is this entry's directory filled, and by our tag? */
-static int asset_state(const char *store_root, const yame_asset_reg_t *a) {
-  char dir[4096];
-  if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0)
-    return YAME_PIN_ABSENT;
-  return yame_assets_pin_check(dir, a->anchor);
-}
-
 static int file_present(const char *store_root, const yame_asset_reg_t *a,
                         const char *name) {
   char dir[4096], path[4096];
   if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0) return 0;
   if (yame_assets_join(path, sizeof(path), dir, name) != 0) return 0;
   return yame_assets_is_file(path);
-}
-
-/* Roots are "<source>/<target>"; this maps one back to its registry row. */
-static const yame_asset_reg_t *asset_by_root(const char *row) {
-  char spec[256];
-  snprintf(spec, sizeof(spec), "%s", row);
-  char *slash = strchr(spec, '/');
-  if (!slash) return NULL;
-  *slash = '\0';
-  return find_asset(spec, slash + 1);
 }
 
 static void human(uint64_t b, char *out, size_t n) {
@@ -177,27 +168,141 @@ static void human(uint64_t b, char *out, size_t n) {
   else snprintf(out, n, "%.1f %s", v, u[i]);
 }
 
-/* The files one directory publishes, each with whether it is already here.
- * Per file rather than per directory because a knowledgebase directory holds
- * dozens of sets and most callers want a few. */
-static void bx_expand(void *ctx, const char *row, yame_ui_kids_t *out) {
+/* ---- the registry, read as a tree ----
+ *
+ * A tree path is <source>[/<target components>], and a registry row's target
+ * already carries its own nesting ("EPIC", "EPIC/KYCG"), so the two line up
+ * without a second structure to keep in step with the generated table. */
+
+/* Does `target` name this directory or one below it? "" is the whole source. */
+static int target_under(const char *target, const char *rest) {
+  if (!*rest) return 1;
+  size_t l = strlen(rest);
+  return strncmp(target, rest, l) == 0 && (target[l] == '\0' || target[l] == '/');
+}
+
+/* The one path component of `target` that sits directly below `rest`, into
+ * `buf`. Returns 0 when target IS rest, which is how a directory that also
+ * holds files is told from the subdirectories beside them. */
+static int next_component(const char *target, const char *rest,
+                          char *buf, size_t n) {
+  if (strcmp(target, rest) == 0) return 0;
+  const char *p = target + (*rest ? strlen(rest) + 1 : 0);
+  if (!*p) return 0;
+  const char *slash = strchr(p, '/');
+  size_t len = slash ? (size_t)(slash - p) : strlen(p);
+  if (len + 1 > n) len = n - 1;
+  memcpy(buf, p, len);
+  buf[len] = '\0';
+  return 1;
+}
+
+/* How many files live at or below one path, and how many are already here.
+ * A folded row says this rather than nothing, so "do I already have EPIC"
+ * does not require opening it. */
+static void subtree_counts(const char *store_root, const char *source,
+                           const char *rest, size_t *total, size_t *have) {
+  *total = 0; *have = 0;
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    if (strcmp(a->source, source) != 0) continue;
+    if (!target_under(a->target, rest)) continue;
+    for (size_t j = 0; j < a->n_files; ++j) {
+      ++*total;
+      if (file_present(store_root, a, a->files[j].name)) ++*have;
+    }
+  }
+}
+
+static unsigned char count_style(size_t total, size_t have) {
+  if (total && have == total) return YAME_ROW_HAVE;
+  if (!have) return YAME_ROW_MISSING;
+  return YAME_ROW_PLAIN;      /* partly here: neither claim is true */
+}
+
+static void counts_note(size_t total, size_t have, char *out, size_t n) {
+  if (!have) snprintf(out, n, "%zu files", total);
+  else if (have == total) snprintf(out, n, "%zu files, all present", total);
+  else snprintf(out, n, "%zu files, %zu present", total, have);
+}
+
+/**
+ * One level of the catalogue: the directories directly below `path`, then the
+ * files of the directory `path` names exactly.
+ *
+ * Files are offered per file rather than per directory because a
+ * knowledgebase holds dozens of sets and most callers want a few.
+ */
+static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   browse_t *b = ctx;
-  const yame_asset_reg_t *a = asset_by_root(row);
-  if (!a || !a->n_files) return;
+
+  char source[128], rest[512];
+  const char *slash = strchr(path, '/');
+  if (slash) {
+    size_t l = (size_t)(slash - path);
+    if (l >= sizeof(source)) return;
+    memcpy(source, path, l);
+    source[l] = '\0';
+    snprintf(rest, sizeof(rest), "%s", slash + 1);
+  } else {
+    snprintf(source, sizeof(source), "%s", path);
+    rest[0] = '\0';
+  }
+
+  enum { CAP = 512 };
+  out->rows   = calloc(CAP, sizeof(char *));
+  out->keys   = calloc(CAP, sizeof(char *));
+  out->styles = calloc(CAP, 1);
+  out->branch = calloc(CAP, 1);
+  if (!out->rows || !out->keys || !out->styles || !out->branch) return;
+
+  /* Subdirectories, each named once however many registry rows mention it. */
+  char seen[64][128];
+  size_t n_seen = 0;
+  for (size_t i = 0; i < YAME_ASSETS_N && out->n < CAP; ++i) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+    if (strcmp(a->source, source) != 0) continue;
+    if (!target_under(a->target, rest)) continue;
+
+    char comp[128];
+    if (!next_component(a->target, rest, comp, sizeof(comp))) continue;
+
+    size_t s = 0;
+    for (; s < n_seen; ++s) if (strcmp(seen[s], comp) == 0) break;
+    if (s < n_seen) continue;
+    if (n_seen < 64) snprintf(seen[n_seen++], sizeof(seen[0]), "%s", comp);
+
+    char sub[512];
+    if (*rest) snprintf(sub, sizeof(sub), "%s/%s", rest, comp);
+    else       snprintf(sub, sizeof(sub), "%s", comp);
+
+    size_t total, have;
+    subtree_counts(b->root, source, sub, &total, &have);
+
+    char note[64], line[256];
+    counts_note(total, have, note, sizeof(note));
+    snprintf(line, sizeof(line), "%-22s %s", comp, note);
+
+    out->rows[out->n]   = strdup(line);
+    out->keys[out->n]   = strdup(comp);
+    out->styles[out->n] = count_style(total, have);
+    out->branch[out->n] = 1;
+    ++out->n;
+  }
+
+  /* Then this directory's own files, if it is one. */
+  const yame_asset_reg_t *a = *rest ? find_asset(source, rest) : NULL;
+  if (!a) return;
 
   size_t idx = (size_t)(a - YAME_ASSETS);
-  out->rows   = calloc(a->n_files, sizeof(char *));
-  out->keys   = calloc(a->n_files, sizeof(char *));
-  out->styles = calloc(a->n_files, 1);
-  if (!out->rows || !out->keys || !out->styles) return;
-
-  for (size_t i = 0; i < a->n_files; ++i) {
-    const yame_asset_file_t *f = &a->files[i];
-    int have = file_present(b->root, a, f->name);
+  for (size_t i = 0; i < a->n_files && out->n < CAP; ++i) {
+    const yame_asset_file_t *fl = &a->files[i];
+    int have = file_present(b->root, a, fl->name);
     char sz[24], line[288], key[224];
-    human(f->size, sz, sizeof(sz));
-    snprintf(line, sizeof(line), "%-44s %10s", f->name, sz);
-    snprintf(key, sizeof(key), "%zu|%s", idx, f->name);
+    human(fl->size, sz, sizeof(sz));
+    if (sz[0]) snprintf(line, sizeof(line), "%-40s %9s", fl->name, sz);
+    else       snprintf(line, sizeof(line), "%s", fl->name);
+    snprintf(key, sizeof(key), "%zu|%s", idx, fl->name);
 
     out->rows[out->n]   = strdup(line);
     out->keys[out->n]   = strdup(key);
@@ -206,9 +311,9 @@ static void bx_expand(void *ctx, const char *row, yame_ui_kids_t *out) {
   }
 }
 
-static void bx_accept(void *ctx, const char *root, const char *key) {
+static void bx_accept(void *ctx, const char *path, const char *key) {
   browse_t *b = ctx;
-  (void)root;
+  (void)path;
   if (!key || b->n_sel >= sizeof(b->sel_asset)/sizeof(b->sel_asset[0])) return;
 
   char *bar = strchr(key, '|');
@@ -230,6 +335,10 @@ static void bx_commit(void *ctx) {
 
   for (size_t i = 0; i < b->n_sel; ++i) {
     size_t idx = b->sel_asset[i];
+    /* Already fetched as part of an earlier entry's group. Not a failure --
+     * counting it as one is what made three successful files report "3
+     * fetched, 2 failed". */
+    if (idx == (size_t)-1) continue;
     if (idx >= YAME_ASSETS_N) { ++bad; continue; }
 
     /* Collect every file picked from this same directory, then mark them
@@ -276,12 +385,12 @@ static void bx_commit(void *ctx) {
   b->n_sel = 0;
 }
 
-/* The catalogue as a browsable tree: directories at the top level, the files
- * each one publishes underneath. Returns 0 when it ran, -1 when the terminal
- * cannot host it and the caller should fall back to the flat list. */
+/* The catalogue as a browsable tree: one row per upstream source, unfolding
+ * into platforms, knowledgebases and files. Returns 0 when it ran, -1 when the
+ * terminal cannot host it and the caller should fall back to the flat list. */
 static int browse_catalog(const char *dopt, int force) {
-  static char *roots[64];
-  static unsigned char styles[64];
+  static char *roots[32];
+  static unsigned char styles[32];
   size_t n_roots = 0;
   static browse_t b;
 
@@ -289,15 +398,33 @@ static int browse_catalog(const char *dopt, int force) {
   b.force = force;
   yame_assets_root(dopt, NULL, b.root, sizeof(b.root));
 
-  for (size_t i = 0; i < YAME_ASSETS_N && n_roots < 64; ++i) {
+  /* One root per source, in registry order, each named once. */
+  for (size_t i = 0; i < YAME_ASSETS_N && n_roots < 32; ++i) {
     const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    char line[256];
-    snprintf(line, sizeof(line), "%s/%s", a->source, a->target);
+
+    size_t s = 0;
+    for (; s < n_roots; ++s)
+      if (strncmp(roots[s], a->source, strlen(a->source)) == 0 &&
+          roots[s][strlen(a->source)] == '\t') break;
+    if (s < n_roots) continue;
+
+    size_t total, have;
+    subtree_counts(b.root, a->source, "", &total, &have);
+
+    /* The tag belongs on this row only while the whole source is pinned at
+     * one: naming the first row's tag for a source pinned at several would be
+     * a claim about directories it does not describe. */
+    const char *tag = a->tag;
+    for (size_t j = 0; j < YAME_ASSETS_N; ++j)
+      if (strcmp(YAME_ASSETS[j].source, a->source) == 0 &&
+          strcmp(YAME_ASSETS[j].tag, a->tag) != 0) { tag = "mixed"; break; }
+
+    char note[64], line[256];
+    counts_note(total, have, note, sizeof(note));
+    snprintf(line, sizeof(line), "%s\t%s\t%s", a->source, tag, note);
+
     roots[n_roots] = strdup(line);
-    /* A directory already filled at our tag is shown as present; its files
-     * still expand, so a missing one inside it can still be picked. */
-    styles[n_roots] = (unsigned char)(asset_state(b.root, a) == YAME_PIN_MATCH
-                                      ? YAME_ROW_HAVE : YAME_ROW_PLAIN);
+    styles[n_roots] = count_style(total, have);
     ++n_roots;
   }
 
@@ -307,6 +434,7 @@ static int browse_catalog(const char *dopt, int force) {
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
   spec.title       = title;
+  spec.header      = "SOURCE\tTAG\tCONTENTS";
   spec.roots       = roots;
   spec.root_styles = styles;
   spec.n_roots     = n_roots;

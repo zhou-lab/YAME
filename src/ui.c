@@ -1185,18 +1185,34 @@ int yame_ui_browse(const char *title, const char *header,
 
 /* ------------------------------------------------------------- the tree */
 
-typedef struct {
-  yame_ui_kids_t kids;
-  unsigned char *checked;   /* one per child, when the tree is a picker */
-  int expanded;
-  int loaded;
-} treenode_t;
-
-/* One line of the flattened view: a root, or a child of one. */
-typedef struct {
-  size_t root;
-  long   child;      /* -1 for the root row itself */
-} flatrow_t;
+/**
+ * A node that owns nodes.
+ *
+ * This was two levels by construction -- an array of roots, each holding one
+ * flat list of children -- which put a ceiling on what a catalogue could say.
+ * A source, its platforms, and each platform's knowledgebase are three levels
+ * of nesting, and they had to be flattened into one row per directory:
+ * twenty strings like "InfiniumAnnotation/EPIC/KYCG" in a wall, with the
+ * shared prefix repeated on every line and nothing to fold away. Nesting is
+ * what makes a catalogue navigable rather than merely listed.
+ *
+ * Children arrive from expand() one level at a time and are kept, so opening
+ * a row twice costs one call.
+ */
+typedef struct tnode_s {
+  char *row;              /* display text, owned */
+  char *key;              /* the caller's opaque key, owned; NULL at a root */
+  char *path;             /* '/'-joined keys from the root down, owned */
+  unsigned char style;
+  int    checked;         /* only ever set on a leaf */
+  int    expanded;
+  int    loaded;          /* expand() has been asked already */
+  int    branch;          /* holds children -- a claim until loaded, then fact */
+  int    depth;           /* roots are 0; the unrendered forest head is -1 */
+  struct tnode_s  *parent;
+  struct tnode_s **kids;
+  size_t n_kids;
+} tnode_t;
 
 /** Index of the action bound to `ch`, or -1. */
 static int find_action(const yame_ui_tree_t *spec, char ch) {
@@ -1205,13 +1221,296 @@ static int find_action(const yame_ui_tree_t *spec, char ch) {
   return -1;
 }
 
+/* Same as style_color, for a node carrying its own style rather than sitting
+ * in an array of them. */
+static const char *style_color1(unsigned char s) { return style_color(&s, 0); }
+
+static int tn_is_last(const tnode_t *n) {
+  const tnode_t *p = n->parent;
+  return p && p->n_kids && p->kids[p->n_kids - 1] == n;
+}
+
+/* Before loading, the caller's claim; after, what it turned out to be. */
+static int tn_is_leaf(const tnode_t *n) {
+  return n->loaded ? (n->n_kids == 0) : !n->branch;
+}
+
+static char *tn_join(const char *parent_path, const char *key) {
+  if (!key) key = "";
+  if (!parent_path || !*parent_path) return strdup(key);
+  size_t n = strlen(parent_path) + strlen(key) + 2;
+  char *p = malloc(n);
+  if (p) snprintf(p, n, "%s/%s", parent_path, key);
+  return p;
+}
+
+/* A root's path segment is its first tab-separated field: the rest of the row
+ * is presentation, and a path has to be something the caller can parse back. */
+static char *tn_root_path(const char *row) {
+  const char *tab = strchr(row, '\t');
+  size_t len = tab ? (size_t)(tab - row) : strlen(row);
+  char *p = malloc(len + 1);
+  if (p) { memcpy(p, row, len); p[len] = '\0'; }
+  return p;
+}
+
+static void tn_free_kids(tnode_t *n) {
+  for (size_t i = 0; i < n->n_kids; ++i) {
+    tn_free_kids(n->kids[i]);
+    free(n->kids[i]->row);
+    free(n->kids[i]->key);
+    free(n->kids[i]->path);
+    free(n->kids[i]);
+  }
+  free(n->kids);
+  n->kids = NULL;
+  n->n_kids = 0;
+  n->loaded = 0;
+}
+
+/**
+ * Ask the caller for one node's children.
+ *
+ * The strings in yame_ui_kids_t are taken over rather than copied -- the
+ * widget frees them, which is the contract the expand callback is already
+ * written against.
+ */
+static void tn_load(tnode_t *n, const yame_ui_tree_t *spec) {
+  if (n->loaded) return;
+  n->loaded = 1;
+  if (!spec->expand) { n->branch = 0; return; }
+
+  yame_ui_kids_t k = {0};
+  spec->expand(spec->ctx, n->path, &k);
+
+  size_t taken = 0;
+  if (k.n && (n->kids = calloc(k.n, sizeof(tnode_t *))) != NULL) {
+    for (; taken < k.n; ++taken) {
+      tnode_t *c = calloc(1, sizeof(tnode_t));
+      if (!c) break;
+      c->row    = k.rows ? k.rows[taken] : NULL;
+      c->key    = k.keys ? k.keys[taken] : NULL;
+      c->style  = k.styles ? k.styles[taken] : (unsigned char)YAME_ROW_PLAIN;
+      c->branch = (k.branch && k.branch[taken]) ? 1 : 0;
+      c->depth  = n->depth + 1;
+      c->parent = n;
+      c->path   = tn_join(n->path, c->key ? c->key : c->row);
+      if (!c->row) c->row = strdup("");
+      n->kids[n->n_kids++] = c;
+    }
+  }
+  /* Whatever could not be taken over is still ours to release. */
+  for (size_t j = taken; j < k.n; ++j) {
+    if (k.rows) free(k.rows[j]);
+    if (k.keys) free(k.keys[j]);
+  }
+  free(k.rows); free(k.keys); free(k.styles); free(k.branch);
+  n->branch = (n->n_kids > 0);
+}
+
+static void tn_load_deep(tnode_t *n, const yame_ui_tree_t *spec) {
+  tn_load(n, spec);
+  for (size_t i = 0; i < n->n_kids; ++i) tn_load_deep(n->kids[i], spec);
+}
+
+/* Present or mandatory: either way there is nothing to ask for, so it is not
+ * offered as a choice. */
+static int tn_locked(const tnode_t *n, const yame_ui_tree_t *spec) {
+  if (n->style == YAME_ROW_REQUIRED) return 1;
+  if (!spec->have_selectable && n->style == YAME_ROW_HAVE) return 1;
+  return 0;
+}
+
+/* Only leaves are checkable. Checking a branch means checking everything
+ * under it, which keeps the accept walk a matter of collecting leaves and
+ * spares every caller a rule about what a half-selected directory means. */
+static int tn_selectable(const tnode_t *n, const yame_ui_tree_t *spec) {
+  return tn_is_leaf(n) && n->key && !tn_locked(n, spec);
+}
+
+static size_t tn_count_checked(const tnode_t *n) {
+  size_t c = n->checked ? 1 : 0;
+  for (size_t i = 0; i < n->n_kids; ++i) c += tn_count_checked(n->kids[i]);
+  return c;
+}
+
+static void tn_set_checked(tnode_t *n, const yame_ui_tree_t *spec, int val) {
+  if (tn_selectable(n, spec)) n->checked = val;
+  for (size_t i = 0; i < n->n_kids; ++i) tn_set_checked(n->kids[i], spec, val);
+}
+
+static void tn_apply_pred(tnode_t *n, const yame_ui_tree_t *spec,
+                          yame_ui_preselect_fn pred) {
+  /* Normalize to 0/1: checked is a flag, and a predicate returning, say, 256
+   * to mean yes would truncate to 0. */
+  if (tn_selectable(n, spec))
+    n->checked = pred(spec->ctx, n->path, n->key) ? 1 : 0;
+  for (size_t i = 0; i < n->n_kids; ++i) tn_apply_pred(n->kids[i], spec, pred);
+}
+
+static void tn_accept_walk(tnode_t *n, const yame_ui_action_t *act, void *ctx) {
+  if (n->checked && n->key && act->accept) act->accept(ctx, n->path, n->key);
+  for (size_t i = 0; i < n->n_kids; ++i) tn_accept_walk(n->kids[i], act, ctx);
+}
+
+/* Open every ancestor of a checked leaf, so a preselection is visible rather
+ * than merely counted in the footer. Returns 1 when the subtree holds one. */
+static int tn_open_to_checked(tnode_t *n) {
+  int any = n->checked ? 1 : 0;
+  for (size_t i = 0; i < n->n_kids; ++i)
+    if (tn_open_to_checked(n->kids[i])) any = 1;
+  if (any && n->n_kids && n->depth >= 0) n->expanded = 1;
+  return any;
+}
+
+/**
+ * The indent for one node: a stem for itself, and for each ancestor a rule
+ * when that ancestor still has siblings to come.
+ *
+ * Without the rules a three-level tree reads as a stack of indented lines
+ * with no way to tell what belongs to what -- which is most of the value of
+ * nesting the catalogue in the first place. Every segment is four cells, so
+ * the width a caller has left for text is 4 * depth.
+ */
+static void tn_prefix(const tnode_t *n, char *out, size_t cap) {
+  const tnode_t *chain[24];
+  size_t d = 0;
+  for (const tnode_t *p = n; p && p->depth >= 1 && d < 24; p = p->parent)
+    chain[d++] = p;
+
+  int uni = yame_ui_unicode();
+  size_t o = 0;
+  out[0] = '\0';
+  /* chain[d-1] is the shallowest ancestor; chain[0] is the node itself. */
+  for (size_t i = d; i-- > 0; ) {
+    const char *seg;
+    if (i == 0)
+      seg = tn_is_last(chain[i]) ? (uni ? "└── " : "`-- ")
+                                 : (uni ? "├── " : "|-- ");
+    else
+      seg = tn_is_last(chain[i]) ? "    " : (uni ? "│   " : "|   ");
+    size_t l = strlen(seg);
+    if (o + l + 1 >= cap) break;
+    memcpy(out + o, seg, l);
+    o += l;
+    out[o] = '\0';
+  }
+}
+
+/* ---- the flattened view ---- */
+
+static int flat_push(tnode_t ***arr, size_t *n, size_t *cap, tnode_t *t) {
+  if (*n == *cap) {
+    size_t nc = *cap ? *cap * 2 : 64;
+    tnode_t **na = realloc(*arr, nc * sizeof(tnode_t *));
+    if (!na) return -1;
+    *arr = na;
+    *cap = nc;
+  }
+  (*arr)[(*n)++] = t;
+  return 0;
+}
+
+/* Every node whose ancestors are all open, in reading order. The forest head
+ * is structure, not a row, so it is walked through and never listed. */
+static int tn_flatten(tnode_t *n, tnode_t ***arr, size_t *cnt, size_t *cap) {
+  if (n->depth >= 0) {
+    if (flat_push(arr, cnt, cap, n) != 0) return -1;
+    if (!n->expanded) return 0;
+  }
+  for (size_t i = 0; i < n->n_kids; ++i)
+    if (tn_flatten(n->kids[i], arr, cnt, cap) != 0) return -1;
+  return 0;
+}
+
+/* ---- reloading ---- */
+
+static void tn_collect_open(const tnode_t *n, char ***paths, size_t *np,
+                            size_t *cap) {
+  if (n->depth >= 0 && n->expanded && n->path) {
+    if (*np == *cap) {
+      size_t nc = *cap ? *cap * 2 : 16;
+      char **na = realloc(*paths, nc * sizeof(char *));
+      if (!na) return;
+      *paths = na;
+      *cap = nc;
+    }
+    char *dup = strdup(n->path);
+    if (dup) (*paths)[(*np)++] = dup;
+  }
+  for (size_t i = 0; i < n->n_kids; ++i)
+    tn_collect_open(n->kids[i], paths, np, cap);
+}
+
+/* Walk each saved path down from the forest, expanding as it goes. A node can
+ * only have been open while its ancestors were, so re-opening along the path
+ * restores exactly the set that was saved. */
+static void tn_reopen(tnode_t *forest, const yame_ui_tree_t *spec,
+                      char *const *paths, size_t np) {
+  for (size_t i = 0; i < np; ++i) {
+    tnode_t *n = forest;
+    for (;;) {
+      tn_load(n, spec);
+      tnode_t *next = NULL;
+      for (size_t j = 0; j < n->n_kids; ++j) {
+        const char *cp = n->kids[j]->path;
+        size_t l = cp ? strlen(cp) : 0;
+        if (l && strncmp(paths[i], cp, l) == 0 &&
+            (paths[i][l] == '\0' || paths[i][l] == '/')) {
+          next = n->kids[j];
+          break;
+        }
+      }
+      if (!next) break;
+      tn_load(next, spec);
+      if (next->n_kids) next->expanded = 1;
+      if (strcmp(next->path, paths[i]) == 0) break;
+      n = next;
+    }
+  }
+}
+
+/**
+ * Throw away everything the tree holds and ask for it again, keeping the
+ * folds.
+ *
+ * After an action runs, every loaded row describes the store as it was
+ * beforehand. Losing your place while re-reading it is the one thing a
+ * stay-open commit was meant to avoid, so the fold state survives even though
+ * the nodes do not.
+ */
+static void tn_refresh(tnode_t *forest, const yame_ui_tree_t *spec,
+                       char **roots, const unsigned char *root_styles,
+                       size_t n_roots, int keep_folds) {
+  char **open = NULL;
+  size_t nopen = 0, cap = 0;
+  if (keep_folds) tn_collect_open(forest, &open, &nopen, &cap);
+
+  for (size_t i = 0; i < forest->n_kids && i < n_roots; ++i) {
+    tnode_t *r = forest->kids[i];
+    tn_free_kids(r);
+    r->expanded = 0;
+    r->checked = 0;
+    r->branch = spec->expand ? 1 : 0;
+    /* A commit may rewrite a root in place to show what it just did. */
+    free(r->row);
+    free(r->path);
+    r->row = strdup(roots[i]);
+    r->path = tn_root_path(roots[i]);
+    r->style = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
+  }
+
+  tn_reopen(forest, spec, open, nopen);
+  for (size_t i = 0; i < nopen; ++i) free(open[i]);
+  free(open);
+}
+
 int yame_ui_tree(const yame_ui_tree_t *spec) {
   const char *title = spec->title;
   const char *header = spec->header;
   char **roots = spec->roots;
   const unsigned char *root_styles = spec->root_styles;
   size_t n_roots = spec->n_roots;
-  yame_ui_expand_fn expand = spec->expand;
   yame_ui_key_fn on_key = spec->on_key;
   void *ctx = spec->ctx;
 
@@ -1226,7 +1525,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   int detail_open = (spec->detail != NULL);
   yame_ui_detail_t det = {0};
 
-  /* Column widths over the root rows only; children arrive preformatted. */
+  /* Column widths over the root rows only; deeper rows arrive preformatted. */
   enum { MAXCOL = 8 };
   int w[MAXCOL] = {0};
   int ncol = 0;
@@ -1250,67 +1549,60 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   }
   for (int c = 0; c < ncol; ++c) { if (w[c] > 34) w[c] = 34; w[c] += 2; }
 
-  treenode_t *node = calloc(n_roots, sizeof(treenode_t));
-  flatrow_t *flat = NULL;
-  size_t flat_m = 0;
-  if (!node) { raw_leave(); return -1; }
+  /* An unrendered head above the roots, so every walk below is one recursion
+   * rather than a loop over roots wrapping a recursion. */
+  tnode_t forest;
+  memset(&forest, 0, sizeof(forest));
+  forest.depth = -1;
+  forest.loaded = 1;
+  forest.expanded = 1;
+  forest.kids = calloc(n_roots, sizeof(tnode_t *));
+  if (!forest.kids) { raw_leave(); return -1; }
+
+  for (size_t i = 0; i < n_roots; ++i) {
+    tnode_t *r = calloc(1, sizeof(tnode_t));
+    if (!r) break;
+    r->row    = strdup(roots[i]);
+    r->path   = tn_root_path(roots[i]);
+    r->style  = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
+    r->branch = spec->expand ? 1 : 0;
+    r->parent = &forest;
+    forest.kids[forest.n_kids++] = r;
+  }
 
   size_t cur = 0, top = 0;
   frame_t f = {0};
+  tnode_t **flat = NULL;
+  size_t flat_cap = 0;
+  tnode_t *want_cur = NULL;      /* land here once the view is flattened */
 
   /* A named target arrives open and chosen: the user sees exactly what will
    * happen and presses f, or unpicks first. That is the same screen the
    * catalogue uses, rather than a second confirmation flow beside it. */
   if (spec->open_root) {
-    for (size_t i = 0; i < n_roots; ++i) {
-      const char *tab = strchr(roots[i], '\t');
-      size_t len = tab ? (size_t)(tab - roots[i]) : strlen(roots[i]);
-      if (strlen(spec->open_root) != len ||
-          strncmp(roots[i], spec->open_root, len) != 0) continue;
-
-      if (expand) expand(ctx, roots[i], &node[i].kids);
-      if (picking && node[i].kids.n) node[i].checked = calloc(node[i].kids.n, 1);
-      node[i].loaded = 1;
-      node[i].expanded = node[i].kids.n ? 1 : 0;
-
-      if (picking && spec->preselect && node[i].checked && node[i].kids.keys) {
-        for (size_t j = 0; j < node[i].kids.n; ++j) {
-          int req = node[i].kids.styles &&
-                    (node[i].kids.styles[j] == YAME_ROW_HAVE ||
-                     node[i].kids.styles[j] == YAME_ROW_REQUIRED);
-          if (!req && node[i].kids.keys[j] &&
-              spec->preselect(ctx, roots[i], node[i].kids.keys[j]))
-            node[i].checked[j] = 1;
-        }
+    for (size_t i = 0; i < forest.n_kids; ++i) {
+      tnode_t *r = forest.kids[i];
+      if (!r->path || strcmp(r->path, spec->open_root) != 0) continue;
+      tn_load_deep(r, spec);
+      if (r->n_kids) r->expanded = 1;
+      if (picking && spec->preselect) {
+        tn_apply_pred(r, spec, spec->preselect);
+        tn_open_to_checked(r);
       }
-      /* Land on the row that was named, not on the top of the list. */
-      for (size_t k = 0; k < i; ++k)
-        cur += 1 + (node[k].expanded ? node[k].kids.n : 0);
+      want_cur = r;
       break;
     }
   }
 
   for (;;) {
-    /* Flatten: every root, plus the children of the open ones. */
     size_t nflat = 0;
-    for (size_t i = 0; i < n_roots; ++i)
-      nflat += 1 + (node[i].expanded ? node[i].kids.n : 0);
+    if (tn_flatten(&forest, &flat, &nflat, &flat_cap) != 0) break;
 
-    if (nflat > flat_m) {
-      flatrow_t *nf = realloc(flat, nflat * sizeof(flatrow_t));
-      if (!nf) break;
-      flat = nf; flat_m = nflat;
+    if (want_cur) {
+      for (size_t i = 0; i < nflat; ++i)
+        if (flat[i] == want_cur) { cur = i; break; }
+      want_cur = NULL;
     }
-
-    size_t k = 0;
-    for (size_t i = 0; i < n_roots; ++i) {
-      flat[k].root = i; flat[k].child = -1; ++k;
-      if (!node[i].expanded) continue;
-      for (size_t j = 0; j < node[i].kids.n; ++j) {
-        flat[k].root = i; flat[k].child = (long)j; ++k;
-      }
-    }
-
     if (cur >= nflat) cur = nflat ? nflat - 1 : 0;
 
     /* Rebuild the detail pane before laying out, so its height is known and
@@ -1324,12 +1616,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     int avail = rowsz - 4;
 
     if (detail_open && spec->detail && nflat) {
-      size_t dri = flat[cur].root;
-      long dci = flat[cur].child;
-      spec->detail(ctx, roots[dri],
-                   (dci >= 0 && node[dri].kids.keys)
-                     ? node[dri].kids.keys[dci] : NULL,
-                   cols - 2, &det);
+      tnode_t *dn = flat[cur];
+      spec->detail(ctx, dn->path, dn->key, cols - 2, &det);
       /* Never let the pane crowd the list below a few rows: seeing which row
        * the text describes is what makes it useful at all. */
       int cap = rowsz / 2;
@@ -1386,18 +1674,19 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       size_t fi = top + (size_t)r;
       if (fi >= nflat) { frame_line(&f, ""); continue; }
 
-      const flatrow_t *fr = &flat[fi];
+      tnode_t *nd = flat[fi];
       int is_cur = (fi == cur);
       const char *arrow = is_cur ? (yame_ui_unicode() ? "❯" : ">") : " ";
+      const char *fold = tn_is_leaf(nd)
+                           ? " "
+                           : (nd->expanded ? (yame_ui_unicode() ? "▾" : "-")
+                                           : (yame_ui_unicode() ? "▸" : "+"));
 
-      if (fr->child < 0) {
+      if (nd->depth == 0) {
         /* A root: fold marker, then aligned columns. */
-        treenode_t *nd = &node[fr->root];
-        const char *fold = nd->expanded ? (yame_ui_unicode() ? "▾" : "-")
-                                        : (yame_ui_unicode() ? "▸" : "+");
         char buf[1024]; size_t o = 0;
         int c = 0;
-        for (const char *p = roots[fr->root]; c < ncol && o + 40 < sizeof(buf); ++c) {
+        for (const char *p = nd->row; c < ncol && o + 40 < sizeof(buf); ++c) {
           const char *tab = strchr(p, '\t');
           int len = (int)(tab ? (size_t)(tab - p) : strlen(p));
           if (len > w[c] - 2) len = w[c] - 2;
@@ -1412,39 +1701,48 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
                    yame_ui_cyan(), arrow, yame_ui_reset(),
                    yame_ui_cyan(), fold, yame_ui_reset(),
                    is_cur ? yame_ui_bold() : "",
-                   style_color(root_styles, fr->root), cut, yame_ui_reset());
+                   style_color1(nd->style), cut, yame_ui_reset());
       } else {
-        /* A child: preformatted, indented under its parent. */
-        const treenode_t *nd = &node[fr->root];
-        int last = ((size_t)fr->child + 1 == nd->kids.n);
-        const char *stem = yame_ui_unicode() ? (last ? "└" : "├") : "|";
-        char cut[1024];
-        fit(nd->kids.rows[fr->child], cols - 14, cut, sizeof(cut));
+        /* Deeper: preformatted text behind the stems of its ancestry. */
+        char pre[256];
+        tn_prefix(nd, pre, sizeof(pre));
 
-        /* Neither a row already present nor a required one needs a checkbox:
-         * in both cases there is nothing to ask for, so each shows what it is
-         * instead of pretending to be a choice. */
-        int have = nd->kids.styles && !spec->have_selectable &&
-                   nd->kids.styles[fr->child] == YAME_ROW_HAVE;
-        int required = nd->kids.styles &&
-                       nd->kids.styles[fr->child] == YAME_ROW_REQUIRED;
         /* Every marker is four cells wide so the text after it lines up, and
-         * the check sits where the x would be in "[x]". */
-        const char *box = "";
+         * a check sits where the x would be in "[x]". A closed branch reports
+         * how much is selected out of sight beneath it -- otherwise folding
+         * one away silently hides part of what f is about to fetch. */
+        char box[8] = "";
         if (picking) {
-          if (required)  box = yame_ui_unicode() ? " ●  " : " ** ";
-          else if (have) box = yame_ui_unicode() ? " ✓  " : " ok ";
-          else if (nd->kids.keys && nd->checked)
-            box = nd->checked[fr->child] ? "[x] " : "[ ] ";
-          else box = "    ";
+          if (!tn_is_leaf(nd)) {
+            size_t nk = tn_count_checked(nd);
+            if (!nk)          snprintf(box, sizeof(box), "    ");
+            else if (nk < 10) snprintf(box, sizeof(box), "[%zu] ", nk);
+            else              snprintf(box, sizeof(box), "[+] ");
+          } else if (nd->style == YAME_ROW_REQUIRED) {
+            snprintf(box, sizeof(box), "%s",
+                     yame_ui_unicode() ? " ●  " : " ** ");
+          } else if (!spec->have_selectable && nd->style == YAME_ROW_HAVE) {
+            snprintf(box, sizeof(box), "%s",
+                     yame_ui_unicode() ? " ✓  " : " ok ");
+          } else if (nd->key) {
+            snprintf(box, sizeof(box), "%s", nd->checked ? "[x] " : "[ ] ");
+          } else {
+            snprintf(box, sizeof(box), "    ");
+          }
         }
 
-        frame_line(&f, "%s%s%s  %s%s%s %s%s%s%s%s",
+        int lead = 4 + 4 * nd->depth + (picking ? 4 : 0);
+        int room = cols - lead - 4;
+        if (room < 16) room = 16;
+        char cut[1024];
+        fit(nd->row, room, cut, sizeof(cut));
+
+        frame_line(&f, "%s%s%s %s%s%s%s%s%s %s%s%s%s%s",
                    yame_ui_cyan(), arrow, yame_ui_reset(),
-                   yame_ui_dim(), stem, yame_ui_reset(),
+                   yame_ui_dim(), pre, yame_ui_reset(),
+                   yame_ui_cyan(), fold, yame_ui_reset(),
                    is_cur ? yame_ui_bold() : "",
-                   style_color(nd->kids.styles, (size_t)fr->child),
-                   box, cut, yame_ui_reset());
+                   style_color1(nd->style), box, cut, yame_ui_reset());
       }
     }
 
@@ -1464,10 +1762,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     }
 
     if (picking) {
-      size_t nsel = 0;
-      for (size_t i = 0; i < n_roots; ++i)
-        for (size_t j = 0; j < node[i].kids.n; ++j)
-          if (node[i].checked && node[i].checked[j]) ++nsel;
+      size_t nsel = tn_count_checked(&forest);
       char acts[160];
       size_t ao = 0;
       if (spec->recommend)
@@ -1504,83 +1799,47 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     keycode_t key = read_key(&ch);
     if (interrupted) break;
 
-    /* Opening is lazy: children are asked for the first time a row unfolds. */
-    size_t ri = nflat ? flat[cur].root : 0;
-    long   ci = nflat ? flat[cur].child : -1;
+    tnode_t *sel = nflat ? flat[cur] : NULL;
 
     int want_open = (key == K_RIGHT || key == K_ENTER ||
                      (key == K_CHAR && ch == 'l'));
     int want_close = (key == K_LEFT || (key == K_CHAR && ch == 'h'));
 
-    if (want_open && nflat && ci < 0) {
-      treenode_t *nd = &node[ri];
-      if (!nd->loaded) {
-        if (expand) expand(ctx, roots[ri], &nd->kids);
-        if (picking && nd->kids.n) nd->checked = calloc(nd->kids.n, 1);
-        nd->loaded = 1;
-      }
-      nd->expanded = nd->kids.n ? 1 : 0;
-    } else if (want_close && nflat) {
-      if (ci >= 0) {
-        /* Closing from inside jumps back to the parent, the way a file tree
-         * behaves -- otherwise the cursor lands on whatever replaced it. */
-        node[ri].expanded = 0;
-        size_t back = 0;
-        for (size_t i = 0; i < n_roots; ++i) {
-          if (i == ri) break;
-          back += 1 + (node[i].expanded ? node[i].kids.n : 0);
-        }
-        cur = back;
-      } else {
-        node[ri].expanded = 0;
+    /* Opening is lazy: children are asked for the first time a row unfolds. */
+    if (want_open && sel) {
+      tn_load(sel, spec);
+      if (sel->n_kids) sel->expanded = 1;
+    } else if (want_close && sel) {
+      if (sel->expanded) {
+        sel->expanded = 0;
+      } else if (sel->parent && sel->parent->depth >= 0) {
+        /* Closing from inside folds the parent and jumps to it, the way a
+         * file tree behaves -- otherwise the cursor lands on whatever row
+         * replaced it. */
+        sel->parent->expanded = 0;
+        want_cur = sel->parent;
       }
     }
-    else if (picking && key == K_SPACE && nflat) {
-      treenode_t *nd = &node[ri];
-      if (ci >= 0) {
-        int have = nd->kids.styles &&
-                   ((!spec->have_selectable &&
-                     nd->kids.styles[ci] == YAME_ROW_HAVE) ||
-                    nd->kids.styles[ci] == YAME_ROW_REQUIRED);
-        if (nd->checked && nd->kids.keys && !have)
-          nd->checked[ci] = !nd->checked[ci];
+    else if (picking && key == K_SPACE && sel) {
+      if (tn_is_leaf(sel)) {
+        if (tn_selectable(sel, spec)) sel->checked = !sel->checked;
         if (cur + 1 < nflat) ++cur;
       } else {
-        /* Space on a parent takes everything under it that is not already
-         * present, opening it first so the effect is visible. */
-        if (!nd->loaded) {
-          if (expand) expand(ctx, roots[ri], &nd->kids);
-          if (nd->kids.n) nd->checked = calloc(nd->kids.n, 1);
-          nd->loaded = 1;
-        }
-        if (nd->kids.n) nd->expanded = 1;
-        int any = 0;
-        for (size_t j = 0; j < nd->kids.n; ++j)
-          if (nd->checked && nd->checked[j]) any = 1;
-        for (size_t j = 0; j < nd->kids.n; ++j) {
-          int have = nd->kids.styles &&
-                     ((!spec->have_selectable &&
-                       nd->kids.styles[j] == YAME_ROW_HAVE) ||
-                      nd->kids.styles[j] == YAME_ROW_REQUIRED);
-          if (nd->checked && nd->kids.keys && !have) nd->checked[j] = !any;
-        }
+        /* Space on a branch takes everything under it that is not already
+         * present, at whatever depth, opening it so the effect is visible. */
+        tn_load_deep(sel, spec);
+        if (sel->n_kids) sel->expanded = 1;
+        tn_set_checked(sel, spec, tn_count_checked(sel) ? 0 : 1);
       }
     }
     else if (picking && key == K_CHAR && find_action(spec, ch) >= 0) {
-      const yame_ui_action_t *act = &spec->actions[find_action(spec, ch)];
-      size_t nsel = 0;
-      for (size_t i = 0; i < n_roots; ++i)
-        for (size_t j = 0; j < node[i].kids.n; ++j)
-          if (node[i].checked && node[i].checked[j]) ++nsel;
-      if (nsel) {
-        for (size_t i = 0; i < n_roots; ++i)
-          for (size_t j = 0; j < node[i].kids.n; ++j)
-            if (node[i].checked && node[i].checked[j] && node[i].kids.keys &&
-                act->accept)
-              act->accept(ctx, roots[i], node[i].kids.keys[j]);
+      int ai = find_action(spec, ch);
+      const yame_ui_action_t *act = &spec->actions[ai];
+      if (tn_count_checked(&forest)) {
+        tn_accept_walk(&forest, act, ctx);
 
         if (!act->commit) {    /* caller wants the selection, not the work */
-          accepted = find_action(spec, ch) + 1;
+          accepted = ai + 1;
           break;
         }
 
@@ -1590,30 +1849,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
          * have already read. */
         act->commit(ctx);
         yame_ui_panel_close();
-
-        /* What was fetched is now present, so every loaded expansion is
-         * stale. Reload the open ones in place, keeping folds and cursor. */
-        for (size_t i = 0; i < n_roots; ++i) {
-          if (!node[i].loaded) continue;
-          for (size_t j = 0; j < node[i].kids.n; ++j) {
-            free(node[i].kids.rows[j]);
-            if (node[i].kids.keys) free(node[i].kids.keys[j]);
-          }
-          free(node[i].kids.rows);
-          free(node[i].kids.keys);
-          free(node[i].kids.styles);
-          free(node[i].checked);
-          memset(&node[i].kids, 0, sizeof(node[i].kids));
-          node[i].checked = NULL;
-          node[i].loaded = 0;
-
-          if (node[i].expanded && expand) {
-            expand(ctx, roots[i], &node[i].kids);
-            if (node[i].kids.n) node[i].checked = calloc(node[i].kids.n, 1);
-            node[i].loaded = 1;
-            if (!node[i].kids.n) node[i].expanded = 0;
-          }
-        }
+        tn_refresh(&forest, spec, roots, root_styles, n_roots, 1);
         continue;
       }
     }
@@ -1636,67 +1872,31 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       else if (picking && find_action(spec, ch) >= 0) { /* above */ }
       else if (ch == 'j') { if (cur + 1 < nflat) ++cur; }
       else if (ch == 'k') { if (cur) --cur; }
-      else if (picking && spec->recommend && ch == 'r' && nflat) {
-        /* Scoped to the collection under the cursor. Recommending across
-         * every collection at once would check sets for platforms the user is
-         * not working on, and open all of them to do it. */
-        size_t i = ri;
-        if (!node[i].loaded) {
-          if (expand) expand(ctx, roots[i], &node[i].kids);
-          if (node[i].kids.n) node[i].checked = calloc(node[i].kids.n, 1);
-          node[i].loaded = 1;
-        }
-        if (node[i].kids.n) node[i].expanded = 1;
-        for (size_t j = 0; j < node[i].kids.n; ++j) {
-          int req = node[i].kids.styles &&
-                    ((!spec->have_selectable &&
-                      node[i].kids.styles[j] == YAME_ROW_HAVE) ||
-                     node[i].kids.styles[j] == YAME_ROW_REQUIRED);
-          if (!req && node[i].checked && node[i].kids.keys &&
-              node[i].kids.keys[j])
-            /* Normalize to 0/1: checked[] is a flag, and a predicate that
-             * returned, say, 256 to mean "yes" would truncate to 0 here. */
-            node[i].checked[j] = spec->recommend(ctx, roots[i],
-                                                 node[i].kids.keys[j]) ? 1 : 0;
-        }
+      else if (picking && spec->recommend && ch == 'r' && sel) {
+        /* Scoped to the collection under the cursor, which for a leaf means
+         * the one holding it. Recommending across the whole catalogue would
+         * check sets for platforms the user is not working on, and open every
+         * collection to do it. */
+        tnode_t *scope = (tn_is_leaf(sel) && sel->parent &&
+                          sel->parent->depth >= 0) ? sel->parent : sel;
+        tn_load_deep(scope, spec);
+        if (scope->n_kids) scope->expanded = 1;
+        tn_apply_pred(scope, spec, spec->recommend);
+        tn_open_to_checked(scope);
       }
-      else if (on_key && on_key(ctx, ch, nflat ? roots[ri] : NULL,
-                                (nflat && ci >= 0 && node[ri].kids.keys)
-                                  ? node[ri].kids.keys[ci] : NULL)) {
+      else if (on_key && on_key(ctx, ch, sel ? sel->path : NULL,
+                                sel ? sel->key : NULL)) {
         /* The caller changed what the roots describe -- a different store,
-         * say -- so every expansion is about something else now. */
+         * say -- so every expansion is about something else now, folds
+         * included. */
         yame_ui_panel_close();
-        for (size_t i = 0; i < n_roots; ++i) {
-          if (!node[i].loaded) continue;
-          for (size_t j = 0; j < node[i].kids.n; ++j) {
-            free(node[i].kids.rows[j]);
-            if (node[i].kids.keys) free(node[i].kids.keys[j]);
-          }
-          free(node[i].kids.rows);
-          free(node[i].kids.keys);
-          free(node[i].kids.styles);
-          free(node[i].checked);
-          memset(&node[i].kids, 0, sizeof(node[i].kids));
-          node[i].checked = NULL;
-          node[i].loaded = 0;
-          node[i].expanded = 0;
-        }
+        tn_refresh(&forest, spec, roots, root_styles, n_roots, 0);
         cur = top = 0;
       }
     }
   }
 
-  for (size_t i = 0; i < n_roots; ++i) {
-    for (size_t j = 0; j < node[i].kids.n; ++j) {
-      free(node[i].kids.rows[j]);
-      if (node[i].kids.keys) free(node[i].kids.keys[j]);
-    }
-    free(node[i].kids.rows);
-    free(node[i].kids.keys);
-    free(node[i].kids.styles);
-    free(node[i].checked);
-  }
-  free(node);
+  tn_free_kids(&forest);
   free(flat);
   raw_leave();
   for (size_t d = 0; d < det.n; ++d) free(det.rows[d]);

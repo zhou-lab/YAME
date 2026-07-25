@@ -152,39 +152,49 @@ typedef struct {
   char **rows;            /* preformatted lines; the tree indents, not aligns */
   char **keys;            /* optional; opaque, handed back on accept */
   unsigned char *styles;  /* optional, one per row */
+  /**
+   * Optional, one per row: nonzero means this child may unfold further, so it
+   * gets a fold marker and expand() is called on it when opened. NULL means
+   * every child is a leaf, which is the whole of a two-level tree.
+   *
+   * It is a claim, not a promise: a node marked here whose expand() returns
+   * nothing becomes a leaf on the spot. The claim exists because the marker
+   * has to be drawn before anyone has asked what is inside, and asking
+   * eagerly would mean expanding the entire catalogue to draw one screen.
+   */
+  unsigned char *branch;
   size_t n;
 } yame_ui_kids_t;
 
 /**
- * Called once per checked row when the user accepts, before the tree returns.
- * `root` is the parent's row text, `key` the child's key from yame_ui_kids_t.
+ * PATHS
+ *
+ * Every callback below identifies a node by its path: the '/'-joined chain of
+ * keys from the root down, where a root contributes its first tab-separated
+ * field. So "InfiniumAnnotation", then "InfiniumAnnotation/EPIC", then
+ * "InfiniumAnnotation/EPIC/KYCG".
+ *
+ * A path rather than a row text because once a label can appear at two depths
+ * it stops identifying anything -- "KYCG" sits under every platform. Keys
+ * that contain '/' still work, but only a caller that never needs to parse a
+ * path back into segments should use them.
  */
-typedef void (*yame_ui_accept_fn)(void *ctx, const char *root,
+
+/**
+ * Called once per checked row when the user accepts, before the tree returns.
+ * `path` locates the node, `key` is its key from yame_ui_kids_t. Only leaves
+ * are ever checked: checking a branch checks everything under it.
+ */
+typedef void (*yame_ui_accept_fn)(void *ctx, const char *path,
                                   const char *key);
 
 /**
- * Fill `out` with the children of the node whose row is `row`. Called at most
- * once per node, the first time it is opened. Leaving out->n at 0 marks the
- * node as having nothing to show.
+ * Fill `out` with the children of the node at `path`. Called at most once per
+ * node, the first time it is opened. Leaving out->n at 0 marks the node as
+ * having nothing to show, which turns it into a leaf.
  */
-typedef void (*yame_ui_expand_fn)(void *ctx, const char *row,
+typedef void (*yame_ui_expand_fn)(void *ctx, const char *path,
                                   yame_ui_kids_t *out);
-
-/**
- * Two-level tree viewer: a table whose rows unfold in place.
- *
- * Right arrow (or l, or enter) opens the row under the cursor and splices its
- * children in beneath it; left (or h) closes it. Children are requested lazily
- * and kept, so opening a row twice costs one call.
- *
- * Children are rendered as given, only indented — the tree cannot align them,
- * because it sees them one parent at a time and column widths that shifted
- * with each expansion would be worse than none. Pre-format them to a common
- * width if they should line up.
- *
- * Same contract as yame_ui_browse: returns -1 when the terminal cannot support
- * it, and must not be used when stdout is redirected.
- */
 
 /* ------------------------------------------------------ inline detail pane */
 
@@ -207,8 +217,8 @@ typedef struct {
   size_t n;
 } yame_ui_detail_t;
 
-typedef void (*yame_ui_detail_fn)(void *ctx, const char *root,
-                                  const char *child_key, int cols,
+typedef void (*yame_ui_detail_fn)(void *ctx, const char *path,
+                                  const char *key, int cols,
                                   yame_ui_detail_t *out);
 
 /* ------------------------------------------------- panel inside a widget */
@@ -285,20 +295,21 @@ typedef struct {
 /**
  * Offered any key the tree does not handle itself, so a caller can bind
  * actions of its own without the widget knowing what they mean. Receives the
- * row under the cursor -- its parent's text, and its own key when it is a
- * child -- so a binding can act on what is being looked at. Runs with the
- * widget still on screen; use the panel calls for output. Return nonzero if
- * the roots changed and the view should reload.
+ * path of the row under the cursor and its key, so a binding can act on what
+ * is being looked at. Runs with the widget still on screen; use the panel
+ * calls for output. Return nonzero if the roots changed and the view should
+ * reload.
  */
-typedef int (*yame_ui_key_fn)(void *ctx, char key, const char *root,
-                              const char *child_key);
+typedef int (*yame_ui_key_fn)(void *ctx, char key, const char *path,
+                              const char *node_key);
 
 /**
- * Should this child start checked? Called once per child of the preselected
- * root as the tree opens, so a named target can arrive already chosen and the
- * user only has to look at it and press f.
+ * Should this row start checked? Called once per selectable leaf under the
+ * preselected root as the tree opens, so a named target can arrive already
+ * chosen and the user only has to look at it and press f. The tree opens
+ * whatever it has to for a checked leaf to be visible.
  */
-typedef int (*yame_ui_preselect_fn)(void *ctx, const char *root,
+typedef int (*yame_ui_preselect_fn)(void *ctx, const char *path,
                                     const char *key);
 
 /**
@@ -342,22 +353,35 @@ typedef struct {
   const char          *open_root;
   yame_ui_preselect_fn preselect;
 
-  /* Bound to `r` when set: opens every collection and checks the rows this
-   * accepts. A curated default matters because the catalogue is large and
-   * most of it is situational -- the answer to "which of these should I
-   * actually use" should be one keystroke, not a reading exercise. */
+  /* Bound to `r` when set: opens the collection under the cursor and checks
+   * the rows this accepts. A curated default matters because the catalogue is
+   * large and most of it is situational -- the answer to "which of these
+   * should I actually use" should be one keystroke, not a reading exercise. */
   yame_ui_preselect_fn recommend;
   void *ctx;
 } yame_ui_tree_t;
 
 /**
- * Two-level tree viewer: a table whose rows unfold in place, optionally with
- * checkboxes.
+ * Tree viewer: a table whose rows unfold in place, to any depth, optionally
+ * with checkboxes.
  *
- * When `accept` is set, rows carrying a key and not already marked
- * YAME_ROW_HAVE get a checkbox; space toggles one, space on a parent toggles
- * all of its children, and `f` commits. Rows styled YAME_ROW_HAVE are shown as
- * already present and cannot be checked — there is nothing to ask for.
+ * Right arrow (or l, or enter) opens the row under the cursor and splices its
+ * children in beneath it; left (or h) closes it, or folds the parent and jumps
+ * up when the row is already closed. Children are requested lazily, one level
+ * at a time, and kept — opening a row twice costs one call.
+ *
+ * Rows below the roots are rendered as given, only indented behind the stems
+ * of their ancestry: the tree cannot align them, because it sees them one
+ * parent at a time and column widths that shifted with each expansion would be
+ * worse than none. Pre-format them to a common width if they should line up.
+ * Root rows alone are tab-separated and aligned as columns.
+ *
+ * When `accept` is set, leaves carrying a key and not already marked
+ * YAME_ROW_HAVE get a checkbox; space toggles one, space on a branch toggles
+ * everything beneath it at whatever depth, and `f` commits. Rows styled
+ * YAME_ROW_HAVE are shown as already present and cannot be checked — there is
+ * nothing to ask for. A folded branch shows how many of its descendants are
+ * checked, so folding one away never hides part of a selection.
  *
  * With `commit` set, `f` does not end the session: the widget suspends, the
  * callback runs on the normal screen, and the tree resumes with its children
