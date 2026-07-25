@@ -135,7 +135,12 @@ static int usage(void) {
   yame_usage_text("formats: 0/1 (binary), 2 (state), 3 (MU counts), 4 (float),");
   yame_usage_cont("6 (set+universe), 7 (genomic coordinates).");
   yame_usage_sec("Masking:");
-  yame_usage_opt("-m <mask.cx>", "Optional mask feature file (can be multi-sample).");
+  yame_usage_opt("-m <mask.cx|name>", "Optional mask feature file (can be multi-sample).");
+  yame_usage_cont("A name is looked up in the store for this query's row");
+  yame_usage_cont("space: -m ChromHMM finds the newest ChromHMM set.");
+  yame_usage_opt("-b", "Browse the catalogue instead, choose masks there, and");
+  yame_usage_cont("summarize against each. Fetches what is missing. The tree");
+  yame_usage_cont("opens at the query's own row space.");
   yame_usage_cont("If provided, every query sample is summarized against every");
   yame_usage_cont("mask sample (cartesian product).");
   yame_usage_opt("-M", "Load all masks into memory (faster when mask file is on slow IO).");
@@ -280,11 +285,45 @@ void prepare_mask(cdata_t *c) {
 }
 
 /* The design, first 10 bytes are uint64_t (length) + uint16_t (0=vec; 1=rle) */
+int main_summary(int argc, char *argv[]);
+
+/**
+ * Run one summary per chosen mask.
+ *
+ * Re-entering main_summary with a made-up argv, rather than restructuring it
+ * to loop: the mask is set up at the top and torn down at the bottom of a
+ * long function, and one -m per run is exactly what that function already
+ * does correctly. getopt is reset each time, and the header is printed once.
+ */
+static int summarize_each(int argc, char *argv[], char **masks, size_t n) {
+  int rc = 0;
+  for (size_t i = 0; i < n; ++i) {
+    char *av[64];
+    int ac = 0;
+    av[ac++] = argv[0];
+    av[ac++] = (char *)"-m";
+    av[ac++] = masks[i];
+    if (i) av[ac++] = (char *)"-H";       /* one header for the whole run */
+    /* Everything the caller passed except -b and its own -m. */
+    for (int k = 1; k < argc && ac < 60; ++k) {
+      if (strcmp(argv[k], "-b") == 0) continue;
+      if (strcmp(argv[k], "-m") == 0) { ++k; continue; }
+      av[ac++] = argv[k];
+    }
+    av[ac] = NULL;
+    optind = 1;
+    rc |= main_summary(ac, av);
+  }
+  return rc;
+}
+
 int main_summary(int argc, char *argv[]) {
+  int browse = 0;
   int c;
   config_t config = {0};
-  while ((c = getopt(argc, argv, "m:u:MHFTs:V:6q:h"))>=0) {
+  while ((c = getopt(argc, argv, "bm:u:MHFTs:V:6q:h"))>=0) {
     switch (c) {
+    case 'b': browse = 1; break;
     case 'm': config.fname_mask = strdup(optarg); break;
     case 'M': config.in_memory = 1; break;
     case 'V':
@@ -310,6 +349,32 @@ int main_summary(int argc, char *argv[]) {
   if (optind + 1 > argc) { 
     usage(); 
     wzfatal("Please supply input file.\n"); 
+  }
+
+  /* -b: show what there is, and use what gets chosen. Needs the query first,
+   * since its row space decides which collection to open at. */
+  if (browse) {
+    if (optind >= argc) { usage(); wzfatal("Please supply input file.\n"); }
+    uint64_t rows = yame_ref_file_rows(argv[optind]);
+    const char *rname = NULL, *rfetch = NULL;
+    char path[4096];
+    yame_ref_for_rows(rows, NULL, NULL, path, sizeof(path), &rname, &rfetch);
+
+    char **masks = NULL;
+    size_t n = yame_browse_pick(rname, &masks);
+    if (!n) {
+      if (!yame_ui_fancy())
+        fprintf(stderr, "-b needs a terminal it can draw on. Name the mask "
+                        "with -m instead: a path, or a set name such as "
+                        "`-m ChromHMM`.\n");
+      else
+        fprintf(stderr, "[summary] nothing chosen.\n");
+      return 1;
+    }
+    int rc = summarize_each(argc, argv, masks, n);
+    for (size_t i = 0; i < n; ++i) free(masks[i]);
+    free(masks);
+    return rc;
   }
 
   /* A mask may be named rather than spelled out: the query's row count says

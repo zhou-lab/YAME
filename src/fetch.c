@@ -163,6 +163,13 @@ typedef struct {
   size_t n_pick;
   int    force;
 
+  /* What the user picked to USE, as opposed to everything that has to be
+   * fetched alongside it -- an .idx and a unit index are part of the download
+   * but are not what anyone asked to summarize against. */
+  size_t chosen_asset[64];
+  char   chosen_name[64][256];
+  size_t n_chosen;
+
   /* The widget holds these arrays and re-reads them after a commit, so a
    * fetch has to rewrite the entries in place -- otherwise a unit whose files
    * all just arrived keeps saying it has none of them. The arrays must not
@@ -1055,10 +1062,31 @@ static int confirm_plan(browse_t *b) {
   return yame_ui_panel_confirm(2, "Proceed?", 1);
 }
 
+/* Fetch everything picked, grouped by directory so each group costs a single
+ * manifest request. `in_widget` reports through the panel; otherwise this is
+ * an ordinary command-line fetch. */
+static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out);
+
+/* The "use these" action: same collection as a fetch, plus a record of what
+ * was actually asked for. A .cm's .idx and a unit's index come along with the
+ * download but are not what anyone wants to summarize against. */
+static void bx_choose(void *ctx, const char *path, const char *key) {
+  browse_t *b = ctx;
+  bx_accept(ctx, path, key);              /* everything the fetch needs */
+
+  const char *bar = key ? strchr(key, '|') : NULL;
+  if (!bar) return;
+  if (b->n_chosen >= sizeof(b->chosen_asset) / sizeof(b->chosen_asset[0])) return;
+
+  b->chosen_asset[b->n_chosen] = (size_t)strtoul(key, NULL, 10);
+  snprintf(b->chosen_name[b->n_chosen], sizeof(b->chosen_name[0]), "%s",
+           bar + 1);
+  ++b->n_chosen;
+}
+
 /* Runs inside the widget: the tree stays on screen, this draws in a panel and
  * onto the rows being fetched, and the tree resumes with its rows reloaded so
- * the new state shows. Selections are grouped by directory so each one costs a
- * single manifest request. */
+ * the new state shows. */
 static int bx_commit(void *ctx) {
   browse_t *b = ctx;
   int ok = 0, bad = 0;
@@ -1070,7 +1098,21 @@ static int bx_commit(void *ctx) {
     b->n_pick = 0;               /* the checks stay; the fetch does not run */
     return 0;
   }
+
   yame_ui_panel_open(4);
+  fetch_picks(b, 1, &ok, &bad);
+  yame_ui_panel_line(0, "%d file%s fetched, %d failed",
+                     ok, ok == 1 ? "" : "s", bad);
+  yame_ui_panel_line(1, "");
+  yame_ui_panel_pause(2, "press any key to return to the catalogue");
+  yame_ui_panel_close();
+  refresh_roots(b);
+  b->n_pick = 0;
+  return 1;
+}
+
+static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out) {
+  int ok = 0, bad = 0;
 
   for (size_t i = 0; i < b->n_pick; ++i) {
     size_t idx = b->pick[i].asset;
@@ -1097,41 +1139,40 @@ static int bx_commit(void *ctx) {
       ++bad; continue;
     }
 
-    yame_ui_panel_line(0, "%s/%s  -  %zu file%s",
-                       a->source, a->target, n_names, n_names == 1 ? "" : "s");
-
     fprog_t fp;
     memset(&fp, 0, sizeof(fp));
     fp.asset = idx;
 
     yame_fetch_opt_t opt = {0};
     opt.force = b->force;
-    opt.quiet = 1;                 /* the panel and the rows are the output */
-    opt.on_begin = fp_begin;
-    opt.on_progress = fp_progress;
-    opt.on_done = fp_done;
-    opt.ud = &fp;
+    if (in_widget) {
+      yame_ui_panel_line(0, "%s/%s  -  %zu file%s", a->source, a->target,
+                         n_names, n_names == 1 ? "" : "s");
+      opt.quiet = 1;                /* the panel and the rows are the output */
+      opt.on_begin = fp_begin;
+      opt.on_progress = fp_progress;
+      opt.on_done = fp_done;
+      opt.ud = &fp;
+    } else {
+      fprintf(stderr, "%s/%s  -  %zu file%s\n", a->source, a->target,
+              n_names, n_names == 1 ? "" : "s");
+    }
 
     char *err = NULL;
     if (yame_assets_fetch_subset(a->base_url, a->tag, a->remote_sub, store_sub,
                                  a->anchor, names, n_names, &opt, &err) == 0) {
       ok += (int)n_names;
-      yame_ui_panel_line(1, "ok");
+      if (in_widget) yame_ui_panel_line(1, "ok");
     } else {
       bad += (int)n_names;
-      yame_ui_panel_line(1, "failed: %s", err ? err : "(no detail)");
+      if (in_widget) yame_ui_panel_line(1, "failed: %s", err ? err : "(no detail)");
+      else fprintf(stderr, "  failed: %s\n", err ? err : "(no detail)");
     }
     free(err);
   }
 
-  yame_ui_panel_line(0, "%d file%s fetched, %d failed",
-                     ok, ok == 1 ? "" : "s", bad);
-  yame_ui_panel_line(1, "");
-  yame_ui_panel_pause(2, "press any key to return to the catalogue");
-  yame_ui_panel_close();
-  refresh_roots(b);
-  b->n_pick = 0;
-  return 1;
+  if (ok_out) *ok_out = ok;
+  if (bad_out) *bad_out = bad;
 }
 
 /* Fill in one root row: a species heading, or a unit. Every count in it is a
@@ -1236,6 +1277,99 @@ static int browse_catalog(const char *dopt, int force) {
   spec.ctx         = &b;
 
   return yame_ui_tree(&spec) < 0 ? -1 : 0;
+}
+
+/**
+ * Browse the catalogue and hand back what was chosen, fetching it if needed.
+ *
+ * The same screen as `yame fetch`, opened at the row space the caller cares
+ * about, with one extra verb: `u` ends the session and returns the selection.
+ * So a command that needs a knowledgebase can offer "show me what there is"
+ * instead of requiring a path to a file the user has not downloaded yet.
+ *
+ * Returns the number of paths (malloc'd, caller frees both the strings and
+ * the array), or 0 if nothing was chosen or the terminal cannot host a tree.
+ */
+size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
+  enum { MAXROOT = 64 };
+  static char *roots[MAXROOT];
+  static unsigned char styles[MAXROOT], branch[MAXROOT];
+  size_t n_roots = 0;
+  static browse_t b;
+
+  *out_paths = NULL;
+  memset(&b, 0, sizeof(b));
+  yame_assets_root(NULL, NULL, b.root, sizeof(b.root));
+
+  memset(roots, 0, sizeof(roots));
+  b.roots = roots;
+  b.styles = styles;
+
+  char groups[16][64];
+  size_t ng = all_groups(groups, 16);
+  for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
+    branch[n_roots++] = 0;
+    char units[32][128];
+    size_t nu = group_units(groups[i], units, 32);
+    for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
+  }
+  b.n_roots = n_roots;
+  refresh_roots(&b);
+
+  static char title[4200];
+  snprintf(title, sizeof(title), "yame  %s   choose, then u", yame_ui_bullet());
+
+  yame_ui_tree_t spec;
+  memset(&spec, 0, sizeof(spec));
+  spec.title       = title;
+  spec.header      = "TARGET\tKIND\tTAG\tIN STORE";
+  spec.roots       = roots;
+  spec.root_styles = styles;
+  spec.root_branch = branch;
+  spec.n_roots     = n_roots;
+  spec.expand      = bx_expand;
+  spec.detail      = bx_detail;
+  spec.detail_key  = 'i';
+  spec.detail_verb = "info";
+  spec.recommend   = bx_recommend;
+  spec.open_root   = open_unit;         /* start where the caller is working */
+  spec.actions[0].key    = 'f';
+  spec.actions[0].verb   = "fetch";
+  spec.actions[0].accept = bx_accept;
+  spec.actions[0].commit = bx_commit;   /* stays open */
+  spec.actions[1].key    = 'u';
+  spec.actions[1].verb   = "use";
+  spec.actions[1].accept = bx_choose;
+  spec.actions[1].commit = NULL;        /* ends the session, returns the pick */
+  spec.n_actions   = 2;
+  /* Something already in the store is exactly what a caller wants to use, so
+   * unlike a fetch it stays selectable. */
+  spec.have_selectable = 1;
+  spec.ctx         = &b;
+
+  if (yame_ui_tree(&spec) != 2 || !b.n_chosen) return 0;
+
+  /* Anything chosen but not downloaded is fetched now, on the normal screen:
+   * the widget is gone, so this is an ordinary transfer with ordinary output. */
+  int ok = 0, bad = 0;
+  fetch_picks(&b, 0, &ok, &bad);
+
+  char **paths = calloc(b.n_chosen, sizeof(char *));
+  if (!paths) return 0;
+  size_t n = 0;
+  for (size_t i = 0; i < b.n_chosen; ++i) {
+    size_t idx = b.chosen_asset[i];
+    if (idx >= YAME_ASSETS_N) continue;
+    char dir[4096], path[4096];
+    if (yame_assets_join(dir, sizeof(dir), b.root, YAME_ASSETS[idx].store_sub) != 0)
+      continue;
+    if (yame_assets_join(path, sizeof(path), dir, b.chosen_name[i]) != 0) continue;
+    if (!yame_assets_is_file(path)) continue;   /* the fetch did not land it */
+    paths[n++] = strdup(path);
+  }
+  if (!n) { free(paths); return 0; }
+  *out_paths = paths;
+  return n;
 }
 
 /* Progress for the one-shot command line: one line per file, rewritten in

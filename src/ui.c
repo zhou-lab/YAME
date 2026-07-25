@@ -1963,10 +1963,14 @@ static void tn_reopen(tnode_t *forest, const yame_ui_tree_t *spec,
  */
 static void tn_refresh(tnode_t *forest, const yame_ui_tree_t *spec,
                        char **roots, const unsigned char *root_styles,
-                       size_t n_roots, int keep_folds) {
+                       size_t n_roots, int keep_folds,
+                       char *const *want, size_t n_want) {
   char **open = NULL;
   size_t nopen = 0, cap = 0;
-  if (keep_folds) tn_collect_open(forest, &open, &nopen, &cap);
+  /* `want` restores a REMEMBERED set of folds rather than the current one --
+   * what a fetch needs, having opened folders on its way past to show their
+   * progress. */
+  if (keep_folds && !want) tn_collect_open(forest, &open, &nopen, &cap);
 
   for (size_t i = 0; i < forest->n_kids && i < n_roots; ++i) {
     tnode_t *r = forest->kids[i];
@@ -1983,7 +1987,8 @@ static void tn_refresh(tnode_t *forest, const yame_ui_tree_t *spec,
     r->style = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
   }
 
-  tn_reopen(forest, spec, open, nopen);
+  if (want) tn_reopen(forest, spec, want, n_want);
+  else      tn_reopen(forest, spec, open, nopen);
   for (size_t i = 0; i < nopen; ++i) free(open[i]);
   free(open);
 }
@@ -2068,6 +2073,12 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   /* Search state. The hit list holds node pointers, so anything that frees
    * nodes must drop it. */
   int      nav_dir = 1;          /* which way to step off a heading */
+  /* An action runs AFTER the next redraw, not in the key handler: it may open
+   * folders so their progress is visible, and the painter can only find a row
+   * that is actually on the screen it last drew. */
+  int      pending = -1;
+  char   **folds = NULL;
+  size_t   n_folds = 0, folds_cap = 0;
   char     query[128] = "";
   int      searching = 0;
   tnode_t *search_home = NULL;   /* where the cursor was when / was pressed */
@@ -2249,6 +2260,31 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     frame_finish(&f);
     fflush(stderr);
 
+    if (pending >= 0) {
+      const yame_ui_action_t *act = &spec->actions[pending];
+      int ai = pending;
+      pending = -1;
+
+      tn_accept_walk(&forest, act, ctx);
+      if (!act->commit) {      /* caller wants the selection, not the work */
+        accepted = ai + 1;
+        break;
+      }
+
+      /* The panel paints over the bottom rows, pane included. The catalogue
+       * stays visible above it, which is the part that matters while a
+       * download runs. */
+      int changed = act->commit(ctx);
+      yame_ui_panel_close();
+      if (changed) {
+        /* Back to the folds the user had, not the ones the fetch opened. */
+        tn_refresh(&forest, spec, roots, root_styles, n_roots, 1,
+                   folds, n_folds);
+        n_hits = 0; query[0] = '\0'; search_home = NULL;
+      }
+      continue;
+    }
+
     char ch = 0;
     keycode_t key = read_key(&ch);
     if (interrupted) break;
@@ -2332,27 +2368,17 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     }
     else if (picking && key == K_CHAR && find_action(spec, ch) >= 0) {
       int ai = find_action(spec, ch);
-      const yame_ui_action_t *act = &spec->actions[ai];
       if (tn_count_checked(&forest)) {
-        tn_accept_walk(&forest, act, ctx);
-
-        if (!act->commit) {    /* caller wants the selection, not the work */
-          accepted = ai + 1;
-          break;
-        }
-
-        /* The panel simply paints over the bottom rows, pane included. The
-         * catalogue stays visible above it, which is the part that matters
-         * while a download runs; the description underneath is context you
-         * have already read. */
-        int changed = act->commit(ctx);
-        yame_ui_panel_close();
-        if (changed) {
-          tn_refresh(&forest, spec, roots, root_styles, n_roots, 1);
-          /* The hit list points at nodes that no longer exist. */
-          n_hits = 0; query[0] = '\0'; search_home = NULL;
-        }
-        continue;
+        /* Remember the folds, then open every folder holding something that
+         * was chosen: a file fetched inside a closed folder has no row to
+         * paint its progress onto, so selecting a folder and pressing f used
+         * to show nothing happening at all. */
+        for (size_t i = 0; i < n_folds; ++i) free(folds[i]);
+        n_folds = 0;
+        tn_collect_open(&forest, &folds, &n_folds, &folds_cap);
+        tn_open_to_checked(&forest);
+        pending = ai;
+        continue;                    /* redraw first, then act */
       }
     }
     else if (key == K_DOWN) { nav_dir = 1; if (cur + 1 < nflat) ++cur; }
@@ -2427,7 +2453,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
          * say -- so every expansion is about something else now, folds
          * included. */
         yame_ui_panel_close();
-        tn_refresh(&forest, spec, roots, root_styles, n_roots, 0);
+        tn_refresh(&forest, spec, roots, root_styles, n_roots, 0, NULL, 0);
         n_hits = 0; query[0] = '\0'; search_home = NULL;
         cur = top = 0;
       }
@@ -2437,6 +2463,8 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   vis_flat = NULL; vis_n = vis_top = 0; vis_avail = 0;
   vis_spec = NULL; vis_w = NULL; vis_ncol = 0;
 
+  for (size_t i = 0; i < n_folds; ++i) free(folds[i]);
+  free(folds);
   tn_free_kids(&forest);
   free(flat);
   free(hits);

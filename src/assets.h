@@ -297,4 +297,20 @@ void yame_ref_explain_name(FILE *out, const char *spec, uint64_t rows,
 void yame_ref_explain(FILE *out, uint64_t rows, int status, const char *name,
                       const char *fetch, const char *flag);
 
+/* ------------------------------------------------------ choosing in a tree */
+
+/**
+ * Browse the catalogue and hand back what was chosen, fetching it if needed.
+ *
+ * The `yame fetch` screen, opened at `open_unit` (a row space name such as
+ * "hg38", or NULL), with one extra verb: `u` ends the session and returns the
+ * selection. It lets a command offer "show me what there is" instead of
+ * requiring a path to a file the user has not downloaded yet.
+ *
+ * Returns the number of paths, malloc'd into *paths (caller frees the strings
+ * and the array), or 0 if nothing was chosen or the terminal cannot host a
+ * tree -- in which case the caller should say what it needs and stop.
+ */
+size_t yame_browse_pick(const char *open_unit, char ***paths);
+
 #endif /* _YAME_ASSETS_H */
