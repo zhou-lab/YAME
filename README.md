@@ -9,17 +9,20 @@
 [![Install with Bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg)](https://bioconda.github.io/recipes/yame/README.html)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
-A fast and lightweight toolkit for storing, manipulating, and analyzing large-scale DNA methylation data at the sequence level.
+A bit-packing toolkit for DNA methylation. Arrays and whole genomes go into one binary format family, where the analysis is bitwise — and so stays fast across a thousandfold of scale, from 28K probes to 29M CpGs.
 
 For detailed documentation, tutorials, and usage examples, visit the [YAME User Guide](https://zhou-lab.github.io/YAME/).
 
 ## Overview
 
-YAME is designed for efficient sequence-level DNA methylation data management, capable of handling both bulk and single-cell DNA methylome workflows. It introduces a family of compact binary formats (**CX formats**) that represent methylation values, MU counts, categorical states, fraction data, masks, and genomic coordinates in a uniform compressed structure.
+YAME packs DNA methylation into bits. A family of compact binary formats (**CX formats**) holds methylation values, MU counts, categorical states, fractions, masks and coordinate streams — as little as one bit per CpG — inside a single record layout.
+
+The payoff is that questions become bit operations. A data file stores no coordinates: row *i* means whatever row *i* of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join. An Infinium manifest and a whole-genome CpG set are the same kind of object under that rule — a row space, differing only in length — which is why the same commands serve array and sequencing data.
 
 ### 🌟 Key Features
 
-- **Ultra-fast performance** with high compression for methylation matrices
+- **Bit-level packing**: 1 bit per CpG for binary calls, 2 for set/universe — a whole-genome hg38 track is 3.5 MB
+- **Array and sequencing alike**: hg38, mm10, mm39, MSA, EPICv2, EPIC, HM450, HM27, MM285, Mammal40
 - **Scalable** to hundreds of thousands of single cells
 - **Versatile data support**: MU counts, binary methylation, chromatin states, fractions, differential calls, and CpG coordinate streams
 - **Comprehensive toolkit**: packing, unpacking, downsampling, subsetting, row operations, enrichment testing, and summarization
