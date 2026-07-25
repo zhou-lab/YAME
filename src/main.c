@@ -50,6 +50,7 @@ int main_mask(int argc, char *argv[]);
 int main_dsample(int argc, char *argv[]);
 int main_binarize(int argc, char *argv[]);
 int main_perturb(int argc, char *argv[]);
+int main_fetch(int argc, char *argv[]);
 
 #define PACKAGE_VERSION YAME_VERSION
 
@@ -99,6 +100,11 @@ static int usage(void)
   fprintf(stderr, "  rowop        Row-wise operations (e.g., sum / combine binary tracks)\n");
   fprintf(stderr, "\n");
 
+  fprintf(stderr, "Reference data:\n");
+  fprintf(stderr, "  fetch        Download reference assets into the shared store that\n");
+  fprintf(stderr, "               kycg / sesame / methscope all read ('yame fetch -l')\n");
+  fprintf(stderr, "\n");
+
   fprintf(stderr, "Run 'yame <command> -h' for command-specific options and details.\n");
   fprintf(stderr, "\n");
   return 1;
@@ -124,6 +130,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "binarize") == 0) ret = main_binarize(argc-1, argv+1);
   else if (strcmp(argv[1], "dsample") == 0) ret = main_dsample(argc-1, argv+1);
   else if (strcmp(argv[1], "perturb") == 0) ret = main_perturb(argc-1, argv+1);
+  else if (strcmp(argv[1], "fetch") == 0) ret = main_fetch(argc-1, argv+1);
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
     return 1;

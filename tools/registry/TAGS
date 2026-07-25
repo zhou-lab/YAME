@@ -1,0 +1,20 @@
+# Upstream sources and the tag every tool in the suite pins.
+#
+# This file is the single place a tag is chosen. Bumping one here and
+# regenerating (tools/make_registry.sh) moves every tool at once -- which is the
+# point: kycg pinned InfiniumAnnotation v8 while sesame-cli pinned v8.1, so the
+# two of them could not share a download even though they consume the identical
+# files.
+#
+# A tag is only half of a pin. The other half is sha256(SHA256SUMS) per
+# directory, which is NOT written here: it is computed from the cached upstream
+# manifests under sums/<source>/<tag>/, so a pin can never disagree with the
+# bytes it claims to describe. Adding a tag means caching its manifests:
+#
+#   curl -sfL -o sums/InfiniumAnnotation/<tag>/<platform>/SHA256SUMS \
+#     https://github.com/zhou-lab/InfiniumAnnotation/raw/<tag>/<platform>/SHA256SUMS
+#
+# source              tag     base_url
+InfiniumAnnotation    v8.1    https://github.com/zhou-lab/InfiniumAnnotation/raw
+genomes               v2      https://github.com/zhou-lab/genomes/raw
+KYCGKB                v2      https://github.com/zhou-lab

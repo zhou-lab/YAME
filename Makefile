@@ -30,6 +30,31 @@ OBJECTS := $(SOURCES:$(SRC_DIR)/%.c=$(SRC_DIR)/%.o)
 
 CFLAGS += -I$(SRC_DIR) -I$(LHTSLIB_DIR)
 
+# libcurl, for `yame fetch` and the shared asset store (src/assets.c).
+#
+# Optional by design: without it YAME still builds and every format command
+# works, and only fetching reports that it is unavailable. `make CURL=0`
+# forces it off; any other value is the curl-config to use.
+#
+# libyame.a carries objects only, so a downstream link must still add -lcurl
+# itself -- kycg and sesame-cli already do.
+CURL ?= auto
+ifeq ($(CURL),auto)
+  CURL_CFLAGS := $(shell curl-config --cflags 2>/dev/null)
+  CURL_LIBS   := $(shell curl-config --libs 2>/dev/null)
+else ifeq ($(CURL),0)
+  CURL_CFLAGS :=
+  CURL_LIBS   :=
+else
+  CURL_CFLAGS := $(shell $(CURL) --cflags 2>/dev/null)
+  CURL_LIBS   := $(shell $(CURL) --libs 2>/dev/null)
+endif
+
+ifneq ($(CURL_LIBS),)
+  CFLAGS += -DYAME_HAVE_CURL $(CURL_CFLAGS)
+  CLIB   += $(CURL_LIBS)
+endif
+
 .PHONY: all build debug clean lib
 
 all: build

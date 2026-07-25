@@ -1,0 +1,30 @@
+# Infinium array platforms, from zhou-lab/InfiniumAnnotation at the tag in TAGS.
+#
+# Two directories per platform, with separate manifests and therefore separate
+# trust anchors:
+#   <platform>/          ordering, mask, coord, snp, typeI_ext   (sesame + kycg)
+#   <platform>/KYCG/     the knowledgebase .cm sets              (kycg)
+#
+# The ordering table lives in the platform directory, one level ABOVE KYCG/.
+# kycg used to keep its own copy inside KYCG/; that is the one path that had to
+# move for a single download to serve both tools.
+#
+# tools   which registries get a row for this platform. sesame-cli only knows
+#         the four it can auto-detect from IDATs, and emitting the other three
+#         into its header would offer platforms its prep pipeline has never
+#         been run against.
+# beads   IDAT nSNPsRead, for platform auto-detection (sesame). 0 = no detect.
+# rows    probes in the platform's ordering (kycg). Hand-pinned: it is a
+#         property of the ordering file's contents, not of the manifest.
+#
+# The count of .cm sets is NOT here -- it is counted from the cached
+# KYCG/SHA256SUMS, so it cannot drift from what the tag actually publishes.
+#
+# platform	tools	beads	rows	ordering
+EPIC	kycg,sesame	1051815	866553	EPIC.ordering.tsv.gz
+EPICv2	kycg,sesame	1105209	937690	EPICv2.ordering.tsv.gz
+HM27	kycg	0	27722	HM27.ordering.tsv.gz
+HM450	kycg,sesame	622399	486427	HM450.ordering.tsv.gz
+Mammal40	kycg	0	38607	Mammal40.ordering.tsv.gz
+MM285	kycg	0	287692	MM285.ordering.tsv.gz
+MSA	kycg,sesame	384497	284309	MSA.ordering.tsv.gz

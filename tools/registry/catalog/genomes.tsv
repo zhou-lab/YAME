@@ -1,0 +1,13 @@
+# Genome-level annotation (seqinfo / gaps / cytoband) from zhou-lab/genomes
+# at the tag in TAGS. Layout: <genome>/{SHA256SUMS, seqinfo.tsv.gz,
+# gaps.tsv.gz, cytoband.tsv.gz}.
+#
+# Distinct from KYCGKB.tsv despite sharing genome names: that channel is CpG
+# knowledgebases in a per-genome repo, this one is chromosome-level annotation
+# for plotting. Same names, different repos, tags, content and anchors --
+# merging the two tables is the easiest mistake to make here.
+#
+# genome	tools
+hg38	sesame
+mm10	sesame
+mm39	sesame

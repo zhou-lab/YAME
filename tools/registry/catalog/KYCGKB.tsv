@@ -1,0 +1,19 @@
+# Whole-genome CpG knowledgebases, one repo per genome (zhou-lab/KYCGKB_<genome>)
+# at the tag in TAGS. Layout is flat at the repo root:
+#   <repo>/<tag>/{SHA256SUMS, cpg_nocontig.cr, <Set>.<date>.cm[.idx]}
+#
+# rows      CpGs in the genome's coordinate stream (cpg_nocontig.cr). Pinned
+#           because it is a property of the file's contents; kycg reports it and
+#           uses it to size a universe.
+# record    Zenodo deposition id, and doi its citable form. Provenance only --
+#           kycg fetches from the git tag, not from Zenodo, since only the
+#           former publishes a SHA256SUMS. Kept because the Zenodo record is
+#           what a paper cites.
+#
+# methscope-cli already fetches cpg_nocontig.cr out of KYCGKB_hg38 at this same
+# tag, so this row is the one place in the suite where cross-tool reuse is
+# already proven rather than prospective.
+#
+# genome	tools	repo	rows	record	doi
+hg38	kycg	KYCGKB_hg38	29401795	18175838	10.5281/zenodo.18175837
+mm10	kycg	KYCGKB_mm10	21867837	18175656	10.5281/zenodo.18175655
