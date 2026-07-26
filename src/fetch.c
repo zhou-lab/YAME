@@ -295,11 +295,6 @@ static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
   return n;
 }
 
-static uint64_t scope_bytes(const yame_asset_reg_t *a) {
-  uint64_t t = 0;
-  for (size_t i = 0; i < a->n_files; ++i) t += a->files[i].size;
-  return t;
-}
 
 /* An array platform, or a genome build? Decides which recommended list
  * applies and what the row calls itself. */
@@ -2000,7 +1995,7 @@ int main_fetch(int argc, char *argv[]) {
   /* One plan, whether or not a filter narrowed it: how many files, from how
    * many directories, and how large. Quoting the unfiltered total next to a
    * filtered list would name a number that is not going to be transferred. */
-  size_t n_files = 0, n_dirs = 0;
+  size_t n_files = 0, n_dirs = 0, n_have = 0;
   uint64_t total = 0;
   for (size_t i = 0; i < n_sel; ++i) {
     size_t here = 0;
@@ -2010,7 +2005,11 @@ int main_fetch(int argc, char *argv[]) {
         file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
         if (!facets_match(f, filter)) continue;
       }
-      ++here; total += sel[i]->files[j].size;
+      ++here;
+      /* Already-present files are skipped unless -f, so counting their bytes
+       * in the total would quote a transfer that is not going to happen. */
+      if (!force && file_present(root, sel[i], sel[i]->files[j].name)) ++n_have;
+      else total += sel[i]->files[j].size;
     }
     if (here) { ++n_dirs; n_files += here; }
   }
@@ -2025,6 +2024,15 @@ int main_fetch(int argc, char *argv[]) {
     return 1;
   }
 
+  /* Nothing to move is a finished job, not an empty plan: say so plainly and
+   * stop, rather than printing a size of nothing and asking to confirm it. */
+  if (n_have == n_files) {
+    fprintf(stderr, "%s%s%s: all %zu file%s already in the store.\n", spec,
+            filter ? " -g " : "", filter ? filter : "", n_files,
+            n_files == 1 ? "" : "s");
+    return 0;
+  }
+
   char hs[32];
   human_size(total, hs, sizeof(hs));
 
@@ -2033,31 +2041,59 @@ int main_fetch(int argc, char *argv[]) {
    * -- hg38 reaches the 2.9 GB whole-genome decoder -- and the browser has
    * always confirmed before transferring, so the shorter name should not be
    * the more dangerous one. */
+  /* Name the files, biggest first, rather than only counting them: the whole
+   * question before a fetch is what is about to land, and one 2.8 GB decoder
+   * among six small files is the thing worth seeing. Capped, because -g array
+   * matches 225 files and a prompt nobody reads is not a confirmation. */
   {
-    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s, %s\n",
-            spec, filter ? " -g " : "", filter ? filter : "",
+    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s", spec,
+            filter ? " -g " : "", filter ? filter : "",
             n_files, n_files == 1 ? "" : "s",
-            n_dirs, n_dirs == 1 ? "y" : "ies", hs);
-    for (size_t i = 0; i < n_sel; ++i)
-      for (size_t j = 0; j < sel[i]->n_files; ++j) {
-        if (filter) {
-          char f[1024];
-          file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
-          if (!facets_match(f, filter)) continue;
-        } else if (j) continue;          /* unfiltered: one line per directory */
-        char one[32];
-        human_size(filter ? sel[i]->files[j].size : scope_bytes(sel[i]),
-                   one, sizeof(one));
-        char u[128], sb[128];
-        unit_of(sel[i], u, sizeof(u), sb, sizeof(sb));
-        char label[272];   /* u[128] + "/" + sb[128] */
-        if (filter) snprintf(label, sizeof(label), "%s", sel[i]->files[j].name);
-        else snprintf(label, sizeof(label), "%s%s%s", u, sb[0] ? "/" : "", sb);
-        fprintf(stderr, "  %-44s %8s\n", label, one);
+            n_dirs, n_dirs == 1 ? "y" : "ies");
+    if (n_have)
+      fprintf(stderr, " -- %zu already in the store, %zu to fetch",
+              n_have, n_files - n_have);
+    fprintf(stderr, ", %s\n", hs);
+
+    struct { const char *name; uint64_t size; } *v =
+        malloc(n_files * sizeof(*v));
+    if (v) {
+      size_t k = 0;
+      for (size_t i = 0; i < n_sel; ++i)
+        for (size_t j = 0; j < sel[i]->n_files && k < n_files; ++j) {
+          if (filter) {
+            char f[1024];
+            file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
+            if (!facets_match(f, filter)) continue;
+          }
+          if (!force && file_present(root, sel[i], sel[i]->files[j].name))
+            continue;                 /* listing what will move, not what is */
+          v[k].name = sel[i]->files[j].name;
+          v[k].size = sel[i]->files[j].size;
+          ++k;
+        }
+      /* Insertion sort: k is at most a few hundred, and this keeps the
+       * comparator next to the thing it orders. */
+      for (size_t a = 1; a < k; ++a) {
+        typeof(v[0]) t = v[a];
+        size_t b = a;
+        while (b && v[b - 1].size < t.size) { v[b] = v[b - 1]; --b; }
+        v[b] = t;
       }
+      const size_t SHOW = 10;
+      for (size_t i = 0; i < k && i < SHOW; ++i) {
+        char one[32];
+        human_size(v[i].size, one, sizeof(one));
+        fprintf(stderr, "  %-44.44s %9s\n", v[i].name, one);
+      }
+      if (k > SHOW)
+        fprintf(stderr, "  %s and %zu more\n",
+                yame_ui_unicode() ? "\u2026" : "...", k - SHOW);
+      free(v);
+    }
   }
 
-  PROG.n = n_files;
+  PROG.n = n_files - n_have;
   PROG.idx = 0;
   PROG.tty = isatty(STDERR_FILENO);
   opt.on_progress = prog_progress;
