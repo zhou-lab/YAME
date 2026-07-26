@@ -63,9 +63,10 @@ static int usage(void) {
   yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
   yame_usage_text("A file resolves too, best written out: `hg38/data/test.cg`. The");
   yame_usage_text("bare name works when only one directory publishes it.");
-  yame_usage_text("Several names may be given, space-separated -- not comma-separated,");
-  yame_usage_text("which is how -g spells AND. A directory named twice is taken once,");
-  yame_usage_text("and naming it whole absorbs a file picked out of it.");
+  yame_usage_text("Several names may be given, separated by spaces or by commas --");
+  yame_usage_text("commas so a list fits an option that takes one argument. A");
+  yame_usage_text("directory named twice is taken once, and naming it whole absorbs a");
+  yame_usage_text("file picked out of it.");
   yame_usage_text("The registry's own <source>/<target> still resolves.");
 
   yame_usage_sec("Browsing:");
@@ -1994,7 +1995,7 @@ typedef struct {
  * directory once, not the directory and then the file again.
  */
 static int resolve_spec(const char *arg, const char *tag_opt,
-                        sel_t *out, size_t *n_out, size_t cap) {
+                        sel_t *out, size_t *n_out, size_t cap, int quiet) {
   char spec[512];
   if (snprintf(spec, sizeof(spec), "%s", arg) >= (int)sizeof(spec)) {
     fprintf(stderr, "yame fetch: target name too long.\n");
@@ -2090,6 +2091,7 @@ static int resolve_spec(const char *arg, const char *tag_opt,
   }
 
   if (!n_sel) {
+    if (quiet) return 1;              /* the caller has another reading to try */
     fprintf(stderr,
             "yame fetch: nothing in the catalogue is called %s.\n"
             "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
@@ -2195,10 +2197,43 @@ int main_fetch(int argc, char *argv[]) {
   sel_t sel[64];
   size_t n_sel = 0;
   char shown[512] = "";           /* the names, for the plan and the errors */
+  const size_t SELCAP = sizeof(sel)/sizeof(sel[0]);
   for (int ai = optind; ai < argc; ++ai) {
-    if (resolve_spec(argv[ai], tag_override, sel, &n_sel,
-                     sizeof(sel)/sizeof(sel[0])) != 0)
-      return 1;
+    /* Commas separate names, the same way -m takes CGI,ChromHMM. Split
+     * first: parsing @tag before the comma would let `a@v3,b` read the tag
+     * as "v3,b" and swallow the second name.
+     *
+     * The whole string is still tried if any piece fails, so the syntax does
+     * not forbid a comma inside a catalogue name -- such a name would fail
+     * as pieces and resolve as itself. */
+    int rc = 1;
+    size_t before = n_sel;
+    const char *bad = NULL;           /* the piece that did not resolve */
+    if (strchr(argv[ai], ',')) {
+      /* Deliberately never freed: a selection's `only` points into this copy
+       * and outlives the loop. One small allocation per argument. */
+      char *work = strdup(argv[ai]);
+      if (!work) return 1;
+      rc = 0;
+      for (char *save = NULL, *tok = strtok_r(work, ",", &save);
+           tok && rc == 0; tok = strtok_r(NULL, ",", &save)) {
+        while (*tok == ' ') ++tok;        /* "a, b" reads like -m does */
+        if (!*tok) continue;              /* a trailing or doubled comma */
+        rc = resolve_spec(tok, tag_override, sel, &n_sel, SELCAP, 1);
+        if (rc != 0) bad = tok;
+      }
+      if (rc != 0) n_sel = before;
+    }
+    if (rc != 0) {
+      /* The whole string may be a name in its own right. If it is not, the
+       * piece that failed is the more useful thing to name -- "nothing is
+       * called nope" beats quoting the entire list back. */
+      if (resolve_spec(argv[ai], tag_override, sel, &n_sel, SELCAP,
+                       bad != NULL) != 0) {
+        if (bad) resolve_spec(bad, tag_override, sel, &n_sel, SELCAP, 0);
+        return 1;
+      }
+    }
     size_t l = strlen(shown);
     snprintf(shown + l, sizeof(shown) - l, "%s%s", l ? " " : "", argv[ai]);
   }
