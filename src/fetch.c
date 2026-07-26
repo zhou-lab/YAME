@@ -82,6 +82,9 @@ static int usage(void) {
   yame_usage_opt("-l", "Dump the registry as TSV and exit: every file this build");
   yame_usage_cont("knows, with its size, digest, description and whether the");
   yame_usage_cont("store already has it. One row per file, for cut and grep.");
+  yame_usage_opt("-y", "Fetch a whole folder without asking. A name covering more");
+  yame_usage_cont("than one directory is confirmed first, since a short name");
+  yame_usage_cont("can reach a lot -- `hg38` is 3.5 GB.");
   yame_usage_opt("-q", "No progress output.");
   yame_usage_opt("-u <url>", "Single-file form: what to download.");
   yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
@@ -248,22 +251,33 @@ static void unit_of(const yame_asset_reg_t *a, char *unit, size_t nu,
 }
 
 /**
- * The row a browser path names: <unit> or <unit>/<folder>.
+ * Every row at or under a browser path.
  *
- * The same string the tree displays, so what you read is what you can type.
- * Verified unique across the catalogue -- no two rows share a unit/folder
- * pair -- which is what makes it safe to accept as an address at all.
+ * A name is a scope, not a key: "hg38" means the hg38 unit and everything in
+ * it, the same as ticking that folder in the browser. That is also what makes
+ * the name workable at all -- three targets (hg38, mm10, mm39) are published
+ * by two sources each, and as a scope those simply select both instead of
+ * being ambiguous.
  */
-static const yame_asset_reg_t *find_by_browser_path(const char *path) {
-  if (!path || !*path) return NULL;
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    char u[128], s[128], full[264];
-    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
-    if (s[0]) snprintf(full, sizeof(full), "%s/%s", u, s);
-    else      snprintf(full, sizeof(full), "%s", u);
-    if (strcasecmp(full, path) == 0) return &YAME_ASSETS[i];
+static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
+                            size_t cap) {
+  size_t n = 0, plen = strlen(path);
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    char u[128], sb[128], full[264];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
+    if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
+    else       snprintf(full, sizeof(full), "%s", u);
+    if (strncasecmp(full, path, plen) == 0 &&
+        (full[plen] == '\0' || full[plen] == '/'))
+      out[n++] = &YAME_ASSETS[i];
   }
-  return NULL;
+  return n;
+}
+
+static uint64_t scope_bytes(const yame_asset_reg_t *a) {
+  uint64_t t = 0;
+  for (size_t i = 0; i < a->n_files; ++i) t += a->files[i].size;
+  return t;
 }
 
 /* An array platform, or a genome build? Decides which recommended list
@@ -1693,16 +1707,17 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
 int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
-  int force = 0, quiet = 0, unpinned_ok = 0, list = 0;
+  int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
   int c;
 
-  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:h")) >= 0) {
+  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yh")) >= 0) {
     switch (c) {
     case 'd': dopt = optarg; break;
     case 't': tag_override = optarg; break;
     case 'k': unpinned_ok = 1; break;
     case 'f': force = 1; break;
     case 'l': list = 1; break;
+    case 'y': assume_yes = 1; break;
     case 'q': quiet = 1; break;
     case 'u': url = optarg; break;
     case 's': sha = optarg; break;
@@ -1782,50 +1797,34 @@ int main_fetch(int argc, char *argv[]) {
    * already uses it, including the two error messages below and the second
    * column of `fetch -l`. The two cannot be confused -- no browser path
    * matches a source name -- and no browser path is claimed by two rows. */
-  const yame_asset_reg_t *a = find_by_browser_path(spec);
-  char *slash = a ? NULL : strchr(spec, '/');
+  /* A name is a scope. "hg38" takes the unit and everything under it, the
+   * same as ticking that folder in the browser; "hg38/data" takes one row.
+   * The registry's own <source>/<target> still resolves, for anything already
+   * written against it. */
+  const yame_asset_reg_t *sel[64];
+  size_t n_sel = collect_scope(spec, sel, 64);
 
-  if (!a && slash) {
-    *slash = '\0';
-    a = find_asset(spec, slash + 1);
-    if (!a) *slash = '/';               /* restore, for the message below */
-  }
-
-  if (!a) {
-    fprintf(stderr,
-            "yame fetch: this build knows nothing about %s.\n"
-            "  Name it the way the browser shows it (hg38/data, EPIC/KYCG) or\n"
-            "  the way the registry does (methscope/hg38/data).\n"
-            "  `yame fetch -l | cut -f1,2 | sort -u` lists every registry name.\n",
-            spec);
-    return 1;
-  }
-
-  const char *tag = tag_override ? tag_override : a->tag;
-  const char *anchor = a->anchor;
-
-  /* A tag this build does not pin carries no digest for its manifest, so the
-   * anchor check has to be dropped -- which is a decision the caller makes
-   * explicitly, not something that happens quietly because they typed a tag. */
-  if (tag_override && strcmp(tag_override, a->tag) != 0) {
-    if (!unpinned_ok) {
-      fprintf(stderr,
-              "yame fetch: this build pins %s at %s, so it holds no digest for "
-              "%s and cannot verify the manifest published there. Re-run with "
-              "-k to accept that, or regenerate the registry and rebuild.\n",
-              a->target, a->tag, tag_override);
-      return 1;
+  if (!n_sel) {
+    char *slash = strchr(spec, '/');
+    if (slash) {
+      *slash = '\0';
+      const yame_asset_reg_t *a = find_asset(spec, slash + 1);
+      if (a) { sel[0] = a; n_sel = 1; }
+      else *slash = '/';
     }
-    anchor = NULL;
   }
 
-  char root[4096], store_sub[4096];
-  yame_assets_root(dopt, NULL, root, sizeof(root));
-  if (yame_assets_join(store_sub, sizeof(store_sub), root, a->store_sub) != 0) {
-    fprintf(stderr, "yame fetch: store path too long.\n");
+  if (!n_sel) {
+    fprintf(stderr,
+            "yame fetch: nothing in the catalogue is called %s.\n"
+            "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
+            "  hg38/data, EPIC. A name takes everything under it.\n"
+            "  `yame fetch -l` lists what there is.\n", spec);
     return 1;
   }
 
+  char root[4096];
+  yame_assets_root(dopt, NULL, root, sizeof(root));
   if (!yame_assets_root_writable(root)) {
     fprintf(stderr,
             "yame fetch: %s is not writable. A read-only shared store is fine "
@@ -1834,15 +1833,78 @@ int main_fetch(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!quiet)
-    fprintf(stderr, "%s/%s @ %s -> %s\n", a->source, a->target, tag, store_sub);
+  /* More than one directory means the name was a folder, and a folder can be
+   * very large -- hg38 reaches the 2.9 GB whole-genome decoder. The browser
+   * confirms before it transfers anything; doing less here would make the
+   * shorter name the more dangerous one. */
+  if (n_sel > 1) {
+    uint64_t total = 0;
+    for (size_t i = 0; i < n_sel; ++i) total += scope_bytes(sel[i]);
+    char hs[32];
+    human_size(total, hs, sizeof(hs));
 
-  if (fetch_entry(a, root, tag, anchor, &opt, &err) != 0) {
-    fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
-    free(err);
-    return 1;
+    fprintf(stderr, "%s covers %zu director%s, %s:\n",
+            spec, n_sel, n_sel == 1 ? "y" : "ies", hs);
+    for (size_t i = 0; i < n_sel; ++i) {
+      char one[32];
+      human_size(scope_bytes(sel[i]), one, sizeof(one));
+      char u[128], sb[128];
+      unit_of(sel[i], u, sizeof(u), sb, sizeof(sb));
+      fprintf(stderr, "  %s%s%s%*s%s\n", u, sb[0] ? "/" : "", sb,
+              (int)(28 - strlen(u) - (sb[0] ? strlen(sb) + 1 : 0)), "", one);
+    }
+
+    if (!assume_yes) {
+      if (!isatty(STDIN_FILENO)) {
+        fprintf(stderr,
+                "Refusing to fetch %s without confirmation. Re-run with -y, or "
+                "name one directory.\n", hs);
+        return 1;
+      }
+      fprintf(stderr, "Fetch all of it? [y/N] ");
+      int c = getchar();
+      if (c != 'y' && c != 'Y') { fprintf(stderr, "nothing fetched.\n"); return 1; }
+    }
   }
-  free(err);
+
+  for (size_t i = 0; i < n_sel; ++i) {
+    const yame_asset_reg_t *a = sel[i];
+    const char *tag = tag_override ? tag_override : a->tag;
+    const char *anchor = a->anchor;
+
+    /* A tag this build does not pin carries no digest for its manifest, so
+     * the anchor check has to be dropped -- a decision the caller makes
+     * explicitly, not something that happens quietly because they typed a
+     * tag. */
+    if (tag_override && strcmp(tag_override, a->tag) != 0) {
+      if (!unpinned_ok) {
+        fprintf(stderr,
+                "yame fetch: this build pins %s at %s, so it holds no digest "
+                "for %s and cannot verify the manifest published there. "
+                "Re-run with -k to accept that, or regenerate the registry "
+                "and rebuild.\n", a->target, a->tag, tag_override);
+        return 1;
+      }
+      anchor = NULL;
+    }
+
+    char store_sub[4096];
+    if (yame_assets_join(store_sub, sizeof(store_sub), root, a->store_sub) != 0) {
+      fprintf(stderr, "yame fetch: store path too long.\n");
+      return 1;
+    }
+
+    if (!quiet)
+      fprintf(stderr, "%s/%s @ %s -> %s\n", a->source, a->target, tag, store_sub);
+
+    if (fetch_entry(a, root, tag, anchor, &opt, &err) != 0) {
+      fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
+      free(err);
+      return 1;
+    }
+    free(err);
+    err = NULL;
+  }
 
   if (!quiet) fprintf(stderr, "done.\n");
   return 0;
