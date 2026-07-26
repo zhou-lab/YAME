@@ -1869,16 +1869,52 @@ static int       vis_picking = 0;
 static const int *vis_w = NULL;
 static int       vis_ncol = 0;
 
+/* Where a key sits in the whole list, not just the part on screen. Both
+ * callbacks below used to scan the visible window only, which is fine while a
+ * fetch fits the terminal and wrong the moment it does not: past the fold the
+ * active file painted nothing, and a finished one never had its row marked. */
+static size_t vis_find(const char *key) {
+  for (size_t i = 0; i < vis_n; ++i)
+    if (vis_flat[i]->key && strcmp(vis_flat[i]->key, key) == 0) return i;
+  return vis_n;
+}
+
+/* Bring a row into view, reporting whether the window actually moved. The
+ * main loop keeps its own `top` and re-derives it from the cursor on the next
+ * full redraw, so this scroll lasts exactly as long as the action does. */
+static int vis_scroll_to(size_t idx) {
+  if (vis_avail <= 0) return 0;
+  size_t was = vis_top;
+  if (idx < vis_top) vis_top = idx;
+  else if (idx >= vis_top + (size_t)vis_avail) vis_top = idx - (size_t)vis_avail + 1;
+  if (vis_top + (size_t)vis_avail > vis_n)
+    vis_top = vis_n > (size_t)vis_avail ? vis_n - (size_t)vis_avail : 0;
+  return vis_top != was;
+}
+
+/* Repaint the whole list: one row scrolling means every row moved. */
+static void vis_repaint(void) {
+  char line[1400];
+  for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
+    build_row(line, sizeof(line), vis_flat[i], 0, vis_picking, vis_spec,
+              term_cols(), vis_w, vis_ncol, NULL, NULL);
+    fprintf(stderr, "\033[%d;1H\033[2K%s", VIS_ROW0 + (int)(i - vis_top), line);
+  }
+}
+
 int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
   if (!vis_flat || !key || !raw_active) return 0;
 
-  for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
+  size_t i = vis_find(key);
+  if (i == vis_n) return 0;
+  /* Follow the transfer down the list rather than painting off-screen. */
+  int moved = vis_scroll_to(i);
+  {
     tnode_t *nd = vis_flat[i];
-    if (!nd->key || strcmp(nd->key, key) != 0) continue;
-
     int row = VIS_ROW0 + (int)(i - vis_top);
     int uni = yame_ui_unicode();
     char line[1400];
+    if (moved) { fprintf(stderr, "\033[s"); vis_repaint(); fprintf(stderr, "\033[u"); }
 
     if (!total) {
       build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec,
@@ -1914,16 +1950,17 @@ int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
     fflush(stderr);
     return 1;
   }
-  return 0;
 }
 
 int yame_ui_tree_settle(const char *key, int now_present) {
   if (!vis_flat || !key || !raw_active) return 0;
 
-  for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
+  size_t i = vis_find(key);
+  if (i == vis_n) return 0;
+  {
     tnode_t *nd = vis_flat[i];
-    if (!nd->key || strcmp(nd->key, key) != 0) continue;
-
+    /* The state change lands whether or not the row is on screen -- it is the
+     * node's truth, not a drawing. Only the repaint below is conditional. */
     if (now_present) {
       /* What the reload would have said, said now: it is here, so it is no
        * longer something to ask for. */
@@ -1931,15 +1968,16 @@ int yame_ui_tree_settle(const char *key, int now_present) {
       nd->checked = 0;
     }
 
-    char line[1400];
-    build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec, term_cols(),
-              vis_w, vis_ncol, NULL, NULL);
-    fprintf(stderr, "\033[s\033[%d;1H\033[2K%s\033[u",
-            VIS_ROW0 + (int)(i - vis_top), line);
-    fflush(stderr);
+    if (i >= vis_top && i < vis_top + (size_t)vis_avail) {
+      char line[1400];
+      build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec, term_cols(),
+                vis_w, vis_ncol, NULL, NULL);
+      fprintf(stderr, "\033[s\033[%d;1H\033[2K%s\033[u",
+              VIS_ROW0 + (int)(i - vis_top), line);
+      fflush(stderr);
+    }
     return 1;
   }
-  return 0;
 }
 
 /* ---- the flattened view ---- */
