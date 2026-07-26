@@ -262,60 +262,40 @@
 <section class="card">
   <h2>Fetch <span class="m">&mdash; nothing ships with the binary</span></h2>
   <p>No reference data is bundled: no coordinates, no feature sets, no example
-  methylomes. One fetch fills a digest-verified store shared by every tool in
-  the suite &mdash; <code class="inl">$YAME_DATA_HOME</code>, default
-  <code class="inl">~/.local/share/yame</code>. Everything else on this page
-  runs against those files, and every output shown was captured from the
-  command above it.</p>
-  <p>A name is what the browser shows &mdash; <code class="inl">hg38</code>,
-  <code class="inl">hg38/KYCG</code>, <code class="inl">hg38/data</code> &mdash;
-  and it is a <b>scope</b>: <code class="inl">hg38</code> takes everything under
-  it. Narrow within it with <code class="inl">-g</code>, whose terms are ANDed
-  and match a file's name, source, collection, title or upstream database.</p>
-  <pre><code>yame <span class="sub">fetch</span>            <span class="cm"># browse: species, platform, files</span>
-yame <span class="sub">fetch</span> hg38/KYCG  <span class="cm"># the hg38 knowledgebase + coordinates</span>
-yame <span class="sub">fetch</span> hg38/data  <span class="cm"># 51 MB of real methylomes to try</span></code></pre>
-  <pre><code>yame <span class="sub">fetch</span> hg38/KYCG -g chromatin  <span class="cm"># 3 sets, not 32</span>
-yame <span class="sub">fetch</span> hg38 -g celltype       <span class="cm"># across the whole genome</span></code></pre>
+  methylomes. <code class="inl">yame fetch</code> opens a browser over the
+  catalogue &mdash; species, then platform or genome build, then its files.</p>
+  <pre><code>yame <span class="sub">fetch</span></code></pre>
+  <pre class="res term"><code>
+yame fetch   •   ~/.local/share/yame
 
-  <p>Every fetch says what it will do and asks first. <code class="inl">-n</code>
-  prints that plan and stops, successfully, so a script can check before
-  committing:</p>
-  <pre><code>yame <span class="sub">fetch</span> -n hg38/data</code></pre>
-  <pre class="res"><code>hg38/data: 7 files in 1 directory, 51.0 MB
-  human_hg38_40_celltypes_chr20.cg               39.5 MB
-  human_hg38_celltypes.cg                         6.1 MB
-  human_hg38_immune_mixture.cg                    3.5 MB
-  human_hg38_test.truth.cg                        1.9 MB
-  human_hg38_test.cg                            101.3 KB
-  human_hg38_40_celltypes_chr20.cg.idx            2.1 KB
-  human_hg38_celltypes.cg.idx                       96 B</code></pre>
-  <p>Files already in the store are counted separately and not re-fetched, so
-  the size quoted is the transfer rather than the total on disk. When that
-  leaves nothing to do it says so and stops &mdash; no prompt:</p>
-  <pre class="res"><code>hg38 -g celltype: all 6 files already in the store.</code></pre>
+        <span style="color:#7d8b95">TARGET          KIND                                 TAG        IN STORE</span>
 
-  <p>On a terminal a bare <code class="inl">fetch</code> opens a picker; inside
-  it <code class="inl">/</code> filters the tree on those same facets, enter
-  fixes the view so you can select in it, and esc clears it. Piped or
-  redirected, <code class="inl">fetch</code> dumps the registry as TSV instead,
-  so a script never blocks on a keystroke.</p>
-  <pre><code>yame <span class="sub">fetch</span> -l | cut -f1,2,5,6 | head -5</code></pre>
-  <pre class="res"><code>target	source	file	bytes
-EPIC	InfiniumAnnotation	EPIC.ordering.tsv.gz	7756709
-EPIC	InfiniumAnnotation	EPIC.hg38.coord.tsv.gz	5505138
-EPIC	InfiniumAnnotation	EPIC.hg38.snp.tsv.gz	1776995
-EPIC	InfiniumAnnotation	EPIC.typeI_ext.tsv.gz	91446</code></pre>
-  <p><code class="inl">-l</code> takes the same name and
-  <code class="inl">-g</code> a fetch does, so it is the machine-readable form
-  of the same question.</p>
-  <pre><code>yame <span class="sub">fetch</span> -l hg38 -g methscope   <span class="cm"># exactly what that fetch would take</span>
-yame <span class="sub">fetch</span> -l | cut -f1 | sort -u  <span class="cm"># every name you can fetch</span>
-yame <span class="sub">fetch</span> -l | awk -F'\t' '$9=="no"'  <span class="cm"># what the store is missing</span></code></pre>
-  <p>Every row carries size, sha256, description and whether the store already
-  holds it. A directory records which upstream tag filled it and refuses to mix
-  tags &mdash; a row reading <code class="inl">stale tag: -f</code> wants
-  <code class="inl">yame fetch -f &lt;name&gt;</code>.</p>
+<span style="color:#3aa8a0"> </span> <span style="color:#d99a20">▪ HUMAN                                                                       </span><span style="color:#7d8b95"></span>
+
+<span style="color:#3aa8a0">❯</span> <span style="color:#7d8b95"></span><span style="color:#3aa8a0">▾</span> <span style="color:#d99a20">[*] hg38            genome                               </span><span style="color:#7d8b95">mixed ▰▱▱▱▱    5/47</span>
+
+<span style="color:#3aa8a0"> </span> <span style="color:#7d8b95">├── </span><span style="color:#3aa8a0"> </span>  ●  cpg_nocontig.cr                                  <span style="color:#7d8b95">v2          28.9 MB</span>
+
+<span style="color:#3aa8a0"> </span> <span style="color:#7d8b95">├── </span><span style="color:#3aa8a0">▸</span> <span style="color:#7d8b95">[ ] KYCG        sets                                 </span><span style="color:#7d8b95">v2    ▱▱▱▱▱    0/32</span>
+
+<span style="color:#3aa8a0"> </span> <span style="color:#7d8b95">├── </span><span style="color:#3aa8a0">▸</span> <span style="color:#3f9e5a"> ✓  data        sets                                 </span><span style="color:#7d8b95">v3    ▰▰▰▰▰     5/5</span>
+
+<span style="color:#7d8b95">  ────────────────────────────────────────</span>
+
+  hg38   <span style="color:#3aa8a0">genome build</span></code></pre>
+  <p>Arrows move, <code class="inl">/</code> filters by name, source,
+  collection or title, <code class="inl">x</code> takes a row (a folder takes
+  everything under it) and <code class="inl">f</code> fetches. What the store
+  already holds shows as present and cannot be re-taken.</p>
+  <p>Files land in a digest-verified store shared by every tool in the suite
+  &mdash; <code class="inl">$YAME_DATA_HOME</code>, default
+  <code class="inl">~/.local/share/yame</code> &mdash; so what you fetch here
+  is what <code class="inl">kycg</code> and <code class="inl">sesame-cli</code>
+  find. Everything else on this page runs against it.</p>
+  <p>Piped or redirected, <code class="inl">fetch</code> prints the catalogue
+  as TSV instead, so a script never blocks on a keystroke. Naming a target,
+  filtering it, dry runs and the rest:
+  <code class="inl">yame fetch -h</code>.</p>
 </section>
 <section class="card">
   <h2>Storage scheme <span class="m">— position is implied, never stored</span></h2>
