@@ -163,13 +163,6 @@
         border:1px solid var(--line);background:var(--card);color:var(--fg);
         box-shadow:var(--shadow);font-size:.83rem;line-height:1.5;display:none}
       #tipbox b{color:var(--accent)}
-      /* copy button on every example */
-      .runnable{position:relative}
-      .runnable button.cp{position:absolute;top:7px;right:7px;font:inherit;font-size:.7rem;
-        cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:2px 7px;
-        background:var(--card);color:var(--muted);opacity:0;transition:opacity .12s}
-      .runnable:hover button.cp,.runnable button.cp:focus-visible{opacity:1}
-      .runnable button.cp.done{color:var(--ok);border-color:var(--ok)}
 
 
       /* --- flat cards, no sidebar: this is a page you scan, not one you
@@ -211,33 +204,26 @@
       /* --- enlarge anything captured or drawn ---
          Output and diagrams are set small so a card stays a card, which is
          fine until the thing you came to read IS the picture: a heatmap row,
-         a tree, a byte layout. The magnifier lifts one out at a readable size
-         without making every card taller for the sake of one. */
+         a tree, a byte layout. Clicking one lifts it out at a readable size
+         without making every card taller for the sake of one. The cursor is
+         the whole affordance -- zoom-in going in, zoom-out coming back. */
       .card pre,figure.dia{position:relative;cursor:zoom-in}
-      /* The affordance is a hint, not a control -- pointer-events:none so the
-         click lands on the block underneath it rather than on the label. */
-      .card pre::after,figure.dia::after{content:"click to enlarge";
-        position:absolute;top:6px;right:8px;font:inherit;font-size:.66rem;
-        line-height:1;color:var(--muted);opacity:0;pointer-events:none;
-        transition:opacity .12s}
-      /* a command block already has a copy button in that corner */
-      .card pre:has(button)::after{right:56px}
       figure.dia pre{cursor:inherit}
-      figure.dia pre::after{content:none}
-      .card pre:hover::after,figure.dia:hover::after{opacity:.75}
       #lens,#lens *{cursor:zoom-out}
       #lens{position:fixed;inset:0;z-index:60;display:none;
         background:color-mix(in srgb,var(--bg) 88%,#000);padding:28px;overflow:auto}
       #lens.on{display:flex;align-items:center;justify-content:center}
       #lens .box{max-width:100%;max-height:88vh;overflow:auto}
-      #lens pre{margin:0;background:var(--soft);color:var(--fg);
-        border:1px solid var(--line);border-radius:10px;padding:18px 20px;
+      #lens pre{margin:0;border-radius:10px;padding:18px 20px;
         font-size:.98rem;box-shadow:var(--shadow)}
+      /* a bare <pre> is a command and keeps --code-bg from the base rule;
+         only .res carries the lighter output palette */
+      #lens pre.res{background:var(--soft);color:var(--fg);
+        border:1px solid var(--line)}
       #lens figure.dia{margin:0;background:var(--card)}
       #lens figure.dia pre{font-size:.98rem;padding:18px 20px;border-radius:9px 9px 0 0}
       #lens pre code{font-size:inherit}
       #lens figure.dia figcaption{font-size:.9rem;padding:12px 20px;max-width:none}
-      #lens .card pre::after,#lens figure.dia::after{content:none}
       #lens .hint{position:fixed;bottom:16px;left:0;right:0;text-align:center;
         color:var(--muted);font-size:.78rem}
     </style>
