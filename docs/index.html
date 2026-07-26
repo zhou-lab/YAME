@@ -187,9 +187,21 @@
         border-bottom:1px solid var(--line)}
       .tab{font:inherit;font-size:.86rem;font-weight:600;cursor:pointer;
         border:0;border-bottom:2px solid transparent;background:none;
-        color:var(--muted);padding:9px 15px;margin-bottom:-1px;
+        color:var(--muted);padding:9px 12px;margin-bottom:-1px;
         transition:color .12s,border-color .12s}
       .tab:hover{color:var(--fg)}
+      /* The format code as a chip rather than a bracketed digit: it is a
+         name, not a count, and the filled state makes the open tab obvious
+         at a glance across nine of them. */
+      .tab .fno{display:inline-block;min-width:1.5em;text-align:center;
+        font:600 .7rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+        padding:1px 0;border-radius:5px;margin-right:6px;
+        background:var(--soft);color:var(--muted);
+        border:1px solid var(--line);vertical-align:1px;
+        transition:background .12s,color .12s,border-color .12s}
+      .tab:hover .fno{color:var(--fg);border-color:var(--muted)}
+      .tab.on .fno{background:var(--accent);color:var(--on-accent);
+        border-color:var(--accent)}
       .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
       .tab:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;
         border-radius:6px}
@@ -278,19 +290,19 @@
   <button class="tab" type="button" role="tab" id="tab-model" tabindex="-1"
     aria-controls="panel-model" aria-selected="false">Data model</button>
   <button class="tab" type="button" role="tab" id="tab-f3" tabindex="-1"
-    aria-controls="panel-f3" aria-selected="false">[3] M/U</button>
+    aria-controls="panel-f3" aria-selected="false"><span class="fno">3</span>M/U</button>
   <button class="tab" type="button" role="tab" id="tab-f6" tabindex="-1"
-    aria-controls="panel-f6" aria-selected="false">[6] set+uni</button>
+    aria-controls="panel-f6" aria-selected="false"><span class="fno">6</span>set+uni</button>
   <button class="tab" type="button" role="tab" id="tab-f0" tabindex="-1"
-    aria-controls="panel-f0" aria-selected="false">[0] binary</button>
+    aria-controls="panel-f0" aria-selected="false"><span class="fno">0</span>binary</button>
   <button class="tab" type="button" role="tab" id="tab-f1" tabindex="-1"
-    aria-controls="panel-f1" aria-selected="false">[1] byte</button>
+    aria-controls="panel-f1" aria-selected="false"><span class="fno">1</span>byte</button>
   <button class="tab" type="button" role="tab" id="tab-f2" tabindex="-1"
-    aria-controls="panel-f2" aria-selected="false">[2] states</button>
+    aria-controls="panel-f2" aria-selected="false"><span class="fno">2</span>states</button>
   <button class="tab" type="button" role="tab" id="tab-f4" tabindex="-1"
-    aria-controls="panel-f4" aria-selected="false">[4] beta</button>
+    aria-controls="panel-f4" aria-selected="false"><span class="fno">4</span>beta</button>
   <button class="tab" type="button" role="tab" id="tab-f7" tabindex="-1"
-    aria-controls="panel-f7" aria-selected="false">[7] coords</button>
+    aria-controls="panel-f7" aria-selected="false"><span class="fno">7</span>coords</button>
 </nav>
 
 <div class="panel" id="panel-use" role="tabpanel" aria-labelledby="tab-use">
