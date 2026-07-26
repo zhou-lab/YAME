@@ -93,9 +93,10 @@ static int usage(void) {
   yame_usage_cont("verified against the manifest that tag publishes.");
   yame_usage_opt("-f", "Re-download what is present, and overwrite a store that");
   yame_usage_cont("was populated from a different tag.");
-  yame_usage_opt("-l", "Dump the registry as TSV and exit: every file this build");
-  yame_usage_cont("knows, with its size, digest, description and whether the");
-  yame_usage_cont("store already has it. One row per file, for cut and grep.");
+  yame_usage_opt("-l", "Dump the registry as TSV and exit: one row per file, with");
+  yame_usage_cont("its size, digest, description and whether the store has it.");
+  yame_usage_cont("Takes the same <name> and -g a fetch does, so `-l hg38 -g");
+  yame_usage_cont("methscope` is the dry run for fetching exactly that.");
   yame_usage_opt("-g <a,b>", "Only files matching every term: name, source, collection,");
   yame_usage_cont("title or upstream database. `-g chromatin` inside a");
   yame_usage_cont("knowledgebase, `-g celltype` across a whole genome.");
