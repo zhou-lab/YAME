@@ -355,22 +355,54 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
  * • `rdr->value` resets to 0 whenever a new chromosome begins.
  * • The caller is expected to initialize rdr = {0} before the first call.
  */
+/* Every read below is bounds-checked, because this decoder is the one place
+ * that treats a file as a program to follow: a name runs until a NUL and a
+ * delta is 1, 2 or 8 bytes according to a tag in the data itself. On a
+ * truncated stream the old code ran strlen() off the end of the buffer and
+ * read up to seven bytes past it. Reported as issue #1.
+ *
+ * Running out mid-record is fatal rather than a quiet stop. A .cr is what
+ * gives every other file its coordinates, so a short one does not mean "fewer
+ * rows" -- it means every row count downstream is wrong, and stopping quietly
+ * would hand that to a caller as if it were an answer. Running out cleanly,
+ * between records, is just the end of the stream. */
+static void fmt7_truncated(const char *what, uint64_t at, uint64_t n) {
+  wzfatal("[row_reader_next_loc] coordinate stream ends mid-record: %s at "
+          "byte %"PRIu64" of %"PRIu64". The .cr is truncated or corrupt -- "
+          "re-fetch it (`yame fetch` verifies against a digest).\n",
+          what, at, n);
+}
+
 int row_reader_next_loc(row_reader_t *rdr, const cdata_t *c) {
   if (rdr->loc >= c->n) return 0; // past chromosome length
   if (c->s[rdr->loc] == 0xff || !rdr->index) { // hit end of chromosome
     if (c->s[rdr->loc] == 0xff) rdr->loc++;
+    /* A valid stream ends with the last chromosome's 0xff, so landing exactly
+     * on the end here is the normal way to finish. */
+    if (rdr->loc >= c->n) return 0;
+
+    /* Find the name's terminator inside the buffer instead of trusting
+     * strlen() to meet one. */
+    uint64_t end = rdr->loc;
+    while (end < c->n && c->s[end]) ++end;
+    if (end >= c->n) fmt7_truncated("unterminated chromosome name", rdr->loc, c->n);
+
     rdr->chrm = (char*) c->s + rdr->loc;
-    rdr->loc += strlen(rdr->chrm)+1;
+    rdr->loc = end + 1;
     rdr->value = 0;
+    if (rdr->loc >= c->n) fmt7_truncated("no coordinate after chromosome name",
+                                         rdr->loc, c->n);
   }
 
   if ((c->s[rdr->loc]>>6) == 3) { // 8 bytes
+    if (rdr->loc + 8 > c->n) fmt7_truncated("8-byte delta", rdr->loc, c->n);
     uint64_t dn = (((uint64_t) c->s[rdr->loc] & 0x3f)<<(8*7));
     for (int i=1; i<8; ++i)
       dn |= (((uint64_t) c->s[rdr->loc+i])<<(8*(7-i)));
     rdr->value += dn;
     rdr->loc += 8;
   } else if ((c->s[rdr->loc]>>6) == 2) { // 2 bytes
+    if (rdr->loc + 2 > c->n) fmt7_truncated("2-byte delta", rdr->loc, c->n);
     uint64_t dn = (((uint64_t) c->s[rdr->loc] & 0x3f)<<8);
     dn |= (uint64_t) c->s[rdr->loc+1];
     rdr->value += dn;
