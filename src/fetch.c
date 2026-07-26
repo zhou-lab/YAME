@@ -61,6 +61,8 @@ static int usage(void) {
   yame_usage_text("A name is what the browser shows: hg38, hg38/KYCG, hg38/data,");
   yame_usage_text("EPIC. It is a scope -- `hg38` takes the unit and everything under");
   yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
+  yame_usage_text("A file name also resolves -- `human_hg38_test.cg`, or");
+  yame_usage_text("`hg38/KYCG/cpg_nocontig.cr` when several directories publish one.");
   yame_usage_text("The registry's own <source>/<target> still resolves.");
 
   yame_usage_sec("Browsing:");
@@ -78,6 +80,9 @@ static int usage(void) {
   yame_usage_sec("Purpose:");
   yame_usage_text("Download reference assets into the shared store that every tool in the");
   yame_usage_text("suite reads, verifying each file against a digest this build pins.");
+  yame_usage_text("-c puts them in the current directory instead, for a one-off or a");
+  yame_usage_text("demo: no SHA256SUMS is written beside them, but each file is checked");
+  yame_usage_text("against the same digest.");
 
   yame_usage_sec("Store:");
   yame_usage_text("Resolved in order: -d, $YAME_DATA_HOME,");
@@ -110,6 +115,7 @@ static int usage(void) {
   yame_usage_opt("-u <url>", "Single-file form: what to download.");
   yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
   yame_usage_opt("-o <dest>", "Single-file form: where it goes (a path, not a dir).");
+  yame_usage_opt("-c", "Into the current directory rather than the store.");
   yame_usage_opt("-h", "This help.");
 
   yame_usage_sec("Notes:");
@@ -1861,8 +1867,69 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
  * split here so each lands under the genome it belongs to. Taking the file
  * list from the entry rather than the manifest is what keeps that honest;
  * where the two coincide this is exactly what it did before. */
+/**
+ * Does one file survive the selection?
+ *
+ * Two independent narrowings share this: -g, which matches facets, and a spec
+ * that named a file rather than a directory. Keeping them in one predicate is
+ * what stops the plan, the listing and the transfer from disagreeing about
+ * what is about to move -- they each used to inline the -g test.
+ */
+/* Where a file would land, and whether it is already there: the store's
+ * layout, or the current directory under -c. */
+static int sel_present(const char *root, const yame_asset_reg_t *a,
+                       const char *name, int here) {
+  return here ? yame_assets_is_file(name) : file_present(root, a, name);
+}
+
+static int file_wanted(const yame_asset_reg_t *a, const char *name,
+                       const char *filter, const char *only_file) {
+  if (only_file && strcmp(name, only_file) != 0) return 0;
+  if (filter) {
+    char f[1024];
+    file_facets(a, name, f, sizeof(f));
+    if (!facets_match(f, filter)) return 0;
+  }
+  return 1;
+}
+
+/**
+ * -c: the files themselves, in the current directory.
+ *
+ * A demo wants ./human_hg38_test.cg, not a store path -- and the store's
+ * fetch writes SHA256SUMS verbatim beside what it takes, which is right for a
+ * directory that has to stay checkable and wrong for someone's working
+ * directory, where it would be litter and would collide between units.
+ *
+ * Verification is not weakened by skipping the manifest: the per-file digest
+ * compiled into the registry is the one the manifest would have supplied, and
+ * it is what the anchor made trustworthy at build time.
+ */
+static int fetch_entry_here(const yame_asset_reg_t *a, const char *tag,
+                            const char *filter, const char *only_file,
+                            const yame_fetch_opt_t *opt, char **err) {
+  for (size_t i = 0; i < a->n_files; ++i) {
+    const char *name = a->files[i].name;
+    if (!file_wanted(a, name, filter, only_file)) continue;
+
+    char url[4096];
+    int n = (a->remote_sub && a->remote_sub[0])
+      ? snprintf(url, sizeof(url), "%s/%s/%s/%s",
+                 a->base_url, tag, a->remote_sub, name)
+      : snprintf(url, sizeof(url), "%s/%s/%s", a->base_url, tag, name);
+    if (n < 0 || (size_t)n >= sizeof(url)) return -1;
+
+    int got = 0;
+    if (yame_assets_download_verify(url, a->files[i].sha256, name,
+                                    opt, &got, err) != 0)
+      return -1;
+  }
+  return 0;
+}
+
 static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
                        const char *tag, const char *anchor, const char *filter,
+                       const char *only_file,
                        const yame_fetch_opt_t *opt, char **err) {
   char store_sub[4096];
   if (yame_assets_join(store_sub, sizeof(store_sub), store_root, a->store_sub) != 0)
@@ -1872,11 +1939,7 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
   if (!names) return -1;
   size_t n_names = 0;
   for (size_t i = 0; i < a->n_files; ++i) {
-    if (filter) {
-      char f[1024];
-      file_facets(a, a->files[i].name, f, sizeof(f));
-      if (!facets_match(f, filter)) continue;
-    }
+    if (!file_wanted(a, a->files[i].name, filter, only_file)) continue;
     names[n_names++] = a->files[i].name;
   }
   if (!n_names) { free(names); return 0; }
@@ -1891,12 +1954,14 @@ int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
-  int dry_run = 0;
+  int dry_run = 0, here = 0;
+  const char *only_file = NULL;
   const char *filter = NULL;
   int c;
 
-  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yng:h")) >= 0) {
+  while ((c = getopt(argc, argv, "cd:t:kflqu:s:o:yng:h")) >= 0) {
     switch (c) {
+    case 'c': here = 1; break;
     case 'd': dopt = optarg; break;
     case 't': tag_override = optarg; break;
     case 'k': unpinned_ok = 1; break;
@@ -2002,6 +2067,46 @@ int main_fetch(int argc, char *argv[]) {
     }
   }
 
+  /* A file name, bare or with a scope in front. Someone copying a command
+   * out of the documentation types the file it names; making them work out
+   * that human_hg38_test.cg lives in hg38/data is a lookup this can do. A
+   * name claimed by several directories (cpg_nocontig.cr is in three) is
+   * reported rather than guessed at. */
+  if (!n_sel) {
+    const char *cut = strrchr(spec, '/');
+    const char *fname = cut ? cut + 1 : spec;
+    char head[256] = "";
+    if (cut && (size_t)(cut - spec) < sizeof(head))
+      memcpy(head, spec, (size_t)(cut - spec));
+
+    const yame_asset_reg_t *hit[16];
+    char hitpath[16][544];   /* a 264-byte browser path plus a file name */
+    size_t n_hit = 0;
+    for (size_t i = 0; i < YAME_ASSETS_N && n_hit < 16; ++i) {
+      char u[128], sb[128], full[264];
+      unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
+      if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
+      else       snprintf(full, sizeof(full), "%s", u);
+      if (head[0] && strcasecmp(full, head) != 0) continue;
+      for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
+        if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
+          hit[n_hit] = &YAME_ASSETS[i];
+          snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
+                   full, fname);
+          ++n_hit;
+          break;
+        }
+    }
+    if (n_hit == 1) { sel[0] = hit[0]; n_sel = 1; only_file = fname; }
+    else if (n_hit > 1) {
+      fprintf(stderr, "yame fetch: %zu directories publish a file called "
+                      "%s. Name one:\n", n_hit, fname);
+      for (size_t i = 0; i < n_hit; ++i)
+        fprintf(stderr, "  %s\n", hitpath[i]);
+      return 1;
+    }
+  }
+
   if (!n_sel) {
     fprintf(stderr,
             "yame fetch: nothing in the catalogue is called %s.\n"
@@ -2013,7 +2118,8 @@ int main_fetch(int argc, char *argv[]) {
 
   char root[4096];
   yame_assets_root(dopt, NULL, root, sizeof(root));
-  if (!yame_assets_root_writable(root)) {
+  /* -c never touches the store, so a read-only one must not stop it. */
+  if (!here && !yame_assets_root_writable(root)) {
     fprintf(stderr,
             "yame fetch: %s is not writable. A read-only shared store is fine "
             "to read from, but nothing can be fetched into it; set -d or "
@@ -2027,20 +2133,18 @@ int main_fetch(int argc, char *argv[]) {
   size_t n_files = 0, n_dirs = 0, n_have = 0;
   uint64_t total = 0;
   for (size_t i = 0; i < n_sel; ++i) {
-    size_t here = 0;
+    size_t n_here = 0;
     for (size_t j = 0; j < sel[i]->n_files; ++j) {
-      if (filter) {
-        char f[1024];
-        file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
-        if (!facets_match(f, filter)) continue;
-      }
-      ++here;
+      if (!file_wanted(sel[i], sel[i]->files[j].name, filter, only_file))
+        continue;
+      ++n_here;
       /* Already-present files are skipped unless -f, so counting their bytes
        * in the total would quote a transfer that is not going to happen. */
-      if (!force && file_present(root, sel[i], sel[i]->files[j].name)) ++n_have;
+      if (!force && sel_present(root, sel[i], sel[i]->files[j].name, here))
+        ++n_have;
       else total += sel[i]->files[j].size;
     }
-    if (here) { ++n_dirs; n_files += here; }
+    if (n_here) { ++n_dirs; n_files += n_here; }
   }
 
   if (!n_files) {
@@ -2056,9 +2160,9 @@ int main_fetch(int argc, char *argv[]) {
   /* Nothing to move is a finished job, not an empty plan: say so plainly and
    * stop, rather than printing a size of nothing and asking to confirm it. */
   if (n_have == n_files) {
-    fprintf(stderr, "%s%s%s: all %zu file%s already in the store.\n", spec,
+    fprintf(stderr, "%s%s%s: all %zu file%s already %s.\n", spec,
             filter ? " -g " : "", filter ? filter : "", n_files,
-            n_files == 1 ? "" : "s");
+            n_files == 1 ? "" : "s", here ? "here" : "in the store");
     return 0;
   }
 
@@ -2080,8 +2184,8 @@ int main_fetch(int argc, char *argv[]) {
             n_files, n_files == 1 ? "" : "s",
             n_dirs, n_dirs == 1 ? "y" : "ies");
     if (n_have)
-      fprintf(stderr, " -- %zu already in the store, %zu to fetch",
-              n_have, n_files - n_have);
+      fprintf(stderr, " -- %zu already %s, %zu to fetch",
+              n_have, here ? "here" : "in the store", n_files - n_have);
     fprintf(stderr, ", %s\n", hs);
 
     struct { const char *name; uint64_t size; } *v =
@@ -2090,12 +2194,9 @@ int main_fetch(int argc, char *argv[]) {
       size_t k = 0;
       for (size_t i = 0; i < n_sel; ++i)
         for (size_t j = 0; j < sel[i]->n_files && k < n_files; ++j) {
-          if (filter) {
-            char f[1024];
-            file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
-            if (!facets_match(f, filter)) continue;
-          }
-          if (!force && file_present(root, sel[i], sel[i]->files[j].name))
+          if (!file_wanted(sel[i], sel[i]->files[j].name, filter, only_file))
+            continue;
+          if (!force && sel_present(root, sel[i], sel[i]->files[j].name, here))
             continue;                 /* listing what will move, not what is */
           v[k].name = sel[i]->files[j].name;
           v[k].size = sel[i]->files[j].size;
@@ -2194,7 +2295,10 @@ int main_fetch(int argc, char *argv[]) {
       return 1;
     }
 
-    if (fetch_entry(a, root, tag, anchor, filter, &opt, &err) != 0) {
+    int rc = here ? fetch_entry_here(a, tag, filter, only_file, &opt, &err)
+                  : fetch_entry(a, root, tag, anchor, filter, only_file,
+                                &opt, &err);
+    if (rc != 0) {
       fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
       free(err);
       return 1;
