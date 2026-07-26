@@ -128,8 +128,6 @@
       /* The cite chip is a span inside .links; exempt it from the separator
          rule above, which would otherwise fade the whole chip to 40%. */
       .links .cite{opacity:1;margin:0 0 0 7px}
-      /* Each carries its row count as a title -- the count *is* the row
-         space's identity, which is what lets -R be inferred from a file. */
 
 
       .hidden{display:none}
@@ -271,17 +269,6 @@
        class="pmid" type="button" data-pmid="41134907"
        title="Copy PMID to clipboard">PMID</button></span>
   </p>
-  <p class="rowspaces"><b>row spaces</b>
-    <span title="29,401,795 rows">hg38</span> <i>·</i>
-    <span title="21,867,837 rows">mm10</span> <i>·</i>
-    <span title="21,889,506 rows">mm39</span> <i>·</i>
-    <span title="937,690 rows">EPICv2</span> <i>·</i>
-    <span title="866,553 rows">EPIC</span> <i>·</i>
-    <span title="486,427 rows">HM450</span> <i>·</i>
-    <span title="287,692 rows">MM285</span> <i>·</i>
-    <span title="284,309 rows">MSA</span> <i>·</i>
-    <span title="38,607 rows">Mammal40</span> <i>·</i>
-    <span title="27,722 rows">HM27</span></p>
 </header>
 
 <nav class="tabs" role="tablist" aria-label="Sections">
@@ -317,6 +304,14 @@
   <code class="inl">~/.local/share/yame</code> &mdash; so what you fetch here
   is what <code class="inl">KnowYourCG</code> and <code class="inl">SeSAMe</code>
   find. Everything else on this page runs against it.</p>
+  <p>What it carries are the row spaces everything else is measured in. Each length is distinct, so <b>the count is the identity</b> &mdash; which is what lets <code class='inl'>-R</code> and <code class='inl'>-m</code> take a name instead of a path.</p>
+  <pre class="res"><span class="cm">row space        rows   row space        rows</span>
+<span class="cm">─────────────────────────────────────────────</span>
+hg38       29,401,795   HM450         486,427
+mm10       21,867,837   MM285         287,692
+mm39       21,889,506   MSA           284,309
+EPICv2        937,690   Mammal40       38,607
+EPIC          866,553   HM27           27,722</pre>
   <p>Piped or redirected, <code class="inl">fetch</code> prints the catalogue
   as TSV instead, so a script never blocks on a keystroke. Naming a target,
   filtering it, dry runs and the rest:
