@@ -222,10 +222,31 @@ typedef struct {
  * a fetch has to put the counts back. */
 static void refresh_roots(browse_t *b);
 
+/**
+ * Where one file lands, relative to the store root.
+ *
+ * Its own slot when it has one, else its unit's. Everything that asks where a
+ * file is -- the presence check, the browser row, the info panel, `fetch -l`,
+ * the download itself -- comes through here, so the tree cannot say one place
+ * while the fetch means another.
+ */
+static const char *file_store_sub(const yame_asset_reg_t *a,
+                                  const yame_asset_file_t *f) {
+  return (f && f->store_sub) ? f->store_sub : a->store_sub;
+}
+
+static const yame_asset_file_t *file_of(const yame_asset_reg_t *a,
+                                        const char *name) {
+  for (size_t i = 0; i < a->n_files; ++i)
+    if (strcmp(a->files[i].name, name) == 0) return &a->files[i];
+  return NULL;
+}
+
 static int file_present(const char *store_root, const yame_asset_reg_t *a,
                         const char *name) {
   char dir[4096], path[4096];
-  if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0) return 0;
+  if (yame_assets_join(dir, sizeof(dir), store_root,
+                       file_store_sub(a, file_of(a, name))) != 0) return 0;
   if (yame_assets_join(path, sizeof(path), dir, name) != 0) return 0;
   return yame_assets_is_file(path);
 }
@@ -470,8 +491,16 @@ static size_t unit_entries(const char *unit, const char *sub, int recursive,
       if (is_companion(a, f->name)) continue;
 
       int required = is_unit_index(f->name);
-      /* The index renders at the top of the unit wherever it is published. */
-      const char *at = required ? "" : s;
+      /* The row sits at the file's store slot, relative to its unit. Deriving
+       * the tree from the store rather than alongside it is what keeps an
+       * address and a location from disagreeing -- a genome index is stored
+       * at <genome>/ and so renders there, though it is published under
+       * <genome>/KYCG. `required` governs ordering and auto-inclusion; it no
+       * longer decides placement. */
+      const char *fsub = file_store_sub(a, f);
+      const char *slash = strchr(fsub, '/');
+      const char *at = slash ? slash + 1 : "";
+      (void)s;
       if (!recursive && strcmp(at, sub) != 0) continue;
 
       char idxname[256];
@@ -744,6 +773,10 @@ static void info_key_of(const char *name, char *out, size_t n) {
  * matching so that -l is the dry run for a fetch. */
 static void file_facets(const yame_asset_reg_t *a, const char *name,
                         char *out, size_t cap);
+static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
+                       const char *tag, const char *anchor,
+                       const char *const *names, size_t n_names,
+                       const yame_fetch_opt_t *opt, char **err);
 static int facets_match(const char *facets, const char *terms);
 static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
                             size_t cap);
@@ -819,7 +852,7 @@ static int dump_registry(const char *dopt, const char *scope,
       title[n] = '\0';
 
       printf("%s\t%s\t%s\t%s\t%s\t%" PRIu64 "\t%s\t%s\t%s\t%s\n",
-             a->target, a->source, a->tag, a->store_sub, f->name,
+             a->target, a->source, a->tag, file_store_sub(a, f), f->name,
              f->size, f->sha256 ? f->sha256 : "-", state,
              yame_assets_is_file(path) ? "yes" : "no", title);
     }
@@ -1072,7 +1105,7 @@ static void lay_provenance(info_lay_t *L, const yame_asset_reg_t *a,
   snprintf(buf, sizeof(buf), "%s @ %s", a->base_url, a->tag);
   lay_wrap(L, "upstream", buf);
 
-  snprintf(buf, sizeof(buf), "%s/%s", a->store_sub, f ? f->name : "");
+  snprintf(buf, sizeof(buf), "%s/%s", file_store_sub(a, f), f ? f->name : "");
   lay_wrap(L, "store", buf);
 
   if (f) {
@@ -1513,10 +1546,6 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
     if (!n_names) continue;
 
     const yame_asset_reg_t *a = &YAME_ASSETS[idx];
-    char store_sub[4096];
-    if (yame_assets_join(store_sub, sizeof(store_sub), b->root, a->store_sub) != 0) {
-      ++bad; continue;
-    }
 
     fprog_t fp;
     memset(&fp, 0, sizeof(fp));
@@ -1543,8 +1572,8 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
     }
 
     char *err = NULL;
-    if (yame_assets_fetch_subset(a->base_url, a->tag, a->remote_sub, store_sub,
-                                 a->anchor, names, n_names, &opt, &err) == 0) {
+    if (fetch_names(a, b->root, a->tag, a->anchor, names, n_names,
+                    &opt, &err) == 0) {
       ok += (int)n_names;
       for (size_t j = 0; j < n_names; ++j)
         for (size_t k = 0; k < a->n_files; ++k)
@@ -1954,14 +1983,58 @@ static int fetch_entry_here(const yame_asset_reg_t *a, const char *tag,
   return 0;
 }
 
+/**
+ * Fetch a named set of files from one unit, each into its own store slot.
+ *
+ * Files that live in the unit's directory go through fetch_subset, which
+ * writes the manifest beside them. A file with a slot of its own cannot: the
+ * directory it lands in is described by a different repo's SHA256SUMS, and
+ * writing this unit's manifest there would collide with it and leave both
+ * directories failing their pin check. Those files are downloaded against
+ * the digest the registry pins -- the same check fetch_subset applies to
+ * every byte it writes -- without a manifest claiming to describe where they
+ * landed.
+ */
+static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
+                       const char *tag, const char *anchor,
+                       const char *const *names, size_t n_names,
+                       const yame_fetch_opt_t *opt, char **err) {
+  const char **own = malloc(n_names * sizeof(*own));
+  if (!own) return -1;
+  size_t n_own = 0;
+  int rc = 0;
+
+  for (size_t i = 0; i < n_names && rc == 0; ++i) {
+    const yame_asset_file_t *f = file_of(a, names[i]);
+    if (!f || !f->store_sub) { own[n_own++] = names[i]; continue; }
+
+    char dir[4096], dest[4096], url[4096];
+    if (yame_assets_join(dir, sizeof(dir), store_root, f->store_sub) != 0 ||
+        yame_assets_mkdir_p(dir) != 0 ||
+        yame_assets_join(dest, sizeof(dest), dir, f->name) != 0) { rc = -1; break; }
+    int n = (a->remote_sub && a->remote_sub[0])
+      ? snprintf(url, sizeof(url), "%s/%s/%s/%s",
+                 a->base_url, tag, a->remote_sub, f->name)
+      : snprintf(url, sizeof(url), "%s/%s/%s", a->base_url, tag, f->name);
+    if (n < 0 || (size_t)n >= sizeof(url)) { rc = -1; break; }
+    int got = 0;
+    rc = yame_assets_download_verify(url, f->sha256, dest, opt, &got, err);
+  }
+
+  if (rc == 0 && n_own) {
+    char sub[4096];
+    if (yame_assets_join(sub, sizeof(sub), store_root, a->store_sub) != 0) rc = -1;
+    else rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, sub,
+                                       anchor, own, n_own, opt, err);
+  }
+  free(own);
+  return rc;
+}
+
 static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
                        const char *tag, const char *anchor, const char *filter,
                        const char *only_file,
                        const yame_fetch_opt_t *opt, char **err) {
-  char store_sub[4096];
-  if (yame_assets_join(store_sub, sizeof(store_sub), store_root, a->store_sub) != 0)
-    return -1;
-
   const char **names = malloc(a->n_files * sizeof(*names));
   if (!names) return -1;
   size_t n_names = 0;
@@ -1971,8 +2044,7 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
   }
   if (!n_names) { free(names); return 0; }
 
-  int rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, store_sub,
-                                    anchor, names, n_names, opt, err);
+  int rc = fetch_names(a, store_root, tag, anchor, names, n_names, opt, err);
   free(names);
   return rc;
 }
@@ -2052,31 +2124,23 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     char hitpath[16][544];   /* a 264-byte browser path plus a file name */
     size_t n_hit = 0, n_claim = 0;   /* shown, and how many there really are */
     for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-      char u[128], sb[128], full[264];
-      unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
-      if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
-      else       snprintf(full, sizeof(full), "%s", u);
-      /* A unit index renders at the top of its unit rather than in the
-       * directory that publishes it, so what a reader sees is
-       * hg38/cpg_nocontig.cr while the file lives in hg38/KYCG. Take the
-       * address the browser shows as well as the true one -- the visible
-       * spelling should not be the one that fails. Only the three genome
-       * .cr files differ this way; an array's ordering is published in the
-       * unit it renders under. */
-      const char *at = is_unit_index(fname) ? u : full;
-      if (head[0] && strcasecmp(full, head) != 0 &&
-          strcasecmp(at, head) != 0) continue;
-      for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
-        if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
-          ++n_claim;
-          if (n_hit < 16) {
-            hit[n_hit] = &YAME_ASSETS[i];
-            snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
-                     at, fname);
-            ++n_hit;
-          }
-          break;
+      for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j) {
+        if (strcmp(YAME_ASSETS[i].files[j].name, fname) != 0) continue;
+        /* Addressed where it is stored, which is where the browser shows it.
+         * Deriving this from the unit instead would put a genome index at
+         * <genome>/KYCG here and at <genome>/ everywhere else. */
+        const char *dir = file_store_sub(&YAME_ASSETS[i],
+                                         &YAME_ASSETS[i].files[j]);
+        if (head[0] && strcasecmp(dir, head) != 0) break;
+        ++n_claim;
+        if (n_hit < 16) {
+          hit[n_hit] = &YAME_ASSETS[i];
+          snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
+                   dir, fname);
+          ++n_hit;
         }
+        break;
+      }
     }
     if (n_claim == 1) {
       hits[0] = hit[0];

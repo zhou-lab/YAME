@@ -186,8 +186,8 @@ fi
 ## browser offer individual files instead of whole directories. Sizes come from
 ## catalog/file_sizes.tsv (the contents API); 0 means "not published", and
 ## nothing depends on it.
-emit_file_table() {                ## slug source tag subpath scope [prefix]
-  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-}
+emit_file_table() {   ## slug source tag subpath scope [prefix] [name:slot]
+  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} lift=${7:-}
   local p; p=$(sums_path "$src" "$tg" "$sub")
   printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
   while read -r sha name; do
@@ -201,9 +201,15 @@ emit_file_table() {                ## slug source tag subpath scope [prefix]
                           '$1==g && $2==n {print $3}')
       [ -n "$size" ] || size=0
     fi
-    printf '    { "%s", "%s", %s },\n' "$name" "$sha" "$size"
+    ## A file that belongs elsewhere in the store than the directory
+    ## publishing it, given as name:slot.
+    local slot=NULL
+    if [ -n "$lift" ] && [ "$name" = "${lift%%:*}" ]; then
+      slot="\"${lift#*:}\""
+    fi
+    printf '    { "%s", "%s", %s, %s },\n' "$name" "$sha" "$size" "$slot"
   done < "$p"
-  printf '    { NULL, NULL, 0 }\n};\n\n'
+  printf '    { NULL, NULL, 0, NULL }\n};\n\n'
 }
 
 ## A C identifier for "<source>/<target>".
@@ -244,11 +250,19 @@ emit_yame() {
 #include <stddef.h>
 #include <stdint.h>
 
-/* One file a directory publishes, with the digest it must have. */
+/* One file a directory publishes, with the digest it must have.
+ *
+ * store_sub is normally the unit's, and NULL says so. It is set only where a
+ * file belongs somewhere else in the store than the directory that publishes
+ * it: a genome's cpg_nocontig.cr comes from the KYCGKB repo but is the
+ * genome's index, so it lands at <genome>/ rather than <genome>/KYCG/. The
+ * browser renders a file wherever this puts it, so the tree and the store
+ * cannot drift apart. */
 typedef struct {
     const char *name;
     const char *sha256;
     uint64_t    size;        /* 0 when upstream does not publish one */
+    const char *store_sub;   /* NULL: the unit's own store_sub */
 } yame_asset_file_t;
 
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
@@ -275,7 +289,8 @@ EOF
                     "$ia_tag" "$p/KYCG" "InfiniumAnnotation/$p/KYCG"
   done
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g"
+    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
+                    "" "cpg_nocontig.cr:$g"
   done
   rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
     emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g" "genomes/$g"
@@ -384,7 +399,7 @@ EOF
 
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools _repo nrows _rest; do
     [ -n "${nrows:-}" ] || continue
-    printf '    { "%s", "genome", %s, "%s/KYCG/cpg_nocontig.cr", YAME_REF_DIRS_%s, "%s" },\n' \
+    printf '    { "%s", "genome", %s, "%s/cpg_nocontig.cr", YAME_REF_DIRS_%s, "%s" },\n' \
       "$g" "$nrows" "$g" "$g" "$g"
   done
   rows_of "$cat_dir/InfiniumAnnotation.tsv" |
