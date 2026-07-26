@@ -154,7 +154,10 @@ static const yame_asset_reg_t *find_asset(const char *source, const char *target
  * fetching and wrong for choosing: two repos supply one genome, nobody thinks
  * of a knowledgebase as living somewhere other than the platform it is indexed
  * against, and nobody working on mouse wants to read past six human arrays.
- * The store paths are untouched by any of this.
+ *
+ * The store follows this tree rather than the registry's keying, so what you
+ * see under a name is what lands under that name on disk: hg38/data in the
+ * browser is <root>/hg38/data. Which repo filled a directory is in `source`.
  *
  *   human                       group
  *   +- hg38                     unit: a genome build or an array platform
