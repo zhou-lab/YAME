@@ -2158,6 +2158,10 @@ int main_fetch(int argc, char *argv[]) {
     fprintf(stderr, "Proceed? [y/N] ");
     int c = getchar();
     if (c != 'y' && c != 'Y') { fprintf(stderr, "nothing fetched.\n"); return 1; }
+    /* The answer has served its purpose. Move back over the echoed newline
+     * and the question, so the progress line takes their place instead of
+     * leaving a dead prompt above it. */
+    if (isatty(STDERR_FILENO)) fprintf(stderr, "\033[A\r\033[K");
   }
 
   for (size_t i = 0; i < n_sel; ++i) {
@@ -2186,9 +2190,6 @@ int main_fetch(int argc, char *argv[]) {
       fprintf(stderr, "yame fetch: store path too long.\n");
       return 1;
     }
-
-    if (!quiet)
-      fprintf(stderr, "%s/%s @ %s -> %s\n", a->source, a->target, tag, store_sub);
 
     if (fetch_entry(a, root, tag, anchor, filter, &opt, &err) != 0) {
       fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
