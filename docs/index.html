@@ -222,7 +222,7 @@
     <img class="logo" src="logo.png" alt="">
     <h1><b>Y</b>et <b>A</b>nother <b>M</b>ethylation <b>E</b>ncoder</h1>
     <span class="badge">cli</span><a class="badge badge-ver"
-      href="https://github.com/zhou-lab/YAME/releases/tag/v1.29">v1.29</a>
+      href="https://github.com/zhou-lab/YAME/releases/tag/v1.31">v1.31</a>
     <span class="install">
       <button id="install-btn" type="button"
               data-cmd="conda install -c zhou-lab -c conda-forge yame"
@@ -238,9 +238,9 @@
     <a href="https://github.com/zhou-lab/YAME">GitHub</a><span>·</span>
     <a href="https://bioconda.github.io/recipes/yame/README.html">bioconda</a><span>·</span>
     <a href="https://anaconda.org/zhou-lab/yame">zhou-lab</a><span>·</span>
-    <a href="https://github.com/zhou-lab/kycg">kycg</a><span>·</span>
-    <a href="https://github.com/zwdzwd/sesame-cli">sesame-cli</a><span>·</span>
-    <a href="https://github.com/zhou-lab/cinderplot">cinderplot</a><span>·</span>
+    <a href="https://zhou-lab.github.io/kycg/">kycg</a><span>·</span>
+    <a href="https://zwdzwd.github.io/sesame-cli/">sesame-cli</a><span>·</span>
+    <a href="https://zhou-lab.github.io/cinderplot/">cinderplot</a><span>·</span>
     <span class="cite"><a class="paper"
        href="https://doi.org/10.1126/sciadv.adw3027" rel="noopener"
        title="Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou. KnowYourCG: facilitating base-level sparse methylome interpretation. Sci Adv 2025;11(43):eadw3027">Cite ↗</a><button
@@ -262,18 +262,13 @@
 
 <div class="grid">
 <section class="card">
-  <h2>Install <span class="m">&mdash; and nothing else ships with it</span></h2>
-  <pre><code>conda install -c zhou-lab -c conda-forge yame</code></pre>
+  <h2>Fetch <span class="m">&mdash; nothing ships with the binary</span></h2>
   <p>No reference data is bundled: no coordinates, no feature sets, no example
-  methylomes. <b>Fetch</b>, next, is how you get them &mdash; into a
-  digest-verified store shared by every tool in the suite
-  (<code class="inl">$YAME_DATA_HOME</code>, default
-  <code class="inl">~/.local/share/yame</code>).</p>
-  <p>Everything below runs against those files, and every output shown was
-  captured from the command above it.</p>
-</section>
-<section class="card">
-  <h2>Fetch <span class="m">&mdash; a catalogue you can grep</span></h2>
+  methylomes. One fetch fills a digest-verified store shared by every tool in
+  the suite &mdash; <code class="inl">$YAME_DATA_HOME</code>, default
+  <code class="inl">~/.local/share/yame</code>. Everything else on this page
+  runs against those files, and every output shown was captured from the
+  command above it.</p>
   <p>A name is what the browser shows &mdash; <code class="inl">hg38</code>,
   <code class="inl">hg38/KYCG</code>, <code class="inl">hg38/data</code> &mdash;
   and it is a <b>scope</b>: <code class="inl">hg38</code> takes everything under
@@ -556,13 +551,9 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
 </section>
 </div>
 <footer>
-  YAME bit-packs DNA methylation — array and sequencing alike — into the CX
-  format family, and is the storage layer under
-  <a href="https://github.com/zhou-lab/kycg">kycg</a>.
-  Formats, the trust model for fetched data, and full usage are in the
-  <a href="https://github.com/zhou-lab/YAME/blob/main/README.md">README</a>.
-  Supported by NIH/NIGMS 5R35GM146978. ·
-  <a href="https://github.com/zhou-lab/YAME">github.com/zhou-lab/YAME</a>
+  Full usage, the trust model for fetched data, and the format reference are in
+  the <a href="https://github.com/zhou-lab/YAME/blob/main/README.md">README</a>.
+  AGPL-3.0-or-later. Supported by NIH/NIGMS 5R35GM146978.
 </footer>
 </div>
 
