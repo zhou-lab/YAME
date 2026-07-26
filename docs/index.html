@@ -350,15 +350,15 @@ hundreds without decompressing the others.</figcaption>
 <section class="card">
   <h2>The seven formats <span class="m">— one record header, seven packings</span></h2>
   <p>They differ only in what one row costs and what it can say. A presence/absence mask does not need a byte per CpG; a coverage track cannot live in a bit.</p>
-  <table class="fmt"><thead><tr><th>fmt</th><th>holds</th><th>you have</th><th>on disk</th><th>NA</th><th>pack</th></tr></thead>
+  <table class="fmt"><thead><tr><th>fmt</th><th>holds</th><th>you have</th><th>on disk</th><th>input file</th><th>NA</th><th>pack</th></tr></thead>
 <tbody>
-    <tr><td><b>3</b></td><td>M/U counts</td><td class="mu">bisulfite sequencing</td><td class="mu">1&ndash;8 B/site</td><td class="mu">M=U=0</td><td><code class="inl">-fm</code></td></tr>
-    <tr><td><b>4</b></td><td>beta</td><td class="mu">array or imputed fractions</td><td class="mu">4 B/value</td><td class="mu">negative</td><td><code class="inl">-fn</code></td></tr>
-    <tr><td><b>0</b></td><td>binary</td><td class="mu">a feature set or mask</td><td class="mu"><b>1 bit</b>/row</td><td class="mu">&mdash;</td><td><code class="inl">-fb</code></td></tr>
-    <tr><td><b>6</b></td><td>set + universe</td><td class="mu">calls, plus what was measured</td><td class="mu"><b>2 bits</b>/row</td><td class="mu">00</td><td><code class="inl">-fd</code></td></tr>
-    <tr><td><b>2</b></td><td>states</td><td class="mu">chromatin states, contexts</td><td class="mu">dict + runs</td><td class="mu">a label</td><td><code class="inl">-fs</code></td></tr>
-    <tr><td><b>1</b></td><td>byte</td><td class="mu">one small int per CpG</td><td class="mu">3 B/run</td><td class="mu">&mdash;</td><td><code class="inl">-fc</code></td></tr>
-    <tr><td><b>7</b></td><td>coordinates</td><td class="mu">the row space itself (.cr)</td><td class="mu">delta varint</td><td class="mu">n/a</td><td><code class="inl">-fr</code></td></tr>
+    <tr><td><b>3</b></td><td>M/U counts</td><td class="mu">bisulfite sequencing</td><td class="mu">1&ndash;8 B/site</td><td class="mu"><code class="inl">2 cols: M &#9;U</code></td><td class="mu">M=U=0</td><td><code class="inl">-fm</code></td></tr>
+    <tr><td><b>4</b></td><td>beta</td><td class="mu">array or imputed fractions</td><td class="mu">4 B/value</td><td class="mu"><code class="inl">1 float, NA ok</code></td><td class="mu">negative</td><td><code class="inl">-fn</code></td></tr>
+    <tr><td><b>0</b></td><td>binary</td><td class="mu">a feature set or mask</td><td class="mu"><b>1 bit</b>/row</td><td class="mu"><code class="inl">1 col: 0 or 1</code></td><td class="mu">&mdash;</td><td><code class="inl">-fb</code></td></tr>
+    <tr><td><b>6</b></td><td>set + universe</td><td class="mu">calls, plus what was measured</td><td class="mu"><b>2 bits</b>/row</td><td class="mu"><code class="inl">2 cols: set&#9;universe</code></td><td class="mu">00</td><td><code class="inl">-fd</code></td></tr>
+    <tr><td><b>2</b></td><td>states</td><td class="mu">chromatin states, contexts</td><td class="mu">dict + runs</td><td class="mu"><code class="inl">1 col: the whole line</code></td><td class="mu">a label</td><td><code class="inl">-fs</code></td></tr>
+    <tr><td><b>1</b></td><td>byte</td><td class="mu">one small int per CpG</td><td class="mu">3 B/run</td><td class="mu"><code class="inl">1 char per line</code></td><td class="mu">&mdash;</td><td><code class="inl">-fc</code></td></tr>
+    <tr><td><b>7</b></td><td>coordinates</td><td class="mu">the row space itself (.cr)</td><td class="mu">delta varint</td><td class="mu"><code class="inl">BED: chrom &#9;start</code></td><td class="mu">n/a</td><td><code class="inl">-fr</code></td></tr>
 </tbody></table>
   <figure class="dia">
 <svg viewBox="0 0 700 232" role="img" aria-label="How many CpGs fit in one byte per format: eight in format 0, four in format 6, one in format 1, and one per unit in format 3.">
@@ -470,7 +470,8 @@ Oligodendrocyte	4	29401795	6	2	NA
 Pancreas-Beta	4	29401795	6	2	NA
 Blood-NK	4	29401795	6	2	NA
 Blood-Monocytes	4	29401795	6	2	NA</code></pre>
-  <pre><code>yame <span class="sub">subset</span> -o two.cg human_hg38_celltypes.cg Blood-NK Blood-Monocytes
+  <pre><code>yame <span class="sub">chunk</span> -s 500000 cohort.cg chunks/    <span class="cm"># fixed row blocks, for parallel work</span>
+yame <span class="sub">subset</span> -o two.cg human_hg38_celltypes.cg Blood-NK Blood-Monocytes
 yame <span class="sub">split</span> -s names.txt human_hg38_celltypes.cg out_    <span class="cm"># one file each</span>
 yame <span class="sub">index</span> -s names.txt cohort.cg                       <span class="cm"># rebuild the index</span></code></pre>
   <pre class="res"><code>Sample	Nrow	Format
