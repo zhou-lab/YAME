@@ -1861,7 +1861,7 @@ static void build_row(char *out, size_t cap, const tnode_t *nd, int is_cur,
  * which has no handle on the frame.
  */
 static tnode_t **vis_flat = NULL;
-static size_t    vis_n = 0, vis_top = 0;
+static size_t    vis_n = 0, vis_top = 0, vis_cur = 0;
 static int       vis_avail = 0;
 static const int VIS_ROW0 = 3;   /* screen line of the first list row */
 static const yame_ui_tree_t *vis_spec = NULL;
@@ -1896,8 +1896,8 @@ static int vis_scroll_to(size_t idx) {
 static void vis_repaint(void) {
   char line[1400];
   for (size_t i = vis_top; i < vis_n && i < vis_top + (size_t)vis_avail; ++i) {
-    build_row(line, sizeof(line), vis_flat[i], 0, vis_picking, vis_spec,
-              term_cols(), vis_w, vis_ncol, NULL, NULL);
+    build_row(line, sizeof(line), vis_flat[i], i == vis_cur, vis_picking,
+              vis_spec, term_cols(), vis_w, vis_ncol, NULL, NULL);
     fprintf(stderr, "\033[%d;1H\033[2K%s", VIS_ROW0 + (int)(i - vis_top), line);
   }
 }
@@ -1917,7 +1917,7 @@ int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
     if (moved) { fprintf(stderr, "\033[s"); vis_repaint(); fprintf(stderr, "\033[u"); }
 
     if (!total) {
-      build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec,
+      build_row(line, sizeof(line), nd, i == vis_cur, vis_picking, vis_spec,
                 term_cols(), vis_w, vis_ncol, NULL, NULL);
     } else {
       /* A bar exactly where the size sits, so a transfer reads as the row
@@ -1940,7 +1940,7 @@ int yame_ui_tree_progress(const char *key, uint64_t now, uint64_t total) {
       }
       snprintf(tail + o, sizeof(tail) - o, " %3d%%", pct);
 
-      build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec,
+      build_row(line, sizeof(line), nd, i == vis_cur, vis_picking, vis_spec,
                 term_cols(), vis_w, vis_ncol, tail, yame_ui_cyan());
     }
 
@@ -1970,8 +1970,8 @@ int yame_ui_tree_settle(const char *key, int now_present) {
 
     if (i >= vis_top && i < vis_top + (size_t)vis_avail) {
       char line[1400];
-      build_row(line, sizeof(line), nd, 0, vis_picking, vis_spec, term_cols(),
-                vis_w, vis_ncol, NULL, NULL);
+      build_row(line, sizeof(line), nd, i == vis_cur, vis_picking, vis_spec,
+                term_cols(), vis_w, vis_ncol, NULL, NULL);
       fprintf(stderr, "\033[s\033[%d;1H\033[2K%s\033[u",
               VIS_ROW0 + (int)(i - vis_top), line);
       fflush(stderr);
@@ -2268,6 +2268,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
 
     /* Republish the window a commit callback may want to paint into. */
     vis_flat = flat; vis_n = nflat; vis_top = top; vis_avail = avail;
+    vis_cur = cur;
     vis_spec = spec; vis_picking = picking; vis_w = w; vis_ncol = ncol;
 
     frame_begin(&f);
@@ -2579,7 +2580,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     }
   }
 
-  vis_flat = NULL; vis_n = vis_top = 0; vis_avail = 0;
+  vis_flat = NULL; vis_n = vis_top = vis_cur = 0; vis_avail = 0;
   vis_spec = NULL; vis_w = NULL; vis_ncol = 0;
 
   for (size_t i = 0; i < n_folds; ++i) free(folds[i]);
