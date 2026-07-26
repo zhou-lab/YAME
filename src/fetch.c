@@ -26,7 +26,7 @@
  * way to be exercised on its own.
  *
  * Two forms:
- *   yame fetch <source>/<target>[@tag]   a directory this build pins
+ *   yame fetch <name>[@tag]   a directory this build pins
  *   yame fetch -u URL -s SHA -o DEST     one file, digest given by hand
  *
  * The second is the low-level form: a per-file digest supplied by the caller,
@@ -54,15 +54,23 @@ static int usage(void) {
   yame_assets_root(NULL, NULL, root, sizeof(root));
 
   yame_usage_head("yame fetch                              browse the catalogue");
-  yame_usage_text("yame fetch [options] <source>/<target>[@tag]");
+  yame_usage_text("yame fetch [options] <name>[@tag]");
   yame_usage_text("yame fetch [options] -u <url> -s <sha256> -o <dest>");
+
+  yame_usage_sec("Naming:");
+  yame_usage_text("A name is what the browser shows: hg38, hg38/KYCG, hg38/data,");
+  yame_usage_text("EPIC. It is a scope -- `hg38` takes the unit and everything under");
+  yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
+  yame_usage_text("The registry's own <source>/<target> still resolves.");
 
   yame_usage_sec("Browsing:");
   yame_usage_text("With no target on a terminal, opens a tree browser: species, then");
   yame_usage_text("platform or genome build, then its knowledgebase and files. Arrows");
   yame_usage_text("move, right/left open and close a row, space or x selects (a folder");
   yame_usage_text("takes everything under it), f fetches what is selected, h lists every");
-  yame_usage_text("key, q leaves. What is already in the store shows as present and");
+  yame_usage_text("key, q leaves. `/` filters the tree -- by name, source, collection");
+  yame_usage_text("or title -- and enter keeps the filter so you can then select.");
+  yame_usage_text("What is already in the store shows as present and");
   yame_usage_text("cannot be selected.");
   yame_usage_text("Piped or redirected it dumps the registry as TSV instead (same as");
   yame_usage_text("-l), so a script never blocks on a keystroke.");
@@ -1901,7 +1909,7 @@ int main_fetch(int argc, char *argv[]) {
     return dump_registry(dopt);       /* terminal cannot host the widget */
   }
 
-  /* ---- catalogued form: <source>/<target>[@tag] ---- */
+  /* ---- catalogued form: <name>[@tag] ---- */
   char spec[512];
   if (snprintf(spec, sizeof(spec), "%s", argv[optind]) >= (int)sizeof(spec)) {
     fprintf(stderr, "yame fetch: target name too long.\n");

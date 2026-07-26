@@ -267,8 +267,8 @@
   <pre><code>conda install -c zhou-lab -c conda-forge yame
 
 yame <span class="sub">fetch</span>                        <span class="cm"># browse: species, platform, files</span>
-yame <span class="sub">fetch</span> KYCGKB/hg38            <span class="cm"># the hg38 knowledgebase + coordinates</span>
-yame <span class="sub">fetch</span> methscope/hg38/data    <span class="cm"># 53 MB of real methylomes to try</span></code></pre>
+yame <span class="sub">fetch</span> hg38/KYCG              <span class="cm"># the hg38 knowledgebase + coordinates</span>
+yame <span class="sub">fetch</span> hg38/data              <span class="cm"># 53 MB of real methylomes to try</span></code></pre>
   <p>Everything below runs against those files. Nothing here is invented — each output was captured from the command above it.</p>
 </section>
 <section class="card">
@@ -419,14 +419,21 @@ record.</figcaption>
 </section>
 <section class="card">
   <h2>Fetch <span class="m">— a catalogue you can grep</span></h2>
-  <p>On a terminal a bare <code class='inl'>fetch</code> opens a picker. Piped or redirected it dumps the whole registry as TSV instead, so a script never blocks on a keystroke.</p>
+  <p>A name is what the browser shows &mdash; <code class="inl">hg38</code>,
+<code class="inl">hg38/KYCG</code>, <code class="inl">hg38/data</code> &mdash;
+and it is a scope: <code class="inl">hg38</code> takes everything under it,
+narrowed with <code class="inl">-g</code>. Every fetch prints what it will do
+and asks first.</p>
+<pre><code>yame <span class="sub">fetch</span> hg38/KYCG -g chromatin   <span class="cm"># 3 sets, not 32</span>
+yame <span class="sub">fetch</span> hg38 -g celltype         <span class="cm"># across the whole genome</span></code></pre>
+<p>On a terminal a bare <code class='inl'>fetch</code> opens a picker. Piped or redirected it dumps the whole registry as TSV instead, so a script never blocks on a keystroke.</p>
   <pre><code>yame <span class="sub">fetch</span> -l | cut -f1,2,5,6 | head -5</code></pre>
   <pre class="res"><code>source	target	file	bytes
 InfiniumAnnotation	EPIC	EPIC.ordering.tsv.gz	7756709
 InfiniumAnnotation	EPIC	EPIC.hg38.coord.tsv.gz	5505138
 InfiniumAnnotation	EPIC	EPIC.hg38.snp.tsv.gz	1776995
 InfiniumAnnotation	EPIC	EPIC.typeI_ext.tsv.gz	91446</code></pre>
-  <pre><code>yame <span class="sub">fetch</span> -l | cut -f1,2 | sort -u        <span class="cm"># every fetchable target</span>
+  <pre><code>yame <span class="sub">fetch</span> -l | cut -f1 | sort -u          <span class="cm"># every name you can fetch</span>
 yame <span class="sub">fetch</span> -l | awk -F'\t' '$9=="no"'      <span class="cm"># what the store is missing</span></code></pre>
   <p>Every row carries size, sha256, description and whether the store already holds it. A directory records which upstream tag filled it and refuses to mix tags — a row reading <code class='inl'>stale tag: -f</code> wants <code class='inl'>yame fetch -f &lt;target&gt;</code>.</p>
 </section>
