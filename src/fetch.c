@@ -2056,14 +2056,23 @@ static int resolve_spec(const char *arg, const char *tag_opt,
       unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
       if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
       else       snprintf(full, sizeof(full), "%s", u);
-      if (head[0] && strcasecmp(full, head) != 0) continue;
+      /* A unit index renders at the top of its unit rather than in the
+       * directory that publishes it, so what a reader sees is
+       * hg38/cpg_nocontig.cr while the file lives in hg38/KYCG. Take the
+       * address the browser shows as well as the true one -- the visible
+       * spelling should not be the one that fails. Only the three genome
+       * .cr files differ this way; an array's ordering is published in the
+       * unit it renders under. */
+      const char *at = is_unit_index(fname) ? u : full;
+      if (head[0] && strcasecmp(full, head) != 0 &&
+          strcasecmp(at, head) != 0) continue;
       for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
         if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
           ++n_claim;
           if (n_hit < 16) {
             hit[n_hit] = &YAME_ASSETS[i];
             snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
-                     full, fname);
+                     at, fname);
             ++n_hit;
           }
           break;

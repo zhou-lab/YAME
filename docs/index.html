@@ -362,7 +362,7 @@ methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>
 a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   in set &#8677; in universe</pre>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you. Columns are tab-separated, and under <code class='inl'>-fd</code> the first column must be exactly <code class='inl'>1</code> to count as in-set while the second is any nonzero int.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
-yame <span class="sub">fetch</span> hg38/KYCG/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
+yame <span class="sub">fetch</span> hg38/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
 yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
   <pre class="res"><code>chr1  659296  659298  1
 chr1  779099  779101  0
@@ -382,7 +382,7 @@ yame <span class="sub">pack</span> -f6 rt.txt rt.cg  <span class="cm"># and back
   <h2>Visualization <span class="m">— look at it without leaving the shell</span></h2>
   <p>Rows are samples, columns are CpGs or windows. The reference is <b>inferred from the row count</b>, so <code class='inl'>-r</code> alone is enough.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_celltypes.cg
-yame <span class="sub">fetch</span> hg38/KYCG/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
+yame <span class="sub">fetch</span> hg38/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
 yame <span class="sub">hprint</span> -r chr20:30000000-30001000 human_hg38_celltypes.cg</code></pre>
   <pre class="res term"><code>                      chr20:30000011-30000862 (10 CpGs)
                       |.........
