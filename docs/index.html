@@ -333,17 +333,19 @@ hundreds without decompressing the others.</figcaption>
 </figure>
 </section>
 <section class="card">
-  <h2>The seven formats <span class="m">— one record header, seven packings</span></h2>
-  <p>They differ only in what one row costs and what it can say. A presence/absence mask does not need a byte per CpG; a coverage track cannot live in a bit.</p>
-  <pre class="res"><span class="cm">you have                   format           input line          on disk       NA                pack  what to know</span>
-<span class="cm">───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-bisulfite sequencing       <span class="sub">3</span>  M/U counts    M &#8677; U               1-8 B/site    M=U=0             <span class="sub">-fm</span>   counts are lossy: large M/U shift to fit
-array or imputed betas     <span class="sub">4</span>  beta          a float, or NA      4 B/value     a negative float  <span class="sub">-fn</span>   NA runs are collapsed, so sparse is cheap
-a feature set or mask      <span class="sub">0</span>  binary        0 or 1              <b>1 bit</b>/row     none              <span class="sub">-fb</span>   any first character but 0 reads as 1
-calls + what was measured  <span class="sub">6</span>  set+universe  set &#8677; universe      <b>2 bits</b>/row    00                <span class="sub">-fd</span>   the set bit needs exactly the string 1
-chromatin states           <span class="sub">2</span>  states        the whole line      dict + runs   just a label      <span class="sub">-fs</span>   keys stored once in a table, then runs
-one small int per CpG      <span class="sub">1</span>  byte          one char per line   3 B/run       none              <span class="sub">-fc</span>   only the first character of a line
-a row space (.cr)          <span class="sub">7</span>  coordinates   BED: chrom &#8677; start  delta varint  n/a               <span class="sub">-fr</span>   only chrom and start are read
+  <h2>Formats <span class="m">&mdash; two of them cover most work</span></h2>
+  <p>Almost everything in practice is one of three kinds of data, and they land in two formats. They differ only in what one row costs and what it can say.</p>
+  <pre class="res"><span class="cm">the data                 format           on disk     NA     pack  what to know</span>
+<span class="cm">───────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  M=U=0  <span class="sub">-fm</span>   counts are lossy: large M/U shift to fit
+methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  00     <span class="sub">-fd</span>   the 2nd bit says the site was covered at all
+a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  00     <span class="sub">-fd</span>   query and background travel in one file</pre>
+  <p>The other five are there when the data is none of those &mdash; a beta value, a plain yes/no, a label, a small int, or a row space itself.</p>
+  <pre class="res"><span class="sub">4</span>  beta         <span class="sub">-fn</span>   a float per CpG; NA runs collapse, so sparse is cheap
+<span class="sub">0</span>  binary       <span class="sub">-fb</span>   one bit, with no way to say "not measured"
+<span class="sub">2</span>  states       <span class="sub">-fs</span>   labels such as chromatin states; keys once, then runs
+<span class="sub">1</span>  byte         <span class="sub">-fc</span>   one small int per CpG, 3 bytes per run
+<span class="sub">7</span>  coordinates  <span class="sub">-fr</span>   a row space itself (.cr), delta varint
 
 <span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
   <figure class="dia">
