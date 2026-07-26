@@ -2097,15 +2097,29 @@ int main_fetch(int argc, char *argv[]) {
         while (b && v[b - 1].size < t.size) { v[b] = v[b - 1]; --b; }
         v[b] = t;
       }
-      const size_t SHOW = 10;
-      for (size_t i = 0; i < k && i < SHOW; ++i) {
-        char one[32];
-        human_size(v[i].size, one, sizeof(one));
-        fprintf(stderr, "  %-44.44s %9s\n", v[i].name, one);
+      /* A fetch is about to show a live progress line per file, so its plan
+       * only needs to say what kind of thing is coming -- three names on one
+       * line. -n has nothing following it, so there the list is the answer
+       * and it gets room. */
+      const size_t SHOW = dry_run ? 10 : 3;
+      if (dry_run) {
+        for (size_t i = 0; i < k && i < SHOW; ++i) {
+          char one[32];
+          human_size(v[i].size, one, sizeof(one));
+          fprintf(stderr, "  %-44.44s %9s\n", v[i].name, one);
+        }
+        if (k > SHOW)
+          fprintf(stderr, "  %s and %zu more\n",
+                  yame_ui_unicode() ? "\u2026" : "...", k - SHOW);
+      } else {
+        fprintf(stderr, "  %s", yame_ui_dim());
+        for (size_t i = 0; i < k && i < SHOW; ++i)
+          fprintf(stderr, "%s%s", i ? ", " : "", v[i].name);
+        if (k > SHOW)
+          fprintf(stderr, " %s and %zu more",
+                  yame_ui_unicode() ? "\u2026" : "...", k - SHOW);
+        fprintf(stderr, "%s\n", yame_ui_reset());
       }
-      if (k > SHOW)
-        fprintf(stderr, "  %s and %zu more\n",
-                yame_ui_unicode() ? "\u2026" : "...", k - SHOW);
       free(v);
     }
   }
@@ -2128,7 +2142,8 @@ int main_fetch(int argc, char *argv[]) {
     if (!isatty(STDIN_FILENO)) {
       fprintf(stderr,
               "Refusing to fetch %zu file%s (%s) without confirmation. "
-              "Re-run with -y.\n", n_files, n_files == 1 ? "" : "s", hs);
+              "Re-run with -y.\n", n_files - n_have,
+              (n_files - n_have) == 1 ? "" : "s", hs);
       return 1;
     }
     fprintf(stderr, "Proceed? [y/N] ");
