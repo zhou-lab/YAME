@@ -295,6 +295,46 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override
                      const char *want_kind, char *path, size_t n,
                      const char **name, const char **fetch);
 
+/**
+ * Resolve a spec that may name more than one file.
+ *
+ * For a repeatable `-m`, where one argument standing for several sets saves
+ * the caller from spelling out a directory listing. Everything
+ * yame_ref_resolve() accepts still means the same thing here and yields one
+ * path; the additions are:
+ *
+ *   CGI,ChromHMM       a comma list -- each element resolved on its own, in
+ *                      the order written, duplicates dropped
+ *   mm10:ChromHMM      resolved in the row space NAMED here rather than the
+ *                      one `rows` implies. This is how a caller reaches a set
+ *                      for a row space it does not have a file from, and the
+ *                      only form that works when `rows` is 0
+ *   mm10:  /  mm10:*   every set in that row space
+ *   *                  every set in the row space `rows` implies
+ *   mm10               likewise every set -- a bare row space name means its
+ *                      sets HERE, not its reference. Resolving it to a .cr
+ *                      would hand back a coordinate stream where a mask was
+ *                      asked for, which is never what the caller wanted.
+ *                      yame_ref_resolve() keeps the reference meaning, so
+ *                      `-R mm10` is unaffected.
+ *
+ * "Every set" is the .cm files a row space owns, its own directory before its
+ * knowledgebase, newest per set name, first directory winning -- the same
+ * precedence a single name follows.
+ *
+ * On YAME_REF_OK, `*paths` is a malloc'd array of `*n_paths` malloc'd strings;
+ * release both with yame_ref_paths_free(). Any element failing to resolve
+ * fails the call, so a caller never silently gets a subset of what it asked
+ * for; `name`/`fetch` then describe the element that failed.
+ */
+int yame_ref_resolve_multi(const char *spec, uint64_t rows,
+                           const char *store_override, const char *want_kind,
+                           char ***paths, size_t *n_paths,
+                           const char **name, const char **fetch);
+
+/** Release what yame_ref_resolve_multi() returned. */
+void yame_ref_paths_free(char **paths, size_t n);
+
 /** Rows in a CX file's first record, or 0 if it cannot be read. */
 uint64_t yame_ref_file_rows(const char *path);
 

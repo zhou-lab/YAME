@@ -34,6 +34,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <dirent.h>
@@ -192,6 +193,156 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override
       return YAME_REF_OK;
 
   return YAME_REF_NO_NAME;
+}
+
+/* ------------------------------------------------- resolving several names */
+
+/* The row space a name refers to, independent of any row count. Lets
+ * "mm10:ChromHMM" reach mm10 from a query that is not mm10 -- or from no
+ * query at all, which is the case that matters when rows is 0. */
+static const yame_ref_rows_t *rowspace_by_name(const char *name) {
+  for (size_t i = 0; i < YAME_REF_ROWS_N; ++i)
+    if (strcasecmp(YAME_REF_ROWS[i].name, name) == 0) return &YAME_REF_ROWS[i];
+  return NULL;
+}
+
+typedef struct { char **v; size_t n, cap; } paths_t;
+
+/* Append unless already present. A set carried by both a platform and its
+ * knowledgebase, or named twice in one comma list, is still one mask. */
+static int paths_add(paths_t *p, const char *s) {
+  for (size_t i = 0; i < p->n; ++i)
+    if (strcmp(p->v[i], s) == 0) return 1;
+  if (p->n == p->cap) {
+    size_t cap = p->cap ? p->cap * 2 : 8;
+    char **v = realloc(p->v, cap * sizeof(*v));
+    if (!v) return 0;
+    p->v = v; p->cap = cap;
+  }
+  return (p->v[p->n] = strdup(s)) != NULL ? (++p->n, 1) : 0;
+}
+
+void yame_ref_paths_free(char **paths, size_t n) {
+  for (size_t i = 0; i < n; ++i) free(paths[i]);
+  free(paths);
+}
+
+/* Every set a row space owns: the .cm files, newest per set name, its own
+ * directory before its knowledgebase. Only .cm -- a row space also owns its
+ * ordering, coord and seqinfo, none of which is a mask. */
+static void all_sets(const yame_ref_rows_t *e, const char *root, paths_t *out) {
+  for (size_t k = 0; e->dirs && e->dirs[k]; ++k) {
+    char dir[4096];
+    if (yame_assets_join(dir, sizeof(dir), root, e->dirs[k]) != 0) continue;
+
+    DIR *d = opendir(dir);
+    if (!d) continue;
+
+    /* Collect set names first, then resolve each through newest_named() so
+     * "newest wins" is decided in exactly one place. */
+    char seen[512][256];
+    size_t n_seen = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) && n_seen < 512) {
+      if (de->d_name[0] == '.') continue;
+      if (yame_assets_index_suffix(de->d_name)) continue;
+      size_t l = strlen(de->d_name);
+      if (l < 3 || strcmp(de->d_name + l - 3, ".cm") != 0) continue;
+
+      char sn[256];
+      set_name_of(de->d_name, sn, sizeof(sn));
+      int dup = 0;
+      for (size_t i = 0; i < n_seen; ++i)
+        if (strcmp(seen[i], sn) == 0) { dup = 1; break; }
+      if (!dup) snprintf(seen[n_seen++], sizeof(seen[0]), "%s", sn);
+    }
+    closedir(d);
+
+    for (size_t i = 0; i < n_seen; ++i) {
+      char p[4096];
+      if (newest_named(dir, seen[i], p, sizeof(p))) paths_add(out, p);
+    }
+  }
+}
+
+int yame_ref_resolve_multi(const char *spec, uint64_t rows,
+                           const char *store_override, const char *want_kind,
+                           char ***paths, size_t *n_paths,
+                           const char **name, const char **fetch) {
+  if (paths) *paths = NULL;
+  if (n_paths) *n_paths = 0;
+  if (name) *name = NULL;
+  if (fetch) *fetch = NULL;
+  if (!spec || !*spec) return YAME_REF_UNKNOWN;
+
+  char root[4096];
+  yame_assets_root(store_override, NULL, root, sizeof(root));
+
+  paths_t acc = {0};
+  int status = YAME_REF_OK;
+
+  char *work = strdup(spec);
+  if (!work) return YAME_REF_UNKNOWN;
+
+  for (char *save = NULL, *tok = strtok_r(work, ",", &save);
+       tok; tok = strtok_r(NULL, ",", &save)) {
+    while (*tok == ' ') ++tok;                 /* "CGI, ChromHMM" */
+    if (!*tok) continue;
+
+    /* A path is a path, comma-separated or not. */
+    if (yame_assets_is_file(tok)) { paths_add(&acc, tok); continue; }
+
+    /* Which row space, and what to look for in it. A prefix chooses outright,
+     * so it works when rows says something else or says nothing; a bare row
+     * space name does the same and asks for everything in it, which is how
+     * "mm10" reaches mm10's sets from a query that is not mm10. */
+    const yame_ref_rows_t *e = NULL;
+    const char *want = tok;
+    char *colon = strchr(tok, ':');
+    if (colon) {
+      *colon = '\0';
+      e = rowspace_by_name(tok);
+      if (!e) { status = YAME_REF_UNKNOWN; break; }
+      want = colon + 1;
+    } else if ((e = rowspace_by_name(tok)) != NULL) {
+      want = "";
+    } else {
+      for (size_t i = 0; i < YAME_REF_ROWS_N; ++i)
+        if (YAME_REF_ROWS[i].rows == rows) { e = &YAME_REF_ROWS[i]; break; }
+      if (!e) { status = YAME_REF_UNKNOWN; break; }
+    }
+    if (name) *name = e->name;
+    if (fetch) *fetch = e->fetch;
+    if (want_kind && strcmp(e->kind, want_kind) != 0) {
+      status = YAME_REF_WRONG_KIND; break;
+    }
+
+    /* Everything: an empty tail after the colon, a star, or the row space's
+     * own name standing alone. */
+    if (!*want || strcmp(want, "*") == 0 || strcasecmp(want, e->name) == 0) {
+      size_t before = acc.n;
+      all_sets(e, root, &acc);
+      if (acc.n == before) { status = YAME_REF_NO_NAME; break; }
+      continue;
+    }
+
+    char dir[4096], p[4096];
+    int hit = 0;
+    for (size_t k = 0; e->dirs && e->dirs[k] && !hit; ++k)
+      if (yame_assets_join(dir, sizeof(dir), root, e->dirs[k]) == 0 &&
+          newest_named(dir, want, p, sizeof(p)))
+        hit = paths_add(&acc, p);
+    if (!hit) { status = YAME_REF_NO_NAME; break; }
+  }
+  free(work);
+
+  if (status != YAME_REF_OK || !acc.n) {
+    yame_ref_paths_free(acc.v, acc.n);
+    return status == YAME_REF_OK ? YAME_REF_NO_NAME : status;
+  }
+  if (paths) *paths = acc.v; else yame_ref_paths_free(acc.v, acc.n);
+  if (n_paths) *n_paths = acc.n;
+  return YAME_REF_OK;
 }
 
 void yame_ref_explain_name(FILE *out, const char *spec, uint64_t rows,
