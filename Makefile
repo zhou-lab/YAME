@@ -116,9 +116,18 @@ $(LHTSLIB) :
 ### compilation ###
 ###################
 
-# Compile each .c in src/ into a .o in src/
+# Compile each .c in src/ into a .o in src/.
+#
+# -MMD -MP writes a .d beside each .o listing the headers that .c actually
+# included; the -include below feeds those back to make. Without it a header
+# change rebuilt nothing, so editing yame_version.h and running make produced
+# a binary still reporting the previous version, and regenerating registry.h
+# produced one still carrying the previous catalogue -- both silent, because
+# the .c files were untouched and make had no reason to think otherwise.
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) -MMD -MP $< -o $@
+
+-include $(wildcard $(SRC_DIR)/*.d)
 
 ###################
 ###  linking   ####
