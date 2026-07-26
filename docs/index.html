@@ -344,47 +344,29 @@ begins — which is why <code>yame subset</code> can pull one sample out of
 hundreds without decompressing the others.</figcaption>
 </figure>
 </section>
+
 <section class="card">
-  <h2>Formats <span class="m">&mdash; three kinds of data, two packings</span></h2>
-  <p>Almost everything in practice is one of three kinds of data, and they land in two of the seven formats. Which one you use follows from what a single row has to say.</p>
-  <pre class="res"><span class="cm">the data                 format           on disk     pack</span>
-<span class="cm">──────────────────────────────────────────────────────────</span>
-methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <span class="sub">-fm</span>
-methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>
-a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span></pre>
-  <p>Two bits is the interesting one: the universe bit separates <i>not measured</i> from <i>measured and zero</i> — a distinction one bit cannot make and every enrichment test needs, which is why a query and its background travel in one file.</p>
+  <h2>Data conversion <span class="m">&mdash; three kinds of data, text in and out</span></h2>
+  <p>Almost everything in practice is one of three kinds of data, and they land in two of the seven formats. One table covers how each is stored and what <code class='inl'>pack</code> reads to build it.</p>
+  <pre class="res"><span class="cm">the data                 format           on disk     pack  one line per CpG</span>
+<span class="cm">────────────────────────────────────────────────────────────────────────────────</span>
+methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <span class="sub">-fm</span>   M &#8677; U
+methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   call &#8677; covered
+a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   in set &#8677; in universe</pre>
   <figure class="dia">
-<pre>two bits per CpG: the universe bit, then the set bit
+<pre>one byte, and how many CpGs it holds
 
-  ┌──────────────┬──────────────┬──────────────┐
-  │     0 0      │     1 0      │     1 1      │
-  │      NA      │   value 0    │   value 1    │
-  ├──────────────┼──────────────┼──────────────┤
-  │   outside    │  measured,   │  measured,   │
-  │ the universe │  not in set  │  in the set  │
-  └──────────────┴──────────────┴──────────────┘
+  <span class="sub">fmt 6</span>  set+universe  │11 │10 │00 │11 │   <span class="cm">4 CpGs · 2 bits each</span>
+  <span class="sub">fmt 3</span>  M/U counts    │   M   │   U   │   <span class="cm">1 CpG  · `unit` bytes</span>
 
-<span class="cm">  The universe bit separates <b>absent</b> from <b>present-and-zero</b> — a</span>
-<span class="cm">  distinction one bit cannot make, and every enrichment test needs.</span></pre>
-<figcaption><b>Two bits, three meanings.</b> A CpG that was never measured and
-a CpG measured as unmethylated are different facts; format 0 has to conflate
-them, format 6 does not. That is why a query and its background can travel in
-one file, and why <code>summary</code> can compute an odds ratio from a single
-record.</figcaption>
+<span class="cm">  hg38 is 29,401,795 rows: 7.0 MB in format 6, 56 MB in
+  format 3 at two bytes a site.</span></pre>
+<figcaption><b>The format code is a packing density.</b> A CpG set does not
+need a byte per site and a coverage track cannot live in a bit, which is why
+these two exist rather than one. <a href="#ref">The other five</a> lay the
+same row space down at other densities.</figcaption>
 </figure>
-</section>
-
-<section class="card">
-  <h2>Data conversion <span class="m">— text in, text out</span></h2>
-  <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you.</p>
-  <pre class="res"><span class="cm">the data                 pack  one line per CpG</span>
-<span class="cm">───────────────────────────────────────────────────</span>
-methylation, M/U counts  <span class="sub">-fm</span>   M &#8677; U
-methylation, binarized   <span class="sub">-fd</span>   call &#8677; covered
-a CpG set                <span class="sub">-fd</span>   in set &#8677; in universe
-
-<span class="cm">Columns are tab-separated. Under -fd the first column must be
-exactly "1" to count as in-set, while the second is any nonzero int.</span></pre>
+  <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you. Columns are tab-separated, and under <code class='inl'>-fd</code> the first column must be exactly <code class='inl'>1</code> to count as in-set while the second is any nonzero int.</p>
   <pre><code>yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
   <pre class="res"><code>chr1  659296  659298  1
 chr1  779099  779101  0
@@ -467,7 +449,7 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
 </section>
 </div>
 
-<section class="ref">
+<section class="ref" id="ref">
   <h2>Format reference <span class="m">&mdash; all seven, and what each row costs</span></h2>
   <p>The three above are the common cases. The rest exist because a row sometimes has to carry something else: a fraction, a label, a plain yes/no, or the coordinates themselves.</p>
   <pre class="res"><span class="cm">the data                 format           one line per CpG      on disk       NA        pack  what to know</span>
@@ -495,6 +477,26 @@ coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#
 same row space down differently, which is the whole reason there is a family
 rather than one format: a presence/absence mask does not need a byte per CpG,
 and a coverage track cannot live in a bit.</figcaption>
+</figure>
+  <p>Two bits is the interesting one: the universe bit separates <i>not measured</i> from <i>measured and zero</i> — a distinction one bit cannot make and every enrichment test needs, which is why a query and its background travel in one file.</p>
+  <figure class="dia">
+<pre>two bits per CpG: the universe bit, then the set bit
+
+  ┌──────────────┬──────────────┬──────────────┐
+  │     0 0      │     1 0      │     1 1      │
+  │      NA      │   value 0    │   value 1    │
+  ├──────────────┼──────────────┼──────────────┤
+  │   outside    │  measured,   │  measured,   │
+  │ the universe │  not in set  │  in the set  │
+  └──────────────┴──────────────┴──────────────┘
+
+<span class="cm">  The universe bit separates <b>absent</b> from <b>present-and-zero</b> — a</span>
+<span class="cm">  distinction one bit cannot make, and every enrichment test needs.</span></pre>
+<figcaption><b>Two bits, three meanings.</b> A CpG that was never measured and
+a CpG measured as unmethylated are different facts; format 0 has to conflate
+them, format 6 does not. That is why a query and its background can travel in
+one file, and why <code>summary</code> can compute an odds ratio from a single
+record.</figcaption>
 </figure>
 </section>
 
