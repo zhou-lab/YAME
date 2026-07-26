@@ -1778,8 +1778,8 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
  * falls back to one finished line per file. */
 static struct {
   char     name[56];
-  uint64_t total;
-  size_t   idx, n;
+  uint64_t total, moved;      /* moved: bytes actually transferred so far */
+  size_t   idx, n, failed;
   int      tty;
 } PROG;
 
@@ -1823,20 +1823,29 @@ static void prog_begin(void *ud, const char *name, uint64_t total) {
 
 static void prog_progress(void *ud, uint64_t now, uint64_t total) {
   (void)ud;
-  if (PROG.tty) prog_bar(now, total ? total : PROG.total);
+  uint64_t t = total ? total : PROG.total;
+  /* Until the response headers arrive the size is unknown, and a bar with no
+   * denominator is worse than no bar -- it reads as stalled at 0%. */
+  if (PROG.tty && t) prog_bar(now, t);
 }
 
 static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
   (void)ud;
+  if (ok) PROG.moved += bytes;
+  else    PROG.failed++;
+
+  /* On a terminal the one line is reused: the next file paints over it, and
+   * the summary replaces it at the end. Scrolling a name per file says
+   * nothing the summary will not, and buries the line that is still moving.
+   *
+   * Piped, there is nothing to repaint onto, and a log wants the record --
+   * so there each file settles on its own line. */
+  if (PROG.tty) return;
+
   char hs[32];
   human_size(bytes, hs, sizeof(hs));
-  /* Erase the bar before the settled line, or its tail survives underneath. */
-  if (PROG.tty) fprintf(stderr, "\r\033[K");
-  fprintf(stderr, "  %s[%zu/%zu]%s %s%s%s %-38.38s %9s\n",
-          yame_ui_dim(), PROG.idx, PROG.n, yame_ui_reset(),
-          ok ? yame_ui_green() : yame_ui_red(),
-          ok ? yame_ui_check() : yame_ui_cross(), yame_ui_reset(),
-          name, ok ? hs : "failed");
+  fprintf(stderr, "  [%zu/%zu] %-40.40s %9s\n", PROG.idx, PROG.n, name,
+          ok ? hs : "failed");
   fflush(stderr);
 }
 
@@ -2190,6 +2199,17 @@ int main_fetch(int argc, char *argv[]) {
     err = NULL;
   }
 
-  if (!quiet) fprintf(stderr, "done.\n");
+  /* Replace the progress line rather than leaving it at 100%: one summary of
+   * what moved, where the live line was. */
+  if (PROG.tty) fprintf(stderr, "\r\033[K");
+  if (!quiet) {
+    char hs[32];
+    human_size(PROG.moved, hs, sizeof(hs));
+    fprintf(stderr, "  %s%s%s %zu file%s, %s%s\n",
+            PROG.failed ? yame_ui_red() : yame_ui_green(),
+            PROG.failed ? yame_ui_cross() : yame_ui_check(), yame_ui_reset(),
+            PROG.idx - PROG.failed, (PROG.idx - PROG.failed) == 1 ? "" : "s", hs,
+            PROG.failed ? " -- some failed" : "");
+  }
   return 0;
 }
