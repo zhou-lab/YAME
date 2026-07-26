@@ -354,17 +354,22 @@ methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <
 methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   call &#8677; covered
 a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   in set &#8677; in universe</pre>
   <figure class="dia">
-<pre>one byte, and how many CpGs it holds
+<pre>what one CpG costs
 
-  <span class="sub">fmt 6</span>  set+universe  │11 │10 │00 │11 │   <span class="cm">4 CpGs · 2 bits each</span>
-  <span class="sub">fmt 3</span>  M/U counts    │   M   │   U   │   <span class="cm">1 CpG  · `unit` bytes</span>
+  <span class="sub">fmt 6</span>  set+universe  │11│                  <span class="cm">2 bits, always</span>
 
-<span class="cm">  hg38 is 29,401,795 rows: 7.0 MB in format 6, 56 MB in
-  format 3 at two bytes a site.</span></pre>
-<figcaption><b>The format code is a packing density.</b> A CpG set does not
-need a byte per site and a coverage track cannot live in a bit, which is why
-these two exist rather than one. <a href="#ref">The other five</a> lay the
-same row space down at other densities.</figcaption>
+  <span class="sub">fmt 3</span>  M/U counts    │ M │ U │01│          <span class="cm">1 byte   M,U &le; 6</span>
+                       │  M  │  U  │10│      <span class="cm">2 bytes  M,U &le; 126</span>
+                       │   M   │   U   │11│  <span class="cm">8 bytes  beyond that</span>
+
+<span class="cm">  hg38 is 29,401,795 rows: format 6 is always 7.0 MB; format 3 is
+  56 MB if every site fits two bytes, more where coverage is deep.</span></pre>
+<figcaption><b>One is a fixed width, the other is not.</b> Format 6 spends two
+bits on every CpG whatever the data says. Format 3 tags each record with its
+own width, so a shallow site costs a byte and a deep one costs eight in the
+same file &mdash; which is why its size depends on sequencing depth, not just on
+how many rows there are. <a href="#ref">The other five</a> lay the same row
+space down at other densities.</figcaption>
 </figure>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you. Columns are tab-separated, and under <code class='inl'>-fd</code> the first column must be exactly <code class='inl'>1</code> to count as in-set while the second is any nonzero int.</p>
   <pre><code>yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
@@ -454,7 +459,7 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
   <p>The three above are the common cases. The rest exist because a row sometimes has to carry something else: a fraction, a label, a plain yes/no, or the coordinates themselves.</p>
   <pre class="res"><span class="cm">the data                 format           one line per CpG      on disk       NA        pack  what to know</span>
 <span class="cm">──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-methylation, M/U counts  <span class="sub">3</span>  M/U counts    M &#8677; U                 1-8 B/site    M=U=0     <span class="sub">-fm</span>   counts are lossy: large M/U shift to fit
+methylation, M/U counts  <span class="sub">3</span>  M/U counts    M &#8677; U                 1-8 B/site    M=U=0     <span class="sub">-fm</span>   a tagged record; only 2^31+ counts lose bits
 methylation, binarized   <span class="sub">6</span>  set+universe  call &#8677; covered        <b>2 bits</b>/row    00        <span class="sub">-fd</span>   the 2nd bit says the site was covered at all
 a CpG set                <span class="sub">6</span>  set+universe  in set &#8677; in universe  <b>2 bits</b>/row    00        <span class="sub">-fd</span>   query and background travel in one file
 a beta value             <span class="sub">4</span>  beta          a float, or NA        4 B/value     negative  <span class="sub">-fn</span>   NA runs collapse, so sparse is cheap
@@ -470,13 +475,31 @@ coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#
   <span class="sub">fmt 0</span>  binary        │1│0│0│1│1│0│1│0│   <span class="cm">8 CpGs · 1 bit each</span>
   <span class="sub">fmt 6</span>  set+universe  │11 │10 │00 │11 │   <span class="cm">4 CpGs · 2 bits each</span>
   <span class="sub">fmt 1</span>  small int     │      37       │   <span class="cm">1 CpG  · one whole byte</span>
-  <span class="sub">fmt 3</span>  M/U counts    │   M   │   U   │   <span class="cm">1 CpG  · `unit` bytes</span>
 
 <span class="cm">  hg38 is 29,401,795 rows: 3.5 MB at one bit, 7.0 MB at two.</span></pre>
-<figcaption><b>The format code is a packing density.</b> Every format lays the
-same row space down differently, which is the whole reason there is a family
-rather than one format: a presence/absence mask does not need a byte per CpG,
-and a coverage track cannot live in a bit.</figcaption>
+<figcaption><b>A fixed-width format is a packing density.</b> These three spend
+the same number of bits on every CpG, so the file size follows from the row
+count alone: a presence/absence mask does not need a byte per CpG, and a small
+integer cannot live in a bit.</figcaption>
+</figure>
+  <figure class="dia">
+<pre>format 3 is a tagged record, not a fixed width
+
+  <span class="cm">tag</span>  bytes  layout                          holds
+  <span class="cm">──────────────────────────────────────────────────────────────────</span>
+   01     1    │ M(3) │ U(3) │01│            M,U &le; 6
+   10     2    │  M(7)  │  U(7)  │10│        M,U &le; 126
+   11     8    │  M(31)  │  U(31)  │11│      M,U up to 2^31-1
+   00     2    │   run length (14)   │00│    a run of sites with M = U = 0
+
+<span class="cm">  Inflated in memory it is c->unit bytes a site instead, default 8
+  (M and U 32 bits each); pack -u sets it as low as 1.</span></pre>
+<figcaption><b>The low two bits pick the record.</b> A shallow site costs one
+byte and a deep one costs eight, in the same file, so a format 3 store scales
+with sequencing depth rather than with the row count. Counts above 2^31 are
+the only lossy case: <code>fitMU</code> right-shifts M and U together until
+both fit, so the ratio survives (up to integer truncation) and the
+absolute depth does not.</figcaption>
 </figure>
   <p>Two bits is the interesting one: the universe bit separates <i>not measured</i> from <i>measured and zero</i> — a distinction one bit cannot make and every enrichment test needs, which is why a query and its background travel in one file.</p>
   <figure class="dia">
