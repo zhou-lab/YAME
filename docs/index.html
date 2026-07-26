@@ -184,6 +184,18 @@
         font-size:.87em;font-family:ui-monospace,Menlo,Consolas,monospace}
       .cm{color:var(--cm)}
       .sub{color:var(--accent-2);font-weight:600}
+      /* the reference sits below the grid, so it is not column-bound and a
+         wide table fits without scrolling */
+      .ref{margin:0 0 16px;border:1px solid var(--line);border-radius:12px;
+        background:var(--card);padding:16px 18px;box-shadow:var(--shadow)}
+      .ref h2{font-size:1.02rem;margin:0 0 7px;letter-spacing:-.01em}
+      .ref h2 .m{color:var(--muted);font-weight:400;font-size:.79rem}
+      .ref p{margin:0 0 10px;color:var(--muted);font-size:.85rem;
+        line-height:1.55;max-width:88ch}
+      .ref pre{background:var(--soft);color:var(--fg);border:1px solid var(--line);
+        border-radius:7px;padding:11px 13px;overflow-x:auto;margin:0 0 12px;
+        position:relative;cursor:zoom-in}
+      .ref figure.dia{margin:0;max-width:640px}
       .card figure.dia{margin:0 0 10px}
       .card figure.dia pre{padding:9px 11px}
       .card figure.dia figcaption{font-size:.74rem;padding:8px 11px}
@@ -333,35 +345,13 @@ hundreds without decompressing the others.</figcaption>
 </figure>
 </section>
 <section class="card">
-  <h2>Formats <span class="m">&mdash; two of them cover most work</span></h2>
-  <p>Almost everything in practice is one of three kinds of data, and they land in two formats. They differ only in what one row costs and what it can say.</p>
-  <pre class="res"><span class="cm">the data                 format           on disk     NA     pack  what to know</span>
-<span class="cm">───────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
-methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  M=U=0  <span class="sub">-fm</span>   counts are lossy: large M/U shift to fit
-methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  00     <span class="sub">-fd</span>   the 2nd bit says the site was covered at all
-a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  00     <span class="sub">-fd</span>   query and background travel in one file</pre>
-  <p>The other five are there when the data is none of those &mdash; a beta value, a plain yes/no, a label, a small int, or a row space itself.</p>
-  <pre class="res"><span class="sub">4</span>  beta         <span class="sub">-fn</span>   a float per CpG; NA runs collapse, so sparse is cheap
-<span class="sub">0</span>  binary       <span class="sub">-fb</span>   one bit, with no way to say "not measured"
-<span class="sub">2</span>  states       <span class="sub">-fs</span>   labels such as chromatin states; keys once, then runs
-<span class="sub">1</span>  byte         <span class="sub">-fc</span>   one small int per CpG, 3 bytes per run
-<span class="sub">7</span>  coordinates  <span class="sub">-fr</span>   a row space itself (.cr), delta varint
-
-<span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
-  <figure class="dia">
-<pre>one byte, and how many CpGs it holds
-
-  <span class="sub">fmt 0</span>  binary        │1│0│0│1│1│0│1│0│   <span class="cm">8 CpGs · 1 bit each</span>
-  <span class="sub">fmt 6</span>  set+universe  │11 │10 │00 │11 │   <span class="cm">4 CpGs · 2 bits each</span>
-  <span class="sub">fmt 1</span>  small int     │      37       │   <span class="cm">1 CpG  · one whole byte</span>
-  <span class="sub">fmt 3</span>  M/U counts    │   M   │   U   │   <span class="cm">1 CpG  · `unit` bytes</span>
-
-<span class="cm">  hg38 is 29,401,795 rows: 3.5 MB at one bit, 7.0 MB at two.</span></pre>
-<figcaption><b>The format code is a packing density.</b> Every format lays the
-same row space down differently, which is the whole reason there is a family
-rather than one format: a presence/absence mask does not need a byte per CpG,
-and a coverage track cannot live in a bit.</figcaption>
-</figure>
+  <h2>Formats <span class="m">&mdash; three kinds of data, two packings</span></h2>
+  <p>Almost everything in practice is one of three kinds of data, and they land in two of the seven formats. Which one you use follows from what a single row has to say.</p>
+  <pre class="res"><span class="cm">the data                 format           on disk     pack</span>
+<span class="cm">──────────────────────────────────────────────────────────</span>
+methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <span class="sub">-fm</span>
+methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>
+a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span></pre>
   <p>Two bits is the interesting one: the universe bit separates <i>not measured</i> from <i>measured and zero</i> — a distinction one bit cannot make and every enrichment test needs, which is why a query and its background travel in one file.</p>
   <figure class="dia">
 <pre>two bits per CpG: the universe bit, then the set bit
@@ -392,12 +382,6 @@ record.</figcaption>
 methylation, M/U counts  <span class="sub">-fm</span>   M &#8677; U
 methylation, binarized   <span class="sub">-fd</span>   call &#8677; covered
 a CpG set                <span class="sub">-fd</span>   in set &#8677; in universe
-
-a beta value             <span class="sub">-fn</span>   a float, or NA
-a plain yes/no           <span class="sub">-fb</span>   0 or 1
-a state label            <span class="sub">-fs</span>   the whole line
-a small int              <span class="sub">-fc</span>   one char per line
-coordinates (.cr)        <span class="sub">-fr</span>   BED: chrom &#8677; start
 
 <span class="cm">Columns are tab-separated. Under -fd the first column must be
 exactly "1" to count as in-set, while the second is any nonzero int.</span></pre>
@@ -482,6 +466,38 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
   <pre><code>yame <span class="sub">mask</span> -o clean.cg sample.cg blacklist.cm</code></pre>
 </section>
 </div>
+
+<section class="ref">
+  <h2>Format reference <span class="m">&mdash; all seven, and what each row costs</span></h2>
+  <p>The three above are the common cases. The rest exist because a row sometimes has to carry something else: a fraction, a label, a plain yes/no, or the coordinates themselves.</p>
+  <pre class="res"><span class="cm">the data                 format           one line per CpG      on disk       NA        pack  what to know</span>
+<span class="cm">──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+methylation, M/U counts  <span class="sub">3</span>  M/U counts    M &#8677; U                 1-8 B/site    M=U=0     <span class="sub">-fm</span>   counts are lossy: large M/U shift to fit
+methylation, binarized   <span class="sub">6</span>  set+universe  call &#8677; covered        <b>2 bits</b>/row    00        <span class="sub">-fd</span>   the 2nd bit says the site was covered at all
+a CpG set                <span class="sub">6</span>  set+universe  in set &#8677; in universe  <b>2 bits</b>/row    00        <span class="sub">-fd</span>   query and background travel in one file
+a beta value             <span class="sub">4</span>  beta          a float, or NA        4 B/value     negative  <span class="sub">-fn</span>   NA runs collapse, so sparse is cheap
+a plain yes/no           <span class="sub">0</span>  binary        0 or 1                <b>1 bit</b>/row     none      <span class="sub">-fb</span>   any first character but 0 reads as 1
+a state label            <span class="sub">2</span>  states        the whole line        dict + runs   a label   <span class="sub">-fs</span>   keys stored once in a table, then runs
+a small int              <span class="sub">1</span>  byte          one char per line     3 B/run       none      <span class="sub">-fc</span>   only the first character of a line
+coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#8677; start    delta varint  n/a       <span class="sub">-fr</span>   only chrom and start are read
+
+<span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
+  <figure class="dia">
+<pre>one byte, and how many CpGs it holds
+
+  <span class="sub">fmt 0</span>  binary        │1│0│0│1│1│0│1│0│   <span class="cm">8 CpGs · 1 bit each</span>
+  <span class="sub">fmt 6</span>  set+universe  │11 │10 │00 │11 │   <span class="cm">4 CpGs · 2 bits each</span>
+  <span class="sub">fmt 1</span>  small int     │      37       │   <span class="cm">1 CpG  · one whole byte</span>
+  <span class="sub">fmt 3</span>  M/U counts    │   M   │   U   │   <span class="cm">1 CpG  · `unit` bytes</span>
+
+<span class="cm">  hg38 is 29,401,795 rows: 3.5 MB at one bit, 7.0 MB at two.</span></pre>
+<figcaption><b>The format code is a packing density.</b> Every format lays the
+same row space down differently, which is the whole reason there is a family
+rather than one format: a presence/absence mask does not need a byte per CpG,
+and a coverage track cannot live in a bit.</figcaption>
+</figure>
+</section>
+
 <footer>
   Full usage, the trust model for fetched data, and the format reference are in
   the <a href="https://github.com/zhou-lab/YAME/blob/main/README.md">README</a>.
@@ -591,7 +607,7 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
           if (e.key === "Escape") close();
         });
 
-        document.querySelectorAll(".card pre:not(figure.dia *), figure.dia").forEach(function (node) {
+        document.querySelectorAll(".card pre:not(figure.dia *), .ref pre:not(figure.dia *), figure.dia").forEach(function (node) {
           node.addEventListener("click", function (ev) {
             /* the copy button lives inside a block; let it have its click */
             if (ev.target.closest("button")) return;
