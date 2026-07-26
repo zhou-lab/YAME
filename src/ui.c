@@ -1240,7 +1240,7 @@ int yame_ui_browse(const char *title, const char *header,
                  filtering ? "_" : "", yame_ui_dim(), nview, n, motion,
                  yame_ui_reset());
     else
-      frame_line(&f, "%s  row %zu of %zu   %s  / search  q quit%s",
+      frame_line(&f, "%s  row %zu of %zu   %s  / filter  q quit%s",
                  yame_ui_dim(), nview ? cur + 1 : 0, nview, motion,
                  yame_ui_reset());
 
@@ -1313,6 +1313,7 @@ typedef struct tnode_s {
   int    loaded;          /* expand() has been asked already */
   int    branch;          /* holds children -- a claim until loaded, then fact */
   int    depth;           /* roots are 0; the unrendered forest head is -1 */
+  int    shown;           /* passes the filter, or holds something that does */
   struct tnode_s  *parent;
   struct tnode_s **kids;
   size_t n_kids;
@@ -1430,6 +1431,7 @@ static void tn_load(tnode_t *n, const yame_ui_tree_t *spec) {
   if (k.n && (n->kids = calloc(k.n, sizeof(tnode_t *))) != NULL) {
     for (; taken < k.n; ++taken) {
       tnode_t *c = calloc(1, sizeof(tnode_t));
+      c->shown = 1;   /* calloc zeroes it, which would hide the node */
       if (!c) break;
       c->row    = k.rows ? k.rows[taken] : NULL;
       c->key    = k.keys ? k.keys[taken] : NULL;
@@ -1618,6 +1620,31 @@ static void tn_collect_matches(tnode_t *n, const char *q, tnode_t ***hits,
     tn_collect_matches(n->kids[i], q, hits, nh, cap);
 }
 
+/* Everything is shown when nothing is being filtered for. */
+static void tn_show_all(tnode_t *n) {
+  n->shown = 1;
+  for (size_t i = 0; i < n->n_kids; ++i) tn_show_all(n->kids[i]);
+}
+
+/**
+ * Mark what survives a filter: a node itself matching, or holding something
+ * that does.
+ *
+ * A tree cannot hide a match's ancestors and still be a tree -- a bare
+ * "ChromHMM.20220303.cm" with no hg38 above it says nothing about where it
+ * came from -- so a branch stays visible for its descendants' sake, and is
+ * opened, because a match folded out of sight is not found either.
+ */
+static int tn_mark_filter(tnode_t *n, const char *q) {
+  int self = (n->depth >= 0 && n->row && strcasestr(n->row, q)) ? 1 : 0;
+  int kid  = 0;
+  for (size_t i = 0; i < n->n_kids; ++i)
+    if (tn_mark_filter(n->kids[i], q)) kid = 1;
+  n->shown = (self || kid);
+  if (kid) n->expanded = 1;
+  return n->shown;
+}
+
 /* Open everything above a node, so the cursor can be put on it. */
 static void tn_reveal(tnode_t *n) {
   for (tnode_t *p = n->parent; p && p->depth >= 0; p = p->parent)
@@ -1629,9 +1656,12 @@ static void search_apply(tnode_t *forest, const char *q, tnode_t ***hits,
                          size_t *nh, size_t *cap, size_t *hit_i,
                          tnode_t **want_cur) {
   *nh = 0;
-  if (!*q) return;
+  if (!*q) { tn_show_all(forest); return; }
+  tn_mark_filter(forest, q);
   tn_collect_matches(forest, q, hits, nh, cap);
-  if (!*nh) return;
+  /* Nothing matched: show the tree again rather than a blank screen, and let
+   * the count in the footer say so. */
+  if (!*nh) { tn_show_all(forest); return; }
   if (*hit_i >= *nh) *hit_i = 0;
   tn_reveal((*hits)[*hit_i]);
   *want_cur = (*hits)[*hit_i];
@@ -1919,6 +1949,7 @@ static int flat_push(tnode_t ***arr, size_t *n, size_t *cap, tnode_t *t) {
  * is structure, not a row, so it is walked through and never listed. */
 static int tn_flatten(tnode_t *n, tnode_t ***arr, size_t *cnt, size_t *cap) {
   if (n->depth >= 0) {
+    if (!n->shown) return 0;
     if (flat_push(arr, cnt, cap, n) != 0) return -1;
     if (!n->expanded) return 0;
   }
@@ -2076,6 +2107,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
 
   for (size_t i = 0; i < n_roots; ++i) {
     tnode_t *r = calloc(1, sizeof(tnode_t));
+    r->shown = 1;   /* calloc zeroes it, which would hide the node */
     if (!r) break;
     r->row    = strdup(roots[i]);
     r->path   = tn_root_path(roots[i]);
@@ -2343,12 +2375,14 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
       }
       if (key == K_ENTER) { searching = 0; continue; }
       if (key == K_ESC) {
-        /* Put the cursor back where it was. What the search opened along the
-         * way stays open -- collapsing it again would hide a row the user has
-         * now seen, and folds are cheap to undo by hand. */
+        /* Put the cursor back where it was and show the whole tree again.
+         * What the filter opened along the way stays open -- collapsing it
+         * would hide a row the user has now seen, and folds are cheap to undo
+         * by hand. */
         searching = 0;
         query[0] = '\0';
         n_hits = 0;
+        tn_show_all(&forest);
         want_cur = search_home;
         continue;
       }
