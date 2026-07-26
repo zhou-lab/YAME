@@ -429,6 +429,21 @@ typedef struct {
    * large and most of it is situational -- the answer to "which of these
    * should I actually use" should be one keystroke, not a reading exercise. */
   yame_ui_preselect_fn recommend;
+
+  /**
+   * Extra text a row can be found by, beyond what it displays.
+   *
+   * The filter can only match what it can see, and what a row displays is a
+   * filename -- not where it came from, which collections it belongs to, or
+   * what it is called in prose. Returning those here lets `/methscope` or
+   * `/chromatin` find rows whose visible text contains neither word. NULL
+   * means match the displayed row only.
+   *
+   * The returned string is borrowed, not owned; it need only survive the
+   * call.
+   */
+  const char *(*facets)(void *ctx, const char *path, const char *key);
+
   void *ctx;
 } yame_ui_tree_t;
 

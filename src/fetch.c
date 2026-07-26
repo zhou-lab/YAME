@@ -1154,6 +1154,42 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
 }
 
 /** Is this file part of its unit's recommended selection? */
+/**
+ * What a row can be found by, beyond the filename it displays.
+ *
+ * Same fields the -g filter uses, for the same reason: the tree shows a
+ * filename, so without this `/methscope` or `/chromatin` would find nothing,
+ * though both are true of rows on the screen. A folder answers for itself --
+ * its unit and source -- so filtering for a source keeps its folders as well
+ * as its files.
+ */
+static const char *bx_facets(void *ctx, const char *path, const char *key) {
+  static char buf[1024];
+  (void)ctx;
+  bpath_t bp;
+  bpath_parse(path, &bp);
+  if (!bp.unit[0]) return NULL;
+
+  const char *bar = key ? strchr(key, '|') : NULL;
+  if (bar) {                                  /* a file: ask the registry */
+    size_t idx = (size_t)atoi(key);
+    if (idx < YAME_ASSETS_N) {
+      file_facets(&YAME_ASSETS[idx], bar + 1, buf, sizeof(buf));
+      return buf;
+    }
+  }
+  /* a unit or folder: its own name, and every source that fills it */
+  size_t n = (size_t)snprintf(buf, sizeof(buf), "%s %s", bp.unit, bp.sub);
+  for (size_t i = 0; i < YAME_ASSETS_N && n + 32 < sizeof(buf); ++i) {
+    char u[128], sb[128];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
+    if (strcmp(u, bp.unit) != 0) continue;
+    if (bp.sub[0] && strcmp(sb, bp.sub) != 0) continue;
+    n += (size_t)snprintf(buf + n, sizeof(buf) - n, " %s", YAME_ASSETS[i].source);
+  }
+  return buf;
+}
+
 static int bx_recommend(void *ctx, const char *path, const char *key) {
   (void)ctx;
   const char *bar = key ? strchr(key, '|') : NULL;
@@ -1593,6 +1629,7 @@ static int browse_catalog(const char *dopt, int force) {
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
   spec.recommend   = bx_recommend;
+  spec.facets      = bx_facets;
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";
   spec.actions[0].accept = bx_accept;
@@ -1657,6 +1694,7 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
   spec.recommend   = bx_recommend;
+  spec.facets      = bx_facets;
   spec.open_root   = open_unit;         /* start where the caller is working */
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";

@@ -1612,12 +1612,23 @@ static void tn_prefix(const tnode_t *n, char *out, size_t cap) {
 
 static int flat_push(tnode_t ***arr, size_t *n, size_t *cap, tnode_t *t);
 
+static int tn_node_matches(const tnode_t *n, const char *q,
+                           const yame_ui_tree_t *spec) {
+  if (n->depth < 0) return 0;
+  if (n->row && strcasestr(n->row, q)) return 1;
+  if (spec && spec->facets && n->path) {
+    const char *f = spec->facets(spec->ctx, n->path, n->key);
+    if (f && strcasestr(f, q)) return 1;
+  }
+  return 0;
+}
+
 static void tn_collect_matches(tnode_t *n, const char *q, tnode_t ***hits,
-                               size_t *nh, size_t *cap) {
-  if (n->depth >= 0 && n->row && strcasestr(n->row, q))
-    flat_push(hits, nh, cap, n);
+                               size_t *nh, size_t *cap,
+                               const yame_ui_tree_t *spec) {
+  if (tn_node_matches(n, q, spec)) flat_push(hits, nh, cap, n);
   for (size_t i = 0; i < n->n_kids; ++i)
-    tn_collect_matches(n->kids[i], q, hits, nh, cap);
+    tn_collect_matches(n->kids[i], q, hits, nh, cap, spec);
 }
 
 /* Everything is shown when nothing is being filtered for. */
@@ -1635,11 +1646,11 @@ static void tn_show_all(tnode_t *n) {
  * came from -- so a branch stays visible for its descendants' sake, and is
  * opened, because a match folded out of sight is not found either.
  */
-static int tn_mark_filter(tnode_t *n, const char *q) {
-  int self = (n->depth >= 0 && n->row && strcasestr(n->row, q)) ? 1 : 0;
+static int tn_mark_filter(tnode_t *n, const char *q, const yame_ui_tree_t *spec) {
+  int self = tn_node_matches(n, q, spec);
   int kid  = 0;
   for (size_t i = 0; i < n->n_kids; ++i)
-    if (tn_mark_filter(n->kids[i], q)) kid = 1;
+    if (tn_mark_filter(n->kids[i], q, spec)) kid = 1;
   n->shown = (self || kid);
   if (kid) n->expanded = 1;
   return n->shown;
@@ -1654,11 +1665,11 @@ static void tn_reveal(tnode_t *n) {
 /* Recompute the hit list and aim the cursor at hit `*hit_i`. */
 static void search_apply(tnode_t *forest, const char *q, tnode_t ***hits,
                          size_t *nh, size_t *cap, size_t *hit_i,
-                         tnode_t **want_cur) {
+                         tnode_t **want_cur, const yame_ui_tree_t *spec) {
   *nh = 0;
   if (!*q) { tn_show_all(forest); return; }
-  tn_mark_filter(forest, q);
-  tn_collect_matches(forest, q, hits, nh, cap);
+  tn_mark_filter(forest, q, spec);
+  tn_collect_matches(forest, q, hits, nh, cap, spec);
   /* Nothing matched: show the tree again rather than a blank screen, and let
    * the count in the footer say so. */
   if (!*nh) { tn_show_all(forest); return; }
@@ -2280,7 +2291,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
                                 hit_i + 1, n_hits);
       else             snprintf(found, sizeof(found), "no match");
 
-      frame_line(&f, "%s  /%s%s%s%s  %s  %s  %s next  enter keep  esc cancel%s",
+      frame_line(&f, "%s  /%s%s%s%s  %s  %s  %s next  enter to select  esc cancel%s",
                  yame_ui_dim(), yame_ui_bold(), query, yame_ui_reset(),
                  yame_ui_dim(), yame_ui_bullet(), found,
                  yame_ui_unicode() ? "↑↓" : "up/down", yame_ui_reset());
@@ -2298,10 +2309,17 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         ao += (size_t)snprintf(acts + ao, sizeof(acts) - ao, "%c %s  ",
                                spec->actions[a].key, spec->actions[a].verb);
       /* `acts` already ends in two spaces, so nothing is added here. */
-      frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %sh keys  "
+      /* A filter left on looks exactly like a short catalogue, so it has to
+       * say so -- and say how to drop it, or the rows look simply gone. */
+      char filt[96] = "";
+      if (query[0])
+        snprintf(filt, sizeof(filt), "%sfilter %s%s%s  esc clears  %s  ",
+                 yame_ui_dim(), yame_ui_cyan(), query, yame_ui_dim(),
+                 yame_ui_bullet());
+      frame_line(&f, "%s  row %zu of %zu  %s  %zu selected  %s  %s%sh keys  "
                      "q quit%s",
                  yame_ui_dim(), nflat ? cur + 1 : 0, nflat,
-                 yame_ui_bullet(), nsel, yame_ui_bullet(),
+                 yame_ui_bullet(), nsel, yame_ui_bullet(), filt,
                  acts, yame_ui_reset());
     } else {
       frame_line(&f, "%s  row %zu of %zu  %s  %s  %s  h keys  q quit%s",
@@ -2353,7 +2371,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         if (l + 1 < sizeof(query)) { query[l] = ch; query[l + 1] = '\0'; }
         hit_i = 0;
         search_apply(&forest, query, &hits, &n_hits, &hits_cap, &hit_i,
-                     &want_cur);
+                     &want_cur, spec);
         continue;
       }
       if (key == K_BACKSPACE) {
@@ -2361,7 +2379,7 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
         if (l) query[l - 1] = '\0';
         hit_i = 0;
         search_apply(&forest, query, &hits, &n_hits, &hits_cap, &hit_i,
-                     &want_cur);
+                     &want_cur, spec);
         continue;
       }
       if (key == K_DOWN || key == K_UP) {
@@ -2444,7 +2462,14 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
     else if (key == K_HOME) { nav_dir = 1; cur = 0; }
     else if (key == K_END)  { nav_dir = -1; cur = nflat ? nflat - 1 : 0; }
     /* ESC closes the pane first, then leaves the widget. */
-    else if (key == K_ESC)  { if (detail_open) detail_open = 0; else break; }
+    /* esc peels one layer at a time: the detail pane, then the filter, then
+     * the browser. Leaving with a filter still on would look like quitting a
+     * catalogue that had gone mysteriously small. */
+    else if (key == K_ESC)  {
+      if (detail_open) detail_open = 0;
+      else if (query[0]) { query[0] = '\0'; n_hits = 0; tn_show_all(&forest); }
+      else break;
+    }
     else if (key == K_NONE) break;
     else if (key == K_CHAR) {
       if (ch == 'q') break;
