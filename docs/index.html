@@ -374,7 +374,8 @@ chr1  958160  958162  1</code></pre>
   <pre class="res"><code>1  1
 0  1
 1  1</code></pre>
-  <pre><code>yame <span class="sub">pack</span> -f6 rt.txt rt.cg  <span class="cm"># and back again</span></code></pre>
+  <pre><code>yame <span class="sub">unpack</span> -f -1 human_hg38_test.cg &gt; rt.txt
+yame <span class="sub">pack</span> -f6 rt.txt rt.cg  <span class="cm"># and back again</span></code></pre>
   <p>Verified byte-identical on the round trip.</p>
 </section>
 <section class="card">
@@ -403,10 +404,11 @@ Oligodendrocyte     4  29401795       6          2    NA
 Pancreas-Beta       4  29401795       6          2    NA
 Blood-NK            4  29401795       6          2    NA
 Blood-Monocytes     4  29401795       6          2    NA</code></pre>
-  <pre><code>yame <span class="sub">chunk</span> -s 500000 cohort.cg chunks/  <span class="cm"># fixed row blocks, for parallel work</span>
+  <pre><code>yame <span class="sub">chunk</span> -s 500000 human_hg38_celltypes.cg chunks/  <span class="cm"># fixed row blocks</span>
 yame <span class="sub">subset</span> -o two.cg human_hg38_celltypes.cg Blood-NK Blood-Monocytes
+yame <span class="sub">info</span> human_hg38_celltypes.cg | cut -f2 | tail -n +2 &gt; names.txt
 yame <span class="sub">split</span> -s names.txt human_hg38_celltypes.cg out_  <span class="cm"># one file each</span>
-yame <span class="sub">index</span> -s names.txt cohort.cg  <span class="cm"># rebuild the index</span></code></pre>
+yame <span class="sub">index</span> -s names.txt human_hg38_celltypes.cg  <span class="cm"># rebuild the index</span></code></pre>
   <pre class="res"><code>Sample               Nrow  Format
 Blood-NK         29401795       6
 Blood-Monocytes  29401795       6</code></pre>
@@ -429,9 +431,13 @@ human_hg38_test.cg      1  CGI.20220904.cm  OpenSea   29000    23857   23534    
 human_hg38_test.cg      1  CGI.20220904.cm  Shelf     29000    23857    1224       1076           0.67  0.879     NA
 human_hg38_test.cg      1  CGI.20220904.cm  Shore     29000    23857    2074       1263          -1.74  0.609     NA</code></pre>
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
-  <pre><code>yame <span class="sub">binarize</span> -t 0.5 -c 3 -o calls.cg mix.cg  <span class="cm"># M/U -&gt; set + universe</span>
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_immune_mixture.cg
+yame <span class="sub">fetch</span> -c hg38/data/human_hg38_40_celltypes_chr20.cg
+yame <span class="sub">binarize</span> -t 0.5 -c 3 -o calls.cg human_hg38_immune_mixture.cg  <span class="cm"># M/U -&gt; set + universe</span>
+yame <span class="sub">subset</span> -o a.cg human_hg38_40_celltypes_chr20.cg GSM5652176_Adipocytes-Z000000T7
+yame <span class="sub">subset</span> -o b.cg human_hg38_40_celltypes_chr20.cg GSM5652181_Saphenous-Vein-Endothel-Z000000RM
 yame <span class="sub">pairwise</span> -H 1 -c 5 -d 0.2 a.cg b.cg  <span class="cm"># differential, fmt3 -&gt; fmt6</span>
-yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span class="cm"># collapse across samples</span></code></pre>
+yame <span class="sub">rowop</span> -o binasum human_hg38_40_celltypes_chr20.cg pseudobulk.cg  <span class="cm"># collapse</span></code></pre>
   <pre class="res"><code>Sample    Nrow  Format
      1  773477       3</code></pre>
   <p>That last one is how pseudobulks are made: <code class='inl'>subset</code> the cells of a cluster, pipe into <code class='inl'>rowop</code>.</p>
@@ -447,7 +453,8 @@ yame <span class="sub">dsample</span> -N 5000 -s 42 -o ds.cg human_hg38_test.cg<
   <pre class="res"><code>Query  N_univ  N_query   Beta
     1   29000    22953  0.791</code></pre>
   <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
-  <pre><code>yame <span class="sub">mask</span> -o clean.cg sample.cg blacklist.cm</code></pre>
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/KYCG -g blacklist
+yame <span class="sub">mask</span> -o clean.cg human_hg38_test.cg Blacklist.20220304.cm</code></pre>
 </section>
 </div>
 </div>

@@ -1884,7 +1884,18 @@ static int sel_present(const char *root, const yame_asset_reg_t *a,
 
 static int file_wanted(const yame_asset_reg_t *a, const char *name,
                        const char *filter, const char *only_file) {
-  if (only_file && strcmp(name, only_file) != 0) return 0;
+  if (only_file) {
+    size_t l = strlen(only_file);
+    if (strncmp(name, only_file, l) != 0) return 0;
+    /* An index rides with its data file, the same way the browser folds it
+     * into that file's row. Handing back a .cg without its .idx gives you
+     * something `subset` and `split` cannot open, which is not what naming
+     * the file meant. */
+    if (name[l]) {
+      const char *sfx = yame_assets_index_suffix(name);
+      if (!sfx || strcmp(name + l, sfx) != 0) return 0;
+    }
+  }
   if (filter) {
     char f[1024];
     file_facets(a, name, f, sizeof(f));
