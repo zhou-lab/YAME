@@ -319,6 +319,13 @@
   <code class="inl">~/.local/share/yame</code> &mdash; so what you fetch here
   is what <code class="inl">KnowYourCG</code> and <code class="inl">SeSAMe</code>
   find. Everything else on this page runs against it.</p>
+  <p><b>The store is laid out the way the tree reads.</b> What you see under a
+  name is what lands under that name on disk, so <code class='inl'>hg38/data</code>
+  in the browser is <code class='inl'>$YAME_DATA_HOME/hg38/data</code>, and a
+  genome's knowledgebase simply nests inside it. Which upstream repo published
+  a directory is a column in <code class='inl'>fetch -l</code>, not a path
+  component &mdash; one name, whether you are browsing, fetching or looking at
+  the disk.</p>
   <p>What it carries are the row spaces everything else is measured in. Each length is distinct, so <b>the count is the identity</b> &mdash; which is what lets <code class='inl'>-R</code> and <code class='inl'>-m</code> take a name instead of a path.</p>
   <pre class="res"><span class="cm">row space        rows   row space        rows</span>
 <span class="cm">─────────────────────────────────────────────</span>
