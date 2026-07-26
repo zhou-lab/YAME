@@ -184,6 +184,19 @@
         font-size:.87em;font-family:ui-monospace,Menlo,Consolas,monospace}
       .cm{color:var(--cm)}
       .sub{color:var(--accent-2);font-weight:600}
+      .tabs{display:flex;gap:2px;margin:0 0 18px;
+        border-bottom:1px solid var(--line)}
+      .tab{font:inherit;font-size:.86rem;font-weight:600;cursor:pointer;
+        border:0;border-bottom:2px solid transparent;background:none;
+        color:var(--muted);padding:9px 15px;margin-bottom:-1px;
+        transition:color .12s,border-color .12s}
+      .tab:hover{color:var(--fg)}
+      .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+      .tab:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;
+        border-radius:6px}
+      /* a hidden tab is still part of the document on paper */
+      @media print{.tabs{display:none}.panel{display:block!important}}
+
       /* the reference sits below the grid, so it is not column-bound and a
          wide table fits without scrolling */
       .ref{margin:0 0 16px;border:1px solid var(--line);border-radius:12px;
@@ -271,6 +284,14 @@
     <span title="27,722 rows">HM27</span></p>
 </header>
 
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button class="tab on" type="button" role="tab" id="tab-use"
+    aria-controls="panel-use" aria-selected="true">Usage</button>
+  <button class="tab" type="button" role="tab" id="tab-fmt" tabindex="-1"
+    aria-controls="panel-fmt" aria-selected="false">Data format</button>
+</nav>
+
+<div class="panel" id="panel-use" role="tabpanel" aria-labelledby="tab-use">
 <div class="grid">
 <section class="card">
   <h2>Fetch <span class="m">&mdash; nothing ships with the binary</span></h2>
@@ -392,7 +413,9 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
   <pre><code>yame <span class="sub">mask</span> -o clean.cg sample.cg blacklist.cm</code></pre>
 </section>
 </div>
+</div>
 
+<div class="panel hidden" id="panel-fmt" role="tabpanel" aria-labelledby="tab-fmt">
 <section class="ref" id="ref">
   <h2>Data format <span class="m">&mdash; the model, and all seven packings</span></h2>
   <p>A YAME file is values in order and nothing else. Row <i>i</i> means whatever row <i>i</i> of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join — fast, and indifferent to how many rows there are.</p>
@@ -536,6 +559,7 @@ one file, and why <code>summary</code> can compute an odds ratio from a single
 record.</figcaption>
 </figure>
 </section>
+</div>
 
 <footer>
   Full usage, the trust model for fetched data, and the format reference are in
@@ -629,6 +653,44 @@ record.</figcaption>
         })
         .catch(() => {});
     
+      /* Two tabs: how to run it, and how the bytes are laid out. A link or
+       * a bookmark into the format side has to open its tab before it can
+       * scroll, so the hash drives the same code path the buttons do. */
+      (function () {
+        var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+        function show(id) {
+          tabs.forEach(function (t) {
+            var on = t.id === id;
+            t.classList.toggle("on", on);
+            t.setAttribute("aria-selected", on ? "true" : "false");
+            t.tabIndex = on ? 0 : -1;
+            document.getElementById(t.getAttribute("aria-controls"))
+              .classList.toggle("hidden", !on);
+          });
+        }
+        tabs.forEach(function (t) {
+          t.addEventListener("click", function () { show(t.id); });
+          t.addEventListener("keydown", function (e) {
+            var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+            if (!d) return;
+            e.preventDefault();
+            var n = tabs[(tabs.indexOf(t) + d + tabs.length) % tabs.length];
+            show(n.id); n.focus();
+          });
+        });
+        function fromHash() {
+          var el = location.hash.length > 1 &&
+                   document.getElementById(location.hash.slice(1));
+          if (!el) return;
+          var panel = el.closest(".panel");
+          if (!panel) return;
+          show(document.querySelector('[aria-controls="' + panel.id + '"]').id);
+          el.scrollIntoView();
+        }
+        window.addEventListener("hashchange", fromHash);
+        fromHash();
+      })();
+
       /* Click a capture or a diagram to enlarge it. The overlay clones the
        * node, so colour and alignment survive -- the same thing, bigger. The
        * clone drops its own buttons. */
