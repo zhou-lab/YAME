@@ -728,6 +728,14 @@ static void info_key_of(const char *name, char *out, size_t n) {
   out[l] = '\0';
 }
 
+/* Defined below, beside the -g filter they serve; the listing wants the same
+ * matching so that -l is the dry run for a fetch. */
+static void file_facets(const yame_asset_reg_t *a, const char *name,
+                        char *out, size_t cap);
+static int facets_match(const char *facets, const char *terms);
+static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
+                            size_t cap);
+
 /**
  * Every file this build knows about, one per line, as TSV.
  *
@@ -741,15 +749,24 @@ static void info_key_of(const char *name, char *out, size_t n) {
  * here is cut(1), not an eye. Descriptions come from data/assets.tsv keyed by
  * role, so one row describes `mask` for every platform that publishes one.
  */
-static int dump_registry(const char *dopt) {
+static int dump_registry(const char *dopt, const char *scope,
+                         const char *filter) {
   char root[4096];
   yame_assets_root(dopt, NULL, root, sizeof(root));
+
+  /* The same selection a fetch would make, printed instead of downloaded, so
+   * `-l <name> -g <terms>` is the dry run for the command without -l. */
+  const yame_asset_reg_t *sel[64];
+  size_t n_sel = 0;
+  if (scope) n_sel = collect_scope(scope, sel, 64);
+  else for (size_t i = 0; i < YAME_ASSETS_N && n_sel < 64; ++i)
+         sel[n_sel++] = &YAME_ASSETS[i];
 
   printf("target\tsource\ttag\tstore_path\tfile\tbytes\tsha256\tdir_state\t"
          "local\tdescription\n");
 
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
+  for (size_t i = 0; i < n_sel; ++i) {
+    const yame_asset_reg_t *a = sel[i];
     char dir[4096];
     yame_assets_join(dir, sizeof(dir), root, a->store_sub);
 
@@ -763,6 +780,12 @@ static int dump_registry(const char *dopt) {
 
     for (size_t j = 0; j < a->n_files; ++j) {
       const yame_asset_file_t *f = &a->files[j];
+
+      if (filter) {
+        char facets[1024];
+        file_facets(a, f->name, facets, sizeof(facets));
+        if (!facets_match(facets, filter)) continue;
+      }
 
       char path[4096];
       yame_assets_join(path, sizeof(path), dir, f->name);
@@ -1864,7 +1887,8 @@ int main_fetch(int argc, char *argv[]) {
   /* After the loop, not inside it, so `-l -d <dir>` reports presence against
    * the store that was actually asked for. Returning from the case label read
    * fine until -d could change the answer. */
-  if (list) return dump_registry(dopt);
+  if (list)
+    return dump_registry(dopt, optind < argc ? argv[optind] : NULL, filter);
 
   /* About to actually use the store, so this is where the one-time notice
    * about a pre-consolidation cache belongs -- not in every path that merely
@@ -1904,9 +1928,9 @@ int main_fetch(int argc, char *argv[]) {
    * waiting for a keystroke that will not come. */
   if (optind >= argc) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
-      return dump_registry(dopt);
+      return dump_registry(dopt, NULL, filter);
     if (browse_catalog(dopt, force) == 0) return 0;
-    return dump_registry(dopt);       /* terminal cannot host the widget */
+    return dump_registry(dopt, NULL, filter); /* terminal cannot host the widget */
   }
 
   /* ---- catalogued form: <name>[@tag] ---- */
