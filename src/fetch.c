@@ -33,6 +33,12 @@
  * which is how a store gets a file this build's registry has never heard of.
  */
 
+/* strcasestr is a GNU extension: -g matches case-insensitively, and this is
+ * the one call that needs the feature macro. */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +88,9 @@ static int usage(void) {
   yame_usage_opt("-l", "Dump the registry as TSV and exit: every file this build");
   yame_usage_cont("knows, with its size, digest, description and whether the");
   yame_usage_cont("store already has it. One row per file, for cut and grep.");
+  yame_usage_opt("-g <a,b>", "Only files matching every term: name, source, collection,");
+  yame_usage_cont("title or upstream database. `-g chromatin` inside a");
+  yame_usage_cont("knowledgebase, `-g celltype` across a whole genome.");
   yame_usage_opt("-y", "Fetch a whole folder without asking. A name covering more");
   yame_usage_cont("than one directory is confirmed first, since a short name");
   yame_usage_cont("can reach a lot -- `hg38` is 3.5 GB.");
@@ -773,6 +782,43 @@ static int dump_registry(const char *dopt) {
     }
   }
   return 0;
+}
+
+/**
+ * Everything a file can be matched on, gathered into one string.
+ *
+ * The filename and the row it came from, plus what the catalogue already
+ * knows about that kind of file: which collections it appears in, its short
+ * title, and the upstream database it came from. Deliberately NOT the biology
+ * or processing prose -- those run to hundreds of characters and mention
+ * "CpG" or "methylation" in nearly every row, so matching them would make
+ * every common word select the whole catalogue.
+ */
+static void file_facets(const yame_asset_reg_t *a, const char *name,
+                        char *out, size_t cap) {
+  char ikey[256];
+  info_key_of(name, ikey, sizeof(ikey));
+  const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
+  char u[128], sb[128];
+  unit_of(a, u, sizeof(u), sb, sizeof(sb));
+  snprintf(out, cap, "%s %s %s %s %s %s %s", name, a->source, u, sb,
+           k && k->collections ? k->collections : "",
+           k && k->title       ? k->title       : "",
+           k && k->source      ? k->source      : "");
+}
+
+/* All terms must appear: narrowing is the point, so a second term that
+ * widened the result would be a surprise. */
+static int facets_match(const char *facets, const char *terms) {
+  char buf[512];
+  snprintf(buf, sizeof(buf), "%s", terms);
+  for (char *save = NULL, *t = strtok_r(buf, ",", &save);
+       t; t = strtok_r(NULL, ",", &save)) {
+    while (*t == ' ') ++t;
+    if (!*t) continue;
+    if (!strcasestr(facets, t)) return 0;
+  }
+  return 1;
 }
 
 /* ---- expanding ----
@@ -1688,7 +1734,7 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
  * list from the entry rather than the manifest is what keeps that honest;
  * where the two coincide this is exactly what it did before. */
 static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
-                       const char *tag, const char *anchor,
+                       const char *tag, const char *anchor, const char *filter,
                        const yame_fetch_opt_t *opt, char **err) {
   char store_sub[4096];
   if (yame_assets_join(store_sub, sizeof(store_sub), store_root, a->store_sub) != 0)
@@ -1696,10 +1742,19 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
 
   const char **names = malloc(a->n_files * sizeof(*names));
   if (!names) return -1;
-  for (size_t i = 0; i < a->n_files; ++i) names[i] = a->files[i].name;
+  size_t n_names = 0;
+  for (size_t i = 0; i < a->n_files; ++i) {
+    if (filter) {
+      char f[1024];
+      file_facets(a, a->files[i].name, f, sizeof(f));
+      if (!facets_match(f, filter)) continue;
+    }
+    names[n_names++] = a->files[i].name;
+  }
+  if (!n_names) { free(names); return 0; }
 
   int rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, store_sub,
-                                    anchor, names, a->n_files, opt, err);
+                                    anchor, names, n_names, opt, err);
   free(names);
   return rc;
 }
@@ -1708,15 +1763,17 @@ int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
+  const char *filter = NULL;
   int c;
 
-  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yh")) >= 0) {
+  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yg:h")) >= 0) {
     switch (c) {
     case 'd': dopt = optarg; break;
     case 't': tag_override = optarg; break;
     case 'k': unpinned_ok = 1; break;
     case 'f': force = 1; break;
     case 'l': list = 1; break;
+    case 'g': filter = optarg; break;
     case 'y': assume_yes = 1; break;
     case 'q': quiet = 1; break;
     case 'u': url = optarg; break;
@@ -1833,38 +1890,76 @@ int main_fetch(int argc, char *argv[]) {
     return 1;
   }
 
-  /* More than one directory means the name was a folder, and a folder can be
-   * very large -- hg38 reaches the 2.9 GB whole-genome decoder. The browser
-   * confirms before it transfers anything; doing less here would make the
-   * shorter name the more dangerous one. */
-  if (n_sel > 1) {
-    uint64_t total = 0;
-    for (size_t i = 0; i < n_sel; ++i) total += scope_bytes(sel[i]);
-    char hs[32];
-    human_size(total, hs, sizeof(hs));
-
-    fprintf(stderr, "%s covers %zu director%s, %s:\n",
-            spec, n_sel, n_sel == 1 ? "y" : "ies", hs);
-    for (size_t i = 0; i < n_sel; ++i) {
-      char one[32];
-      human_size(scope_bytes(sel[i]), one, sizeof(one));
-      char u[128], sb[128];
-      unit_of(sel[i], u, sizeof(u), sb, sizeof(sb));
-      fprintf(stderr, "  %s%s%s%*s%s\n", u, sb[0] ? "/" : "", sb,
-              (int)(28 - strlen(u) - (sb[0] ? strlen(sb) + 1 : 0)), "", one);
-    }
-
-    if (!assume_yes) {
-      if (!isatty(STDIN_FILENO)) {
-        fprintf(stderr,
-                "Refusing to fetch %s without confirmation. Re-run with -y, or "
-                "name one directory.\n", hs);
-        return 1;
+  /* One plan, whether or not a filter narrowed it: how many files, from how
+   * many directories, and how large. Quoting the unfiltered total next to a
+   * filtered list would name a number that is not going to be transferred. */
+  size_t n_files = 0, n_dirs = 0;
+  uint64_t total = 0;
+  for (size_t i = 0; i < n_sel; ++i) {
+    size_t here = 0;
+    for (size_t j = 0; j < sel[i]->n_files; ++j) {
+      if (filter) {
+        char f[1024];
+        file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
+        if (!facets_match(f, filter)) continue;
       }
-      fprintf(stderr, "Fetch all of it? [y/N] ");
-      int c = getchar();
-      if (c != 'y' && c != 'Y') { fprintf(stderr, "nothing fetched.\n"); return 1; }
+      ++here; total += sel[i]->files[j].size;
     }
+    if (here) { ++n_dirs; n_files += here; }
+  }
+
+  if (!n_files) {
+    if (filter)
+      fprintf(stderr, "yame fetch: nothing under %s matches -g %s.\n"
+                      "  Terms are ANDed and match the file name, its source, "
+                      "collection, title or upstream database.\n", spec, filter);
+    else
+      fprintf(stderr, "yame fetch: %s holds no files.\n", spec);
+    return 1;
+  }
+
+  char hs[32];
+  human_size(total, hs, sizeof(hs));
+
+  /* Say what is about to happen when the answer is not obvious: a filter, or
+   * a name that reached more than one directory. A folder can be very large
+   * -- hg38 reaches the 2.9 GB whole-genome decoder -- and the browser has
+   * always confirmed before transferring, so the shorter name should not be
+   * the more dangerous one. */
+  if (filter || n_dirs > 1) {
+    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s, %s\n",
+            spec, filter ? " -g " : "", filter ? filter : "",
+            n_files, n_files == 1 ? "" : "s",
+            n_dirs, n_dirs == 1 ? "y" : "ies", hs);
+    for (size_t i = 0; i < n_sel; ++i)
+      for (size_t j = 0; j < sel[i]->n_files; ++j) {
+        if (filter) {
+          char f[1024];
+          file_facets(sel[i], sel[i]->files[j].name, f, sizeof(f));
+          if (!facets_match(f, filter)) continue;
+        } else if (j) continue;          /* unfiltered: one line per directory */
+        char one[32];
+        human_size(filter ? sel[i]->files[j].size : scope_bytes(sel[i]),
+                   one, sizeof(one));
+        char u[128], sb[128];
+        unit_of(sel[i], u, sizeof(u), sb, sizeof(sb));
+        char label[272];   /* u[128] + "/" + sb[128] */
+        if (filter) snprintf(label, sizeof(label), "%s", sel[i]->files[j].name);
+        else snprintf(label, sizeof(label), "%s%s%s", u, sb[0] ? "/" : "", sb);
+        fprintf(stderr, "  %-44s %8s\n", label, one);
+      }
+  }
+
+  if (n_dirs > 1 && !assume_yes) {
+    if (!isatty(STDIN_FILENO)) {
+      fprintf(stderr,
+              "Refusing to fetch %s without confirmation. Re-run with -y, or "
+              "name one directory.\n", hs);
+      return 1;
+    }
+    fprintf(stderr, "Fetch all of it? [y/N] ");
+    int c = getchar();
+    if (c != 'y' && c != 'Y') { fprintf(stderr, "nothing fetched.\n"); return 1; }
   }
 
   for (size_t i = 0; i < n_sel; ++i) {
@@ -1897,7 +1992,7 @@ int main_fetch(int argc, char *argv[]) {
     if (!quiet)
       fprintf(stderr, "%s/%s @ %s -> %s\n", a->source, a->target, tag, store_sub);
 
-    if (fetch_entry(a, root, tag, anchor, &opt, &err) != 0) {
+    if (fetch_entry(a, root, tag, anchor, filter, &opt, &err) != 0) {
       fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
       free(err);
       return 1;
