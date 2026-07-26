@@ -182,9 +182,6 @@
         font-size:.87em;font-family:ui-monospace,Menlo,Consolas,monospace}
       .cm{color:var(--cm)}
       .sub{color:var(--accent-2);font-weight:600}
-      .tabs.inner{margin:0 0 12px;gap:0}
-      .tabs.inner .tab{font-size:.78rem;padding:6px 11px;font-weight:600}
-      .ref .panel{margin:0}
       .ref p.foot{font-size:.78rem;color:var(--muted);margin:2px 0 0}
       .tabs{display:flex;flex-wrap:wrap;gap:2px;margin:0 0 18px;
         border-bottom:1px solid var(--line)}
@@ -278,8 +275,22 @@
 <nav class="tabs" role="tablist" aria-label="Sections">
   <button class="tab on" type="button" role="tab" id="tab-use"
     aria-controls="panel-use" aria-selected="true">Usage</button>
-  <button class="tab" type="button" role="tab" id="tab-fmt" tabindex="-1"
-    aria-controls="panel-fmt" aria-selected="false">Data format</button>
+  <button class="tab" type="button" role="tab" id="tab-model" tabindex="-1"
+    aria-controls="panel-model" aria-selected="false">Data model</button>
+  <button class="tab" type="button" role="tab" id="tab-f3" tabindex="-1"
+    aria-controls="panel-f3" aria-selected="false">3 M/U</button>
+  <button class="tab" type="button" role="tab" id="tab-f6" tabindex="-1"
+    aria-controls="panel-f6" aria-selected="false">6 set+uni</button>
+  <button class="tab" type="button" role="tab" id="tab-f0" tabindex="-1"
+    aria-controls="panel-f0" aria-selected="false">0 binary</button>
+  <button class="tab" type="button" role="tab" id="tab-f1" tabindex="-1"
+    aria-controls="panel-f1" aria-selected="false">1 byte</button>
+  <button class="tab" type="button" role="tab" id="tab-f2" tabindex="-1"
+    aria-controls="panel-f2" aria-selected="false">2 states</button>
+  <button class="tab" type="button" role="tab" id="tab-f4" tabindex="-1"
+    aria-controls="panel-f4" aria-selected="false">4 beta</button>
+  <button class="tab" type="button" role="tab" id="tab-f7" tabindex="-1"
+    aria-controls="panel-f7" aria-selected="false">7 coords</button>
 </nav>
 
 <div class="panel" id="panel-use" role="tabpanel" aria-labelledby="tab-use">
@@ -414,9 +425,9 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
 </div>
 </div>
 
-<div class="panel hidden" id="panel-fmt" role="tabpanel" aria-labelledby="tab-fmt">
+<div class="panel hidden" id="panel-model" role="tabpanel" aria-labelledby="tab-model">
 <section class="ref" id="ref">
-  <h2>Data format <span class="m">&mdash; the model, and all seven packings</span></h2>
+  <h2>Data model <span class="m">&mdash; row space, records, and the seven packings</span></h2>
   <p>A YAME file is values in order and nothing else. Row <i>i</i> means whatever row <i>i</i> of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join — fast, and indifferent to how many rows there are.</p>
   <figure class="dia">
 <pre><span class="sub">cpg_nocontig.cr</span>   the reference: every CpG in the genome, in order
@@ -470,11 +481,6 @@ a small int              <span class="sub">1</span>  byte          one char per 
 coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#8677; start    delta varint  n/a       <span class="sub">-fr</span>   only chrom and start are read
 
 <span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
-</section>
-
-
-<section class="ref" id="packing">
-  <h2>Packing scheme <span class="m">&mdash; the exact bytes</span></h2>
   <p>Every format lays the same row space down at a different density, which is the whole reason there is a family rather than one format. Two of them are fixed width and cost the same per CpG whatever the data says; the rest widen with the values they carry, so a format 3 store scales with sequencing depth rather than with the row count. These layouts are the ones in <code class='inl'>src/format*.c</code>.</p>
   <figure class="dia">
 <pre>one byte, and how many CpGs it holds
@@ -489,25 +495,16 @@ the same number of bits on every CpG, so the file size follows from the row
 count alone: a presence/absence mask does not need a byte per CpG, and a small
 integer cannot live in a bit.</figcaption>
 </figure>
-  <nav class="tabs inner" role="tablist" aria-label="Formats">
-    <button class="tab on" type="button" role="tab" id="tab-f3"
-      aria-controls="fmt-3" aria-selected="true">3 M/U</button>
-    <button class="tab" type="button" role="tab" id="tab-f6"
-      aria-controls="fmt-6" aria-selected="false" tabindex="-1">6 set+uni</button>
-    <button class="tab" type="button" role="tab" id="tab-f0"
-      aria-controls="fmt-0" aria-selected="false" tabindex="-1">0 binary</button>
-    <button class="tab" type="button" role="tab" id="tab-f1"
-      aria-controls="fmt-1" aria-selected="false" tabindex="-1">1 byte</button>
-    <button class="tab" type="button" role="tab" id="tab-f2"
-      aria-controls="fmt-2" aria-selected="false" tabindex="-1">2 states</button>
-    <button class="tab" type="button" role="tab" id="tab-f4"
-      aria-controls="fmt-4" aria-selected="false" tabindex="-1">4 beta</button>
-    <button class="tab" type="button" role="tab" id="tab-f7"
-      aria-controls="fmt-7" aria-selected="false" tabindex="-1">7 coords</button>
-  </nav>
-  <div class="panel" id="fmt-3" role="tabpanel" aria-labelledby="tab-f3">
-  <pre class="res"><span class="sub">format 3</span>  M/U counts &mdash; tagged, variable width
-  inflated   c->unit bytes a site, default 8 (M and U 32 bits each);
+  <p class="foot">Format 5 is obsolete: still decodable, no longer packable.</p>
+</section>
+
+
+</div>
+
+<div class="panel hidden" id="panel-f3" role="tabpanel" aria-labelledby="tab-f3">
+<section class="ref" id="packing-3">
+  <h2>Format 3 <span class="m">&mdash; M/U counts, tagged variable width</span></h2>
+  <pre class="res">  inflated   c->unit bytes a site, default 8 (M and U 32 bits each);
              pack -u takes 1..8, and 1 leaves only 4 bits apiece
   on disk    the low two bits tag the record
              01   1 byte   [ M(3)  | U(3)  | 01 ]      M,U &le; 6
@@ -516,10 +513,13 @@ integer cannot live in a bit.</figcaption>
              00   2 bytes  [ run length (14) | 00 ]    a run of M = U = 0
              beyond 2^31-1 fitMU right-shifts M and U together until both
              fit, so the ratio survives and the absolute depth does not</pre>
-  </div>
-  <div class="panel hidden" id="fmt-6" role="tabpanel" aria-labelledby="tab-f6">
-  <pre class="res"><span class="sub">format 6</span>  set + universe &mdash; two bits a row
-  inflated   byte s[i>>2], offset = (i&3)*2           (n+3)>>2 bytes
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f6" role="tabpanel" aria-labelledby="tab-f6">
+<section class="ref" id="packing-6">
+  <h2>Format 6 <span class="m">&mdash; set + universe, two bits a row</span></h2>
+  <pre class="res">  inflated   byte s[i>>2], offset = (i&3)*2           (n+3)>>2 bytes
              set bit      = (b >> offset)     &amp; 1
              universe bit = (b >> (offset+1)) &amp; 1
   codes      00 outside the universe · 10 in universe, 0 · 11 in universe, 1
@@ -544,42 +544,55 @@ them, format 6 does not. That is why a query and its background can travel in
 one file, and why <code>summary</code> can compute an odds ratio from a single
 record.</figcaption>
 </figure>
-  </div>
-  <div class="panel hidden" id="fmt-0" role="tabpanel" aria-labelledby="tab-f0">
-  <pre class="res"><span class="sub">format 0</span>  binary &mdash; one bit a row
-  inflated   bit (i&7) of s[i>>3]                     (n+7)>>3 bytes
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f0" role="tabpanel" aria-labelledby="tab-f0">
+<section class="ref" id="packing-0">
+  <h2>Format 0 <span class="m">&mdash; binary, one bit a row</span></h2>
+  <pre class="res">  inflated   bit (i&7) of s[i>>3]                     (n+7)>>3 bytes
   on disk    identical; format 0 defines no coding of its own</pre>
-  </div>
-  <div class="panel hidden" id="fmt-1" role="tabpanel" aria-labelledby="tab-f1">
-  <pre class="res"><span class="sub">format 1</span>  one byte a row, run-length encoded
-  inflated   s[i], any value 0-255
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f1" role="tabpanel" aria-labelledby="tab-f1">
+<section class="ref" id="packing-1">
+  <h2>Format 1 <span class="m">&mdash; one byte a row, run-length encoded</span></h2>
+  <pre class="res">  inflated   s[i], any value 0-255
   on disk    3-byte records  [ value (1 B) | length (uint16 LE) ]
              length 1..32767; a longer run is split across records</pre>
-  </div>
-  <div class="panel hidden" id="fmt-2" role="tabpanel" aria-labelledby="tab-f2">
-  <pre class="res"><span class="sub">format 2</span>  categorical states &mdash; key table, then runs
-  layout     [ key section ][ '\0' ][ data section ]
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f2" role="tabpanel" aria-labelledby="tab-f2">
+<section class="ref" id="packing-2">
+  <h2>Format 2 <span class="m">&mdash; categorical states, key table then runs</span></h2>
+  <pre class="res">  layout     [ key section ][ '\0' ][ data section ]
   keys       "state0\0state1\0...\0", stored once; row value v means keys[v]
   inflated   data section is one integer a row, c->unit bytes
   on disk    [ unit ][ (value, length) ... ], unit in {1,2,3,8},
              length uint16 LE 1..65535</pre>
-  </div>
-  <div class="panel hidden" id="fmt-4" role="tabpanel" aria-labelledby="tab-f4">
-  <pre class="res"><span class="sub">format 4</span>  one float a row, NA runs collapsed
-  inflated   float array, 4 bytes a row; NA is a negative float (-1.0)
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f4" role="tabpanel" aria-labelledby="tab-f4">
+<section class="ref" id="packing-4">
+  <h2>Format 4 <span class="m">&mdash; one float a row, NA runs collapsed</span></h2>
+  <pre class="res">  inflated   float array, 4 bytes a row; NA is a negative float (-1.0)
   on disk    32-bit words, the MSB tags each
              1    [ 1 | run length (31) ]   that many consecutive NAs
              0    [ 0 | float bits (31) ]   the value, sign bit dropped</pre>
-  </div>
-  <div class="panel hidden" id="fmt-7" role="tabpanel" aria-labelledby="tab-f7">
-  <pre class="res"><span class="sub">format 7</span>  coordinates &mdash; delta varint, grouped by chromosome
-  stream     [ chrom '\0' ][ delta ][ delta ] ... [ 0xff ][ chrom '\0' ] ...
+</section>
+</div>
+
+<div class="panel hidden" id="panel-f7" role="tabpanel" aria-labelledby="tab-f7">
+<section class="ref" id="packing-7">
+  <h2>Format 7 <span class="m">&mdash; coordinates, delta varint by chromosome</span></h2>
+  <pre class="res">  stream     [ chrom '\0' ][ delta ][ delta ] ... [ 0xff ][ chrom '\0' ] ...
   deltas     0bbbbbbb                   1 byte,  7-bit delta
              10xxxxxx yyyyyyyy          2 bytes, 14-bit delta
              11...... + 7 more          8 bytes, 62-bit delta, big-endian
   each delta is loc(i) - loc(i-1); 0xff ends a chromosome block</pre>
-  </div>
-  <p class="foot">Format 5 is obsolete: still decodable, no longer packable.</p>
 </section>
 </div>
 
