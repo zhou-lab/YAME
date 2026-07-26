@@ -444,6 +444,17 @@ static const yame_asset_file_t YAME_FILES_genomes_mm39[] = {
     { NULL, NULL, 0 }
 };
 
+static const yame_asset_file_t YAME_FILES_methscope_hg38_data[] = {
+    { "human_hg38_40_celltypes_chr20.cg", "259b05d9a0708727a800817566a6c8f165a1210f45a9ffae692a8cdcbfe08f2e", 41377893 },
+    { "human_hg38_40_celltypes_chr20.cg.idx", "e17bb044c67853f8954caaf1c6b77bf4ae1a7f7efb05280df796581ab1a0bca7", 2182 },
+    { "human_hg38_celltypes.cg", "705973c8cdd475dbee6947952bff38fe4dea7fb44dc400c33fa9df4a0bc29a96", 6402003 },
+    { "human_hg38_celltypes.cg.idx", "ca868d49a73c7adf650bd6d58dbe3bb7e37f1472eef9b125fa195fd7ac69bb02", 96 },
+    { "human_hg38_immune_mixture.cg", "9806da825b933d2475b3e1c07a5fc399e16279eb9ccd06f5031112304edfdbd4", 3644798 },
+    { "human_hg38_test.cg", "276fce3f98a2de653009a2cb489e5f9ea699234a1b72aecd1ea3ba03795554a6", 103698 },
+    { "human_hg38_test.truth.cg", "63dd50e9b86b8abcb4c70c4927fd766026aa29999268f407187c16acfb7f6f6f", 1944547 },
+    { NULL, NULL, 0 }
+};
+
 static const yame_asset_reg_t YAME_ASSETS[] = {
     { "InfiniumAnnotation", "EPIC", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC", "InfiniumAnnotation/EPIC", "b97d9481f07b5f39dc6424b55d686ba9baac66b80e6bfd11615a1db9ebb3b629", YAME_FILES_InfiniumAnnotation_EPIC, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC) },
     { "InfiniumAnnotation", "EPIC/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC/KYCG", "InfiniumAnnotation/EPIC/KYCG", "1678294f10134013db3fe274dfeb5243cd5e4352d40e01ef50528c91ac3b077b", YAME_FILES_InfiniumAnnotation_EPIC_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC_KYCG) },
@@ -465,6 +476,7 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v3", "hg38", "genomes/hg38", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38) },
     { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "genomes/mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
     { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "genomes/mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },
+    { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "main", "test", "methscope/hg38", "150e6ae8b929e59e5b49cec241683abe6e20614bc2d29bc00f083ee01da7e19b", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data) },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
 };
 

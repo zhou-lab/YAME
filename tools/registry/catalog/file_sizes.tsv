@@ -337,3 +337,10 @@ genomes/mm39	genes.bed.gz	7047902
 genomes/mm39	genes.bed.gz.source	101
 genomes/mm39	genes.bed.gz.tbi	203709
 genomes/mm39	seqinfo.tsv.gz	203
+methscope/hg38/data	human_hg38_40_celltypes_chr20.cg	41377893
+methscope/hg38/data	human_hg38_40_celltypes_chr20.cg.idx	2182
+methscope/hg38/data	human_hg38_celltypes.cg	6402003
+methscope/hg38/data	human_hg38_celltypes.cg.idx	96
+methscope/hg38/data	human_hg38_immune_mixture.cg	3644798
+methscope/hg38/data	human_hg38_test.cg	103698
+methscope/hg38/data	human_hg38_test.truth.cg	1944547

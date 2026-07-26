@@ -18,3 +18,4 @@
 InfiniumAnnotation    v8.1    https://github.com/zhou-lab/InfiniumAnnotation/raw
 genomes               v3      https://github.com/zhou-lab/genomes/raw
 KYCGKB                v2      https://github.com/zhou-lab
+methscope             main    https://raw.githubusercontent.com/zhou-lab/methscope_data

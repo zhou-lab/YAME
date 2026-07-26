@@ -1,0 +1,15 @@
+# Example query methylomes from zhou-lab/methscope_data, at the tag in TAGS.
+#
+# The one source in this catalog that ships DATA rather than annotation: small
+# real .cg files to run a command against. Everything else here describes CpGs
+# (orderings, coordinates, feature sets); nothing else gives you a methylome to
+# point a command at, which left every example in the documentation either
+# hypothetical or dependent on a file the reader had to supply.
+#
+# Layout upstream is flat under test/: {SHA256SUMS, *.cg, *.cg.idx}. The target
+# is written "<genome>/data" so the browser files these under the genome's unit
+# beside its KYCG sets, rather than inventing a unit of its own -- they are hg38
+# files and belong where hg38 is.
+#
+# genome    remote_sub
+hg38/data	test
