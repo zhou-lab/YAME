@@ -221,8 +221,8 @@
   <div class="titlerow">
     <img class="logo" src="logo.png" alt="">
     <h1><b>Y</b>et <b>A</b>nother <b>M</b>ethylation <b>E</b>ncoder</h1>
-    <span class="badge">cli</span><a class="badge badge-ver"
-      href="https://github.com/zhou-lab/YAME/releases/tag/v1.31">v1.31</a>
+    <span class="badge">cli</span><a class="badge badge-ver" id="ver"
+      href="https://github.com/zhou-lab/YAME/tags">latest</a>
     <span class="install">
       <button id="install-btn" type="button"
               data-cmd="conda install -c zhou-lab -c conda-forge yame"
@@ -609,6 +609,36 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
         pre.appendChild(b);
       });
 
-</script>
+
+      /* The version is whatever the repository says it is. Hardcoded, this
+       * badge went on advertising v1.29 two tags after the fact -- and nothing
+       * about editing the page reminds you to bump it.
+       *
+       * Sorted numerically rather than trusting the order the API returns:
+       * alphabetically v1.8 sorts above v1.31, and nothing documents that the
+       * tags endpoint is semver-ordered. Offline or rate-limited, the badge
+       * keeps its label and still links to the tag list. */
+      fetch("https://api.github.com/repos/zhou-lab/YAME/tags?per_page=100")
+        .then(r => (r.ok ? r.json() : []))
+        .then(tags => {
+          const parts = v => v.replace(/^v/, "").split(".").map(Number);
+          const newest = tags
+            .map(t => t.name)
+            .filter(n => /^v\d/.test(n))
+            .sort((a, b) => {
+              const A = parts(a), B = parts(b);
+              for (let i = 0; i < Math.max(A.length, B.length); ++i) {
+                const d = (B[i] || 0) - (A[i] || 0);
+                if (d) return d;
+              }
+              return 0;
+            })[0];
+          if (!newest) return;
+          const el = document.getElementById("ver");
+          el.textContent = newest;
+          el.href = "https://github.com/zhou-lab/YAME/releases/tag/" + newest;
+        })
+        .catch(() => {});
+    </script>
 </body>
 </html>
