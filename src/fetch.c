@@ -737,7 +737,7 @@ static int dump_registry(const char *dopt) {
   char root[4096];
   yame_assets_root(dopt, NULL, root, sizeof(root));
 
-  printf("source\ttarget\ttag\tstore_path\tfile\tbytes\tsha256\tdir_state\t"
+  printf("target\tsource\ttag\tstore_path\tfile\tbytes\tsha256\tdir_state\t"
          "local\tdescription\n");
 
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
@@ -776,7 +776,7 @@ static int dump_registry(const char *dopt) {
       title[n] = '\0';
 
       printf("%s\t%s\t%s\t%s\t%s\t%" PRIu64 "\t%s\t%s\t%s\t%s\n",
-             a->source, a->target, a->tag, a->store_sub, f->name,
+             a->target, a->source, a->tag, a->store_sub, f->name,
              f->size, f->sha256 ? f->sha256 : "-", state,
              yame_assets_is_file(path) ? "yes" : "no", title);
     }
@@ -1740,26 +1740,57 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
   return n;
 }
 
-/* Progress for the one-shot command line: one line per file, rewritten in
- * place while bytes move. The browser does not use these -- it renders into a
- * panel instead. */
-static void prog_begin(void *ud, const char *name, uint64_t total) {
-  (void)ud; (void)total;
-  /* Only on a terminal: the '\r' that makes this an in-place indicator turns
-   * into a duplicated line in a log file or a CI transcript. */
-  if (!isatty(STDERR_FILENO)) return;
-  fprintf(stderr, "  %-48s ...\r", name);
+/* Progress for the one-shot command line.
+ *
+ * One line, repainted in place: which file of how many, a bar, and the bytes
+ * so far. Only on a terminal -- the '\r' that makes it an indicator turns
+ * into hundreds of duplicated lines in a log or a CI transcript, so there it
+ * falls back to one finished line per file. */
+static struct {
+  char     name[56];
+  uint64_t total;
+  size_t   idx, n;
+  int      tty;
+} PROG;
+
+static void prog_bar(uint64_t now, uint64_t total) {
+  const int cells = 24;
+  int uni = yame_ui_unicode();
+  int on = (total && now <= total) ? (int)((now * cells) / total) : 0;
+  char bar[128]; size_t o = 0;
+  for (int i = 0; i < cells && o + 8 < sizeof(bar); ++i)
+    o += (size_t)snprintf(bar + o, sizeof(bar) - o, "%s",
+                          i < on ? (uni ? "\u25b0" : "#") : (uni ? "\u25b1" : "."));
+  char a[32], b[32];
+  human_size(now, a, sizeof(a));
+  human_size(total, b, sizeof(b));
+  fprintf(stderr, "\r  [%zu/%zu] %-28.28s %s %8s / %-8s",
+          PROG.idx, PROG.n, PROG.name, bar, a, total ? b : "?");
   fflush(stderr);
+}
+
+static void prog_begin(void *ud, const char *name, uint64_t total) {
+  (void)ud;
+  snprintf(PROG.name, sizeof(PROG.name), "%s", name);
+  PROG.total = total;
+  if (PROG.idx < PROG.n) PROG.idx++;
+  if (PROG.tty && total) prog_bar(0, total);   /* size unknown yet: wait for the first byte */
+}
+
+static void prog_progress(void *ud, uint64_t now, uint64_t total) {
+  (void)ud;
+  if (PROG.tty) prog_bar(now, total ? total : PROG.total);
 }
 
 static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
   (void)ud;
-  if (ok) {
-    double mb = (double)bytes / (1024.0 * 1024.0);
-    fprintf(stderr, "  %-48s %8.1f MB\n", name, mb);
-  } else {
-    fprintf(stderr, "  %-48s failed\n", name);
-  }
+  char hs[32];
+  human_size(bytes, hs, sizeof(hs));
+  /* Erase the bar before the settled line, or its tail survives underneath. */
+  if (PROG.tty) fprintf(stderr, "\r\033[K");
+  fprintf(stderr, "  [%zu/%zu] %-40.40s %9s%s\n", PROG.idx, PROG.n, name,
+          ok ? hs : "failed", ok ? "" : "");
+  fflush(stderr);
 }
 
 /* Fetch one catalogued entry: the files that entry declares, which for almost
@@ -1964,7 +1995,7 @@ int main_fetch(int argc, char *argv[]) {
    * -- hg38 reaches the 2.9 GB whole-genome decoder -- and the browser has
    * always confirmed before transferring, so the shorter name should not be
    * the more dangerous one. */
-  if (filter || n_dirs > 1) {
+  {
     fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s, %s\n",
             spec, filter ? " -g " : "", filter ? filter : "",
             n_files, n_files == 1 ? "" : "s",
@@ -1988,14 +2019,23 @@ int main_fetch(int argc, char *argv[]) {
       }
   }
 
-  if (n_dirs > 1 && !assume_yes) {
+  PROG.n = n_files;
+  PROG.idx = 0;
+  PROG.tty = isatty(STDERR_FILENO);
+  opt.on_progress = prog_progress;
+
+  /* Always ask. A fetch writes to a shared store and can be very large, and
+   * the size is only knowable from the plan just printed -- so the plan and
+   * the question belong together rather than the question being reserved for
+   * cases someone guessed would be big. */
+  if (!assume_yes) {
     if (!isatty(STDIN_FILENO)) {
       fprintf(stderr,
-              "Refusing to fetch %s without confirmation. Re-run with -y, or "
-              "name one directory.\n", hs);
+              "Refusing to fetch %zu file%s (%s) without confirmation. "
+              "Re-run with -y.\n", n_files, n_files == 1 ? "" : "s", hs);
       return 1;
     }
-    fprintf(stderr, "Fetch all of it? [y/N] ");
+    fprintf(stderr, "Proceed? [y/N] ");
     int c = getchar();
     if (c != 'y' && c != 'Y') { fprintf(stderr, "nothing fetched.\n"); return 1; }
   }
