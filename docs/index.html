@@ -301,49 +301,6 @@
   filtering it, dry runs and the rest:
   <code class="inl">yame fetch -h</code>.</p>
 </section>
-<section class="card">
-  <h2>Storage scheme <span class="m">— position is implied, never stored</span></h2>
-  <p>A YAME file is values in order and nothing else. Row <i>i</i> means whatever row <i>i</i> of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join — fast, and indifferent to how many rows there are.</p>
-  <figure class="dia">
-<pre><span class="sub">cpg_nocontig.cr</span>   the reference: every CpG in the genome, in order
-
-  row               1       2       3       4       5       6
-  chr1:           10,468  10,470  10,483  10,489  10,493  10,497
-
-  .cg methylome     1       0       1       1       0       1
-  .cm feature set   0       1       1       0       0       1
-  ───────────────────────────────────────────────────────────────
-  AND               0       0       1       0       0       1
-                                    ▲
-<span class="cm">                     row 3 is chr1:10,483 in every file, so an</span>
-<span class="cm">                     overlap is a bitwise AND, not a genomic join</span></pre>
-<figcaption><b>Position is not stored; it is implied.</b> A data file carries
-no coordinates at all — row <i>i</i> means whatever row <i>i</i> of the
-reference means. That is what makes the files small and the intersections free:
-overlapping a methylome with a feature set is a bitwise AND, not a genomic
-join. It is also why row counts have to match, and why a file's row count
-identifies its reference well enough for <code>-R</code> to be inferred.</figcaption>
-</figure>
-  <p>Two files are comparable only if they share a row space, and since each has a distinct length, <b>a row count is an identity</b>. That is what lets <code class='inl'>-R</code> and <code class='inl'>-m</code> take a name instead of a path. An Infinium manifest and a whole-genome CpG set are the same kind of object here, differing only in length.</p>
-  <figure class="dia">
-<pre>one <span class="sub">.cg</span> file = BGZF frames; any record reachable without the rest
-
-  ┌────────┬─────┬────────┬───────────────────────────────┐
-  │  sig   │ fmt │   n    │             data              │
-  │  8 B   │ 1 B │  8 B   │  packed per the format code   │
-  └────────┴─────┴────────┴───────────────────────────────┘
-  └─────────────── one record = one sample ───────────────┘
-
-  [ sample 1 ][ sample 2 ][ sample 3 ][ … ]
-<span class="cm">  concatenated; the .idx beside it stores where each begins</span></pre>
-<figcaption><b>A record is a header and a blob.</b> An 8-byte signature, the
-one-byte format code, the row count <code>n</code>, then the data packed
-according to that code. Records are concatenated, so a multi-sample file is
-just more of them, and the <code>.idx</code> beside it stores where each one
-begins — which is why <code>yame subset</code> can pull one sample out of
-hundreds without decompressing the others.</figcaption>
-</figure>
-</section>
 
 <section class="card">
   <h2>Data conversion <span class="m">&mdash; three kinds of data, text in and out</span></h2>
@@ -353,24 +310,6 @@ hundreds without decompressing the others.</figcaption>
 methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <span class="sub">-fm</span>   M &#8677; U
 methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   call &#8677; covered
 a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   in set &#8677; in universe</pre>
-  <figure class="dia">
-<pre>what one CpG costs
-
-  <span class="sub">fmt 6</span>  set+universe  │11│                  <span class="cm">2 bits, always</span>
-
-  <span class="sub">fmt 3</span>  M/U counts    │ M │ U │01│          <span class="cm">1 byte   M,U &le; 6</span>
-                       │  M  │  U  │10│      <span class="cm">2 bytes  M,U &le; 126</span>
-                       │   M   │   U   │11│  <span class="cm">8 bytes  beyond that</span>
-
-<span class="cm">  hg38 is 29,401,795 rows: format 6 is always 7.0 MB; format 3 is
-  56 MB if every site fits two bytes, more where coverage is deep.</span></pre>
-<figcaption><b>One is a fixed width, the other is not.</b> Format 6 spends two
-bits on every CpG whatever the data says. Format 3 tags each record with its
-own width, so a shallow site costs a byte and a deep one costs eight in the
-same file &mdash; which is why its size depends on sequencing depth, not just on
-how many rows there are. <a href="#ref">The other five</a> lay the same row
-space down at other densities.</figcaption>
-</figure>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you. Columns are tab-separated, and under <code class='inl'>-fd</code> the first column must be exactly <code class='inl'>1</code> to count as in-set while the second is any nonzero int.</p>
   <pre><code>yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
   <pre class="res"><code>chr1  659296  659298  1
@@ -455,8 +394,48 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
 </div>
 
 <section class="ref" id="ref">
-  <h2>Format reference <span class="m">&mdash; all seven, and what each row costs</span></h2>
-  <p>The three above are the common cases. The rest exist because a row sometimes has to carry something else: a fraction, a label, a plain yes/no, or the coordinates themselves.</p>
+  <h2>Data format <span class="m">&mdash; the model, and all seven packings</span></h2>
+  <p>A YAME file is values in order and nothing else. Row <i>i</i> means whatever row <i>i</i> of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join — fast, and indifferent to how many rows there are.</p>
+  <figure class="dia">
+<pre><span class="sub">cpg_nocontig.cr</span>   the reference: every CpG in the genome, in order
+
+  row               1       2       3       4       5       6
+  chr1:           10,468  10,470  10,483  10,489  10,493  10,497
+
+  .cg methylome     1       0       1       1       0       1
+  .cm feature set   0       1       1       0       0       1
+  ───────────────────────────────────────────────────────────────
+  AND               0       0       1       0       0       1
+                                    ▲
+<span class="cm">                     row 3 is chr1:10,483 in every file, so an</span>
+<span class="cm">                     overlap is a bitwise AND, not a genomic join</span></pre>
+<figcaption><b>Position is not stored; it is implied.</b> A data file carries
+no coordinates at all — row <i>i</i> means whatever row <i>i</i> of the
+reference means. That is what makes the files small and the intersections free:
+overlapping a methylome with a feature set is a bitwise AND, not a genomic
+join. It is also why row counts have to match, and why a file's row count
+identifies its reference well enough for <code>-R</code> to be inferred.</figcaption>
+</figure>
+  <p>Two files are comparable only if they share a row space, and since each has a distinct length, <b>a row count is an identity</b>. That is what lets <code class='inl'>-R</code> and <code class='inl'>-m</code> take a name instead of a path. An Infinium manifest and a whole-genome CpG set are the same kind of object here, differing only in length.</p>
+  <figure class="dia">
+<pre>one <span class="sub">.cg</span> file = BGZF frames; any record reachable without the rest
+
+  ┌────────┬─────┬────────┬───────────────────────────────┐
+  │  sig   │ fmt │   n    │             data              │
+  │  8 B   │ 1 B │  8 B   │  packed per the format code   │
+  └────────┴─────┴────────┴───────────────────────────────┘
+  └─────────────── one record = one sample ───────────────┘
+
+  [ sample 1 ][ sample 2 ][ sample 3 ][ … ]
+<span class="cm">  concatenated; the .idx beside it stores where each begins</span></pre>
+<figcaption><b>A record is a header and a blob.</b> An 8-byte signature, the
+one-byte format code, the row count <code>n</code>, then the data packed
+according to that code. Records are concatenated, so a multi-sample file is
+just more of them, and the <code>.idx</code> beside it stores where each one
+begins — which is why <code>yame subset</code> can pull one sample out of
+hundreds without decompressing the others.</figcaption>
+</figure>
+  <p>The three kinds above are the common cases. The rest exist because a row sometimes has to carry something else: a fraction, a label, a plain yes/no, or the coordinates themselves.</p>
   <pre class="res"><span class="cm">the data                 format           one line per CpG      on disk       NA        pack  what to know</span>
 <span class="cm">──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
 methylation, M/U counts  <span class="sub">3</span>  M/U counts    M &#8677; U                 1-8 B/site    M=U=0     <span class="sub">-fm</span>   a tagged record; only 2^31+ counts lose bits
@@ -467,6 +446,60 @@ a plain yes/no           <span class="sub">0</span>  binary        0 or 1       
 a state label            <span class="sub">2</span>  states        the whole line        dict + runs   a label   <span class="sub">-fs</span>   keys stored once in a table, then runs
 a small int              <span class="sub">1</span>  byte          one char per line     3 B/run       none      <span class="sub">-fc</span>   only the first character of a line
 coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#8677; start    delta varint  n/a       <span class="sub">-fr</span>   only chrom and start are read
+
+<span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
+</section>
+
+
+<section class="ref" id="packing">
+  <h2>Packing scheme <span class="m">&mdash; the exact bytes</span></h2>
+  <p>Every format lays the same row space down at a different density, which is the whole reason there is a family rather than one format. Two of them are fixed width and cost the same per CpG whatever the data says; the rest widen with the values they carry, so a format 3 store scales with sequencing depth rather than with the row count. These layouts are the ones in <code class='inl'>src/format*.c</code>.</p>
+  <pre class="res"><span class="sub">format 0</span>  binary &mdash; one bit a row
+  inflated   bit (i&7) of s[i>>3]                     (n+7)>>3 bytes
+  on disk    identical; format 0 defines no coding of its own
+
+<span class="sub">format 6</span>  set + universe &mdash; two bits a row
+  inflated   byte s[i>>2], offset = (i&3)*2           (n+3)>>2 bytes
+             set bit      = (b >> offset)     &amp; 1
+             universe bit = (b >> (offset+1)) &amp; 1
+  codes      00 outside the universe · 10 in universe, 0 · 11 in universe, 1
+  on disk    identical; "compression" is only a flag
+
+<span class="sub">format 1</span>  one byte a row, run-length encoded
+  inflated   s[i], any value 0-255
+  on disk    3-byte records  [ value (1 B) | length (uint16 LE) ]
+             length 1..32767; a longer run is split across records
+
+<span class="sub">format 3</span>  M/U counts &mdash; tagged, variable width
+  inflated   c->unit bytes a site, default 8 (M and U 32 bits each);
+             pack -u takes 1..8, and 1 leaves only 4 bits apiece
+  on disk    the low two bits tag the record
+             01   1 byte   [ M(3)  | U(3)  | 01 ]      M,U &le; 6
+             10   2 bytes  [ M(7)  | U(7)  | 10 ]      M,U &le; 126
+             11   8 bytes  [ M(31) | U(31) | 11 ]      M,U &le; 2^31-1
+             00   2 bytes  [ run length (14) | 00 ]    a run of M = U = 0
+             beyond 2^31-1 fitMU right-shifts M and U together until both
+             fit, so the ratio survives and the absolute depth does not
+
+<span class="sub">format 4</span>  one float a row, NA runs collapsed
+  inflated   float array, 4 bytes a row; NA is a negative float (-1.0)
+  on disk    32-bit words, the MSB tags each
+             1    [ 1 | run length (31) ]   that many consecutive NAs
+             0    [ 0 | float bits (31) ]   the value, sign bit dropped
+
+<span class="sub">format 2</span>  categorical states &mdash; key table, then runs
+  layout     [ key section ][ '\0' ][ data section ]
+  keys       "state0\0state1\0...\0", stored once; row value v means keys[v]
+  inflated   data section is one integer a row, c->unit bytes
+  on disk    [ unit ][ (value, length) ... ], unit in {1,2,3,8},
+             length uint16 LE 1..65535
+
+<span class="sub">format 7</span>  coordinates &mdash; delta varint, grouped by chromosome
+  stream     [ chrom '\0' ][ delta ][ delta ] ... [ 0xff ][ chrom '\0' ] ...
+  deltas     0bbbbbbb                   1 byte,  7-bit delta
+             10xxxxxx yyyyyyyy          2 bytes, 14-bit delta
+             11...... + 7 more          8 bytes, 62-bit delta, big-endian
+  each delta is loc(i) - loc(i-1); 0xff ends a chromosome block
 
 <span class="cm">Format 5 is obsolete: still decodable, no longer packable.</span></pre>
   <figure class="dia">
@@ -481,25 +514,6 @@ coordinates (.cr)        <span class="sub">7</span>  coordinates   BED: chrom &#
 the same number of bits on every CpG, so the file size follows from the row
 count alone: a presence/absence mask does not need a byte per CpG, and a small
 integer cannot live in a bit.</figcaption>
-</figure>
-  <figure class="dia">
-<pre>format 3 is a tagged record, not a fixed width
-
-  <span class="cm">tag</span>  bytes  layout                          holds
-  <span class="cm">──────────────────────────────────────────────────────────────────</span>
-   01     1    │ M(3) │ U(3) │01│            M,U &le; 6
-   10     2    │  M(7)  │  U(7)  │10│        M,U &le; 126
-   11     8    │  M(31)  │  U(31)  │11│      M,U up to 2^31-1
-   00     2    │   run length (14)   │00│    a run of sites with M = U = 0
-
-<span class="cm">  Inflated in memory it is c->unit bytes a site instead, default 8
-  (M and U 32 bits each); pack -u sets it as low as 1.</span></pre>
-<figcaption><b>The low two bits pick the record.</b> A shallow site costs one
-byte and a deep one costs eight, in the same file, so a format 3 store scales
-with sequencing depth rather than with the row count. Counts above 2^31 are
-the only lossy case: <code>fitMU</code> right-shifts M and U together until
-both fit, so the ratio survives (up to integer truncation) and the
-absolute depth does not.</figcaption>
 </figure>
   <p>Two bits is the interesting one: the universe bit separates <i>not measured</i> from <i>measured and zero</i> — a distinction one bit cannot make and every enrichment test needs, which is why a query and its background travel in one file.</p>
   <figure class="dia">
