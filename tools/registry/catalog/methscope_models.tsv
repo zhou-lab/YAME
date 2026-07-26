@@ -1,0 +1,14 @@
+# Runnable model bundles from the HuggingFace repo zhou-lab/methscope, at the
+# tag in TAGS. Each is self-contained -- the MRMP feature definition travels
+# inside the bundle -- so a query .cg runs against one directly.
+#
+# Upstream is one flat directory with a single manifest at the repo ROOT (hence
+# the empty remote_sub), holding both human and mouse bundles. The store does
+# not have to copy that: each row below takes the files matching its prefix, so
+# the hg38 bundles file under hg38 and the mouse one under mm10, where someone
+# asking "what is there for mm10" will actually look. Both rows share the one
+# upstream manifest and therefore the one anchor.
+#
+# target        prefix    store_sub
+hg38/models	hg38_	methscope/models/hg38
+mm10/models	mm10_	methscope/models/mm10

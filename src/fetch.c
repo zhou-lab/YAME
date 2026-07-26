@@ -1645,16 +1645,30 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
   }
 }
 
-/* Fetch one catalogued directory whole. Shared with nothing else now that the
- * browser fetches per file, but it is what the command-line form means. */
+/* Fetch one catalogued entry: the files that entry declares, which for almost
+ * every row is the whole upstream directory.
+ *
+ * Not fetch_subtree(), because an entry and an upstream directory are not
+ * always the same set. One published directory can back more than one entry --
+ * the methscope bundles are one flat repo holding both hg38 and mm10 models,
+ * split here so each lands under the genome it belongs to. Taking the file
+ * list from the entry rather than the manifest is what keeps that honest;
+ * where the two coincide this is exactly what it did before. */
 static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
                        const char *tag, const char *anchor,
                        const yame_fetch_opt_t *opt, char **err) {
   char store_sub[4096];
   if (yame_assets_join(store_sub, sizeof(store_sub), store_root, a->store_sub) != 0)
     return -1;
-  return yame_assets_fetch_subtree(a->base_url, tag, a->remote_sub, store_sub,
-                                   anchor, opt, err);
+
+  const char **names = malloc(a->n_files * sizeof(*names));
+  if (!names) return -1;
+  for (size_t i = 0; i < a->n_files; ++i) names[i] = a->files[i].name;
+
+  int rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, store_sub,
+                                    anchor, names, a->n_files, opt, err);
+  free(names);
+  return rc;
 }
 
 int main_fetch(int argc, char *argv[]) {
