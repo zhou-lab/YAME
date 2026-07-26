@@ -212,6 +212,29 @@
         border-radius:4px;padding:1px 5px;font:600 .72rem ui-monospace,Menlo,monospace}
       .card figure.dia{margin:0 0 10px;padding:9px 10px}
       .card figure.dia figcaption{font-size:.74rem;margin-top:7px}
+    
+      /* --- enlarge a captured block ---
+         Terminal output is set small so a card stays a card, which is fine
+         until the thing you want to read IS the output: a heatmap row, a
+         tree, a table that has been squeezed to .7rem. The magnifier lifts
+         one block out at a readable size without making every card taller. */
+      .res{position:relative}
+      .zoom{position:absolute;top:6px;right:6px;font:inherit;font-size:.8rem;
+        line-height:1;cursor:pointer;border:1px solid var(--line);
+        border-radius:6px;padding:3px 6px;background:var(--card);
+        color:var(--muted);opacity:0;transition:opacity .12s}
+      .res:hover .zoom,.zoom:focus-visible{opacity:1}
+      .zoom:hover{color:var(--accent);border-color:var(--accent)}
+      #lens{position:fixed;inset:0;z-index:60;display:none;
+        background:color-mix(in srgb,var(--bg) 88%,#000);
+        padding:28px;overflow:auto}
+      #lens.on{display:flex;align-items:center;justify-content:center}
+      #lens pre{max-width:100%;max-height:88vh;overflow:auto;margin:0;
+        background:var(--soft);color:var(--fg);border:1px solid var(--line);
+        border-radius:10px;padding:18px 20px;font-size:.98rem;line-height:1.4;
+        box-shadow:var(--shadow)}
+      #lens .hint{position:fixed;bottom:16px;left:0;right:0;text-align:center;
+        color:var(--muted);font-size:.78rem}
     </style>
 </head>
 <body>
@@ -610,6 +633,38 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
           el.href = "https://github.com/zhou-lab/YAME/releases/tag/" + newest;
         })
         .catch(() => {});
+    
+      /* Enlarge a captured block. The overlay borrows the block's own markup,
+       * so colour and alignment survive; it is the same text, bigger. */
+      (function () {
+        var lens = document.createElement("div");
+        lens.id = "lens";
+        lens.innerHTML = '<pre><code></code></pre>' +
+          '<div class="hint">click anywhere or press esc to close</div>';
+        document.body.appendChild(lens);
+
+        var close = function () { lens.classList.remove("on"); };
+        lens.addEventListener("click", close);
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") close();
+        });
+
+        document.querySelectorAll("pre.res").forEach(function (pre) {
+          var b = document.createElement("button");
+          b.className = "zoom";
+          b.type = "button";
+          b.title = "Enlarge";
+          b.setAttribute("aria-label", "Enlarge this output");
+          b.textContent = "\u2315";
+          b.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            lens.querySelector("code").innerHTML =
+              pre.querySelector("code").innerHTML;
+            lens.classList.add("on");
+          });
+          pre.appendChild(b);
+        });
+      })();
     </script>
 </body>
 </html>
