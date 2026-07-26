@@ -144,16 +144,16 @@
         border-radius:10px;background:var(--card);box-shadow:var(--shadow);overflow-x:auto}
       figure.dia svg{display:block;max-width:100%;height:auto}
       figure.dia figcaption{margin-top:10px;font-size:.83rem;color:var(--muted);line-height:1.45}
-      .dia .lbl{font:600 11px ui-monospace,"SF Mono",Menlo,Consolas,monospace;fill:var(--fg)}
-      .dia .sub{font:10px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;fill:var(--muted)}
-      .dia .tick{font:9px ui-monospace,Menlo,monospace;fill:var(--muted)}
+      .dia .lbl{font:600 15px ui-monospace,"SF Mono",Menlo,Consolas,monospace;fill:var(--fg)}
+      .dia .sub{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;fill:var(--muted)}
+      .dia .tick{font:12px ui-monospace,Menlo,monospace;fill:var(--muted)}
       .dia .box{fill:var(--soft);stroke:var(--line)}
       .dia .hdr{fill:var(--accent-soft);stroke:var(--accent)}
       .dia .dat{fill:var(--card);stroke:var(--line)}
       .dia .on{fill:var(--accent);stroke:var(--accent)}
       .dia .off{fill:var(--card);stroke:var(--line)}
-      .dia .ontxt{font:600 10px ui-monospace,Menlo,monospace;fill:var(--on-accent)}
-      .dia .offtxt{font:600 10px ui-monospace,Menlo,monospace;fill:var(--muted)}
+      .dia .ontxt{font:600 14px ui-monospace,Menlo,monospace;fill:var(--on-accent)}
+      .dia .offtxt{font:600 14px ui-monospace,Menlo,monospace;fill:var(--muted)}
 
 
       /* --- glossary + tooltips --- */
@@ -213,26 +213,31 @@
       .card figure.dia{margin:0 0 10px;padding:9px 10px}
       .card figure.dia figcaption{font-size:.74rem;margin-top:7px}
     
-      /* --- enlarge a captured block ---
-         Terminal output is set small so a card stays a card, which is fine
-         until the thing you want to read IS the output: a heatmap row, a
-         tree, a table that has been squeezed to .7rem. The magnifier lifts
-         one block out at a readable size without making every card taller. */
-      .res{position:relative}
+      /* --- enlarge anything captured or drawn ---
+         Output and diagrams are set small so a card stays a card, which is
+         fine until the thing you came to read IS the picture: a heatmap row,
+         a tree, a byte layout. The magnifier lifts one out at a readable size
+         without making every card taller for the sake of one. */
+      .card pre,figure.dia{position:relative}
       .zoom{position:absolute;top:6px;right:6px;font:inherit;font-size:.72rem;
         line-height:1;cursor:pointer;border:1px solid var(--line);
         border-radius:6px;padding:3px 6px;background:var(--card);
         color:var(--muted);opacity:0;transition:opacity .12s}
-      .res:hover .zoom,.zoom:focus-visible{opacity:1}
+      /* a command block already has a copy button in that corner, so the
+         magnifier stands to its left rather than on top of it */
+      .card pre:not(.res) .zoom{right:52px}
+      .card pre:hover .zoom,figure.dia:hover .zoom,.zoom:focus-visible{opacity:1}
       .zoom:hover{color:var(--accent);border-color:var(--accent)}
       #lens{position:fixed;inset:0;z-index:60;display:none;
-        background:color-mix(in srgb,var(--bg) 88%,#000);
-        padding:28px;overflow:auto}
+        background:color-mix(in srgb,var(--bg) 88%,#000);padding:28px;overflow:auto}
       #lens.on{display:flex;align-items:center;justify-content:center}
-      #lens pre{max-width:100%;max-height:88vh;overflow:auto;margin:0;
-        background:var(--soft);color:var(--fg);border:1px solid var(--line);
-        border-radius:10px;padding:18px 20px;font-size:.98rem;line-height:1.4;
-        box-shadow:var(--shadow)}
+      #lens .box{max-width:100%;max-height:88vh;overflow:auto}
+      #lens pre{margin:0;background:var(--soft);color:var(--fg);
+        border:1px solid var(--line);border-radius:10px;padding:18px 20px;
+        font-size:.98rem;line-height:1.45;box-shadow:var(--shadow)}
+      #lens figure.dia{margin:0;padding:20px 22px;background:var(--card)}
+      #lens figure.dia svg{width:min(1100px,86vw);height:auto}
+      #lens figure.dia figcaption{font-size:.9rem;max-width:none}
       #lens .hint{position:fixed;bottom:16px;left:0;right:0;text-align:center;
         color:var(--muted);font-size:.78rem}
     </style>
@@ -462,16 +467,16 @@ record.</figcaption>
   <h2>Data conversion <span class="m">— text in, text out</span></h2>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you.</p>
   <pre><code>yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
-  <pre class="res"><code>chr1	659296	659298	1
-chr1	779099	779101	0
-chr1	795737	795739	1
-chr1	933194	933196	0
-chr1	958160	958162	1</code></pre>
+  <pre class="res"><code>chr1  659296  659298  1
+chr1  779099  779101  0
+chr1  795737  795739  1
+chr1  933194  933196  0
+chr1  958160  958162  1</code></pre>
   <p>Format 6 prints one column by default; <code class='inl'>-f -1</code> gives set and universe separately, which is what <code class='inl'>pack -f6</code> reads back:</p>
   <pre><code>yame <span class="sub">unpack</span> -f -1 human_hg38_test.cg | awk '$1!="NA"' | head -3</code></pre>
-  <pre class="res"><code>1	1
-0	1
-1	1</code></pre>
+  <pre class="res"><code>1  1
+0  1
+1  1</code></pre>
   <pre><code>yame <span class="sub">pack</span> -f6 rt.txt rt.cg  <span class="cm"># and back again</span></code></pre>
   <p>Verified byte-identical on the round trip.</p>
 </section>
@@ -493,51 +498,51 @@ Blood-Monocytes       <span style="color:#7d8b95">.</span><span style="color:#7d
   <h2>Multi-sample indexing <span class="m">— many samples, one file</span></h2>
   <p>Records concatenate, so a cohort is one file. The <code class='inl'>.idx</code> beside it maps sample names to offsets, which is what makes them addressable by name.</p>
   <pre><code>yame <span class="sub">info</span> human_hg38_celltypes.cg | cut -f2-7</code></pre>
-  <pre class="res"><code>Sample	Ncol	Nrow	Format	UnitBytes	Keys
-Oligodendrocyte	4	29401795	6	2	NA
-Pancreas-Beta	4	29401795	6	2	NA
-Blood-NK	4	29401795	6	2	NA
-Blood-Monocytes	4	29401795	6	2	NA</code></pre>
+  <pre class="res"><code>Sample           Ncol      Nrow  Format  UnitBytes  Keys
+Oligodendrocyte     4  29401795       6          2    NA
+Pancreas-Beta       4  29401795       6          2    NA
+Blood-NK            4  29401795       6          2    NA
+Blood-Monocytes     4  29401795       6          2    NA</code></pre>
   <pre><code>yame <span class="sub">chunk</span> -s 500000 cohort.cg chunks/  <span class="cm"># fixed row blocks, for parallel work</span>
 yame <span class="sub">subset</span> -o two.cg human_hg38_celltypes.cg Blood-NK Blood-Monocytes
 yame <span class="sub">split</span> -s names.txt human_hg38_celltypes.cg out_  <span class="cm"># one file each</span>
 yame <span class="sub">index</span> -s names.txt cohort.cg  <span class="cm"># rebuild the index</span></code></pre>
-  <pre class="res"><code>Sample	Nrow	Format
-Blood-NK	29401795	6
-Blood-Monocytes	29401795	6</code></pre>
+  <pre class="res"><code>Sample               Nrow  Format
+Blood-NK         29401795       6
+Blood-Monocytes  29401795       6</code></pre>
   <p><code class='inl'>info -1</code> reports the first record of each file — the cheap way to see what a directory holds:</p>
-  <pre class="res"><code>File	Sample	Nrow	Format
-human_hg38_40_celltypes_chr20.cg	GSM5652176_Adipocytes-Z000000T7	773477	3
-human_hg38_celltypes.cg	Oligodendrocyte	29401795	6
-human_hg38_immune_mixture.cg	1	29401795	3
-human_hg38_test.cg	1	29401795	6
-human_hg38_test.truth.cg	1	29401795	6</code></pre>
+  <pre class="res"><code>File                              Sample                               Nrow  Format
+human_hg38_40_celltypes_chr20.cg  GSM5652176_Adipocytes-Z000000T7    773477       3
+human_hg38_celltypes.cg           Oligodendrocyte                  29401795       6
+human_hg38_immune_mixture.cg      1                                29401795       3
+human_hg38_test.cg                1                                29401795       6
+human_hg38_test.truth.cg          1                                29401795       6</code></pre>
 </section>
 <section class="card">
   <h2>Compare &amp; summarize <span class="m">— the analysis command</span></h2>
   <p>With no mask, <code class='inl'>summary</code> describes the file. With one it gives the overlap table — universe, query, mask, overlap, log2 odds ratio, beta, depth. <b>The mask is named, not spelled out</b>: the query's row count says which row space to resolve it in.</p>
   <pre><code>yame <span class="sub">summary</span> -m CGI human_hg38_test.cg</code></pre>
-  <pre class="res"><code>QFile	Query	MFile	Mask	N_univ	N_query	N_mask	N_overlap	Log2OddsRatio	Beta	Depth
-human_hg38_test.cg	1	CGI.20220904.cm	OpenSea	29000	23857	23534	21149	3.17	0.899	NA
-human_hg38_test.cg	1	CGI.20220904.cm	Shelf	29000	23857	1224	1076	0.67	0.879	NA
-human_hg38_test.cg	1	CGI.20220904.cm	Shore	29000	23857	2074	1263	-1.74	0.609	NA</code></pre>
+  <pre class="res"><code>QFile               Query  MFile            Mask     N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
+human_hg38_test.cg      1  CGI.20220904.cm  OpenSea   29000    23857   23534      21149           3.17  0.899     NA
+human_hg38_test.cg      1  CGI.20220904.cm  Shelf     29000    23857    1224       1076           0.67  0.879     NA
+human_hg38_test.cg      1  CGI.20220904.cm  Shore     29000    23857    2074       1263          -1.74  0.609     NA</code></pre>
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
   <pre><code>yame <span class="sub">binarize</span> -t 0.5 -c 3 -o calls.cg mix.cg  <span class="cm"># M/U -&gt; set + universe</span>
 yame <span class="sub">pairwise</span> -H 1 -c 5 -d 0.2 a.cg b.cg  <span class="cm"># differential, fmt3 -&gt; fmt6</span>
 yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span class="cm"># collapse across samples</span></code></pre>
-  <pre class="res"><code>Sample	Nrow	Format
-1	773477	3</code></pre>
+  <pre class="res"><code>Sample    Nrow  Format
+     1  773477       3</code></pre>
   <p>That last one is how pseudobulks are made: <code class='inl'>subset</code> the cells of a cluster, pipe into <code class='inl'>rowop</code>.</p>
 </section>
 <section class="card">
   <h2>Perturb &amp; mask <span class="m">— for benchmarking</span></h2>
   <p>Two different jobs. <code class='inl'>mask</code> is deterministic and file-driven — it decides <i>which</i> sites are valid. <code class='inl'>dsample</code> and <code class='inl'>perturb</code> are stochastic and seed-driven — they decide <i>how much</i> signal is left.</p>
   <pre><code>yame <span class="sub">dsample</span> -N 5000 -s 42 -o ds.cg human_hg38_test.cg</code></pre>
-  <pre class="res"><code>Query	N_univ	N_query	Beta
-0	5000	4087	0.817</code></pre>
+  <pre class="res"><code>Query  N_univ  N_query   Beta
+    0    5000     4087  0.817</code></pre>
   <pre><code>yame <span class="sub">perturb</span> -p 0.05 -s 7 -o noisy.cg human_hg38_test.cg</code></pre>
-  <pre class="res"><code>Query	N_univ	N_query	Beta
-1	29000	22953	0.791</code></pre>
+  <pre class="res"><code>Query  N_univ  N_query   Beta
+    1   29000    22953  0.791</code></pre>
   <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
   <pre><code>yame <span class="sub">mask</span> -o clean.cg sample.cg blacklist.cm</code></pre>
 </section>
@@ -597,7 +602,7 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
             ta.value = txt; document.body.appendChild(ta); ta.select();
             try { document.execCommand('copy'); } finally { ta.remove(); }
           }
-          b.textContent = 'copied'; b.classList.add('done');
+          b.textContent = 'copied'; b.classList.add('ok');
           setTimeout(() => { b.textContent = 'copy'; b.classList.remove('ok'); }, 1200);
         });
         pre.appendChild(b);
@@ -634,14 +639,17 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
         })
         .catch(() => {});
     
-      /* Enlarge a captured block. The overlay borrows the block's own markup,
-       * so colour and alignment survive; it is the same text, bigger. */
+      /* Enlarge a capture or a diagram. The overlay clones the node, so
+       * colour, alignment and SVG all survive -- the same thing, bigger. The
+       * clone drops its own buttons: a magnifier inside the magnifier helps
+       * nobody. */
       (function () {
         var lens = document.createElement("div");
         lens.id = "lens";
-        lens.innerHTML = '<pre><code></code></pre>' +
+        lens.innerHTML = '<div class="box"></div>' +
           '<div class="hint">click anywhere or press esc to close</div>';
         document.body.appendChild(lens);
+        var box = lens.querySelector(".box");
 
         var close = function () { lens.classList.remove("on"); };
         lens.addEventListener("click", close);
@@ -649,22 +657,22 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
           if (e.key === "Escape") close();
         });
 
-        document.querySelectorAll("pre.res").forEach(function (pre) {
+        document.querySelectorAll(".card pre, figure.dia").forEach(function (node) {
           var b = document.createElement("button");
           b.className = "zoom";
           b.type = "button";
           b.title = "Enlarge";
-          b.setAttribute("aria-label", "Enlarge this output");
-          /* U+2315 looks like a magnifier but is officially TELEPHONE
-           * RECORDER, and renders as whatever the font decides. */
+          b.setAttribute("aria-label", "Enlarge");
           b.textContent = "\uD83D\uDD0D";
           b.addEventListener("click", function (ev) {
             ev.stopPropagation();
-            lens.querySelector("code").innerHTML =
-              pre.querySelector("code").innerHTML;
+            var clone = node.cloneNode(true);
+            clone.querySelectorAll("button").forEach(function (x) { x.remove(); });
+            box.innerHTML = "";
+            box.appendChild(clone);
             lens.classList.add("on");
           });
-          pre.appendChild(b);
+          node.appendChild(b);
         });
       })();
     </script>
