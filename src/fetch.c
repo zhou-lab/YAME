@@ -61,8 +61,8 @@ static int usage(void) {
   yame_usage_text("A name is what the browser shows: hg38, hg38/KYCG, hg38/data,");
   yame_usage_text("EPIC. It is a scope -- `hg38` takes the unit and everything under");
   yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
-  yame_usage_text("A file name also resolves -- `human_hg38_test.cg`, or");
-  yame_usage_text("`hg38/KYCG/cpg_nocontig.cr` when several directories publish one.");
+  yame_usage_text("A file resolves too, best written out: `hg38/data/test.cg`. The");
+  yame_usage_text("bare name works when only one directory publishes it.");
   yame_usage_text("The registry's own <source>/<target> still resolves.");
 
   yame_usage_sec("Browsing:");

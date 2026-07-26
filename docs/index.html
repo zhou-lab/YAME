@@ -361,8 +361,8 @@ methylation, M/U counts  <span class="sub">3</span>  M/U counts    1-8 B/site  <
 methylation, binarized   <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   call &#8677; covered
 a CpG set                <span class="sub">6</span>  set+universe  <b>2 bits</b>/row  <span class="sub">-fd</span>   in set &#8677; in universe</pre>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you. Columns are tab-separated, and under <code class='inl'>-fd</code> the first column must be exactly <code class='inl'>1</code> to count as in-set while the second is any nonzero int.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c human_hg38_test.cg
-yame <span class="sub">fetch</span> hg38/KYCG -g cpg_nocontig   <span class="cm"># the coordinates, into the store</span>
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
+yame <span class="sub">fetch</span> hg38/KYCG/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
 yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
   <pre class="res"><code>chr1  659296  659298  1
 chr1  779099  779101  0
@@ -380,8 +380,8 @@ chr1  958160  958162  1</code></pre>
 <section class="card">
   <h2>Visualization <span class="m">— look at it without leaving the shell</span></h2>
   <p>Rows are samples, columns are CpGs or windows. The reference is <b>inferred from the row count</b>, so <code class='inl'>-r</code> alone is enough.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c human_hg38_celltypes.cg
-yame <span class="sub">fetch</span> hg38/KYCG -g cpg_nocontig   <span class="cm"># the coordinates, into the store</span>
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_celltypes.cg
+yame <span class="sub">fetch</span> hg38/KYCG/cpg_nocontig.cr   <span class="cm"># the coordinates, into the store</span>
 yame <span class="sub">hprint</span> -r chr20:30000000-30001000 human_hg38_celltypes.cg</code></pre>
   <pre class="res term"><code>                      chr20:30000011-30000862 (10 CpGs)
                       |.........
@@ -396,7 +396,7 @@ Blood-Monocytes       <span style="color:#7d8b95">.</span><span style="color:#7d
 <section class="card">
   <h2>Multi-sample indexing <span class="m">— many samples, one file</span></h2>
   <p>Records concatenate, so a cohort is one file. The <code class='inl'>.idx</code> beside it maps sample names to offsets, which is what makes them addressable by name.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c human_hg38_celltypes.cg
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_celltypes.cg
 yame <span class="sub">info</span> human_hg38_celltypes.cg | cut -f2-7</code></pre>
   <pre class="res"><code>Sample           Ncol      Nrow  Format  UnitBytes  Keys
 Oligodendrocyte     4  29401795       6          2    NA
@@ -421,7 +421,7 @@ human_hg38_test.truth.cg          1                                29401795     
 <section class="card">
   <h2>Compare &amp; summarize <span class="m">— the analysis command</span></h2>
   <p>With no mask, <code class='inl'>summary</code> describes the file. With one it gives the overlap table — universe, query, mask, overlap, log2 odds ratio, beta, depth. <b>The mask is named, not spelled out</b>: the query's row count says which row space to resolve it in.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c human_hg38_test.cg
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
 yame <span class="sub">fetch</span> hg38/KYCG -g CGI   <span class="cm"># the mask, into the store</span>
 yame <span class="sub">summary</span> -m CGI human_hg38_test.cg</code></pre>
   <pre class="res"><code>QFile               Query  MFile            Mask     N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
@@ -439,7 +439,7 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
 <section class="card">
   <h2>Perturb &amp; mask <span class="m">— for benchmarking</span></h2>
   <p>Two different jobs. <code class='inl'>mask</code> is deterministic and file-driven — it decides <i>which</i> sites are valid. <code class='inl'>dsample</code> and <code class='inl'>perturb</code> are stochastic and seed-driven — they decide <i>how much</i> signal is left.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c human_hg38_test.cg
+  <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
 yame <span class="sub">dsample</span> -N 5000 -s 42 -o ds.cg human_hg38_test.cg</code></pre>
   <pre class="res"><code>Query  N_univ  N_query   Beta
     0    5000     4087  0.817</code></pre>
