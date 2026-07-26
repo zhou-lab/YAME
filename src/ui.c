@@ -1458,10 +1458,13 @@ static void tn_load_deep(tnode_t *n, const yame_ui_tree_t *spec) {
   for (size_t i = 0; i < n->n_kids; ++i) tn_load_deep(n->kids[i], spec);
 }
 
-/* Present or mandatory: either way there is nothing to ask for, so it is not
- * offered as a choice. */
+/* Already here, so there is nothing to ask for.
+ *
+ * A required row is NOT locked. It comes with anything else taken from its
+ * unit, which is a reason to say so in the panel, not a reason to refuse the
+ * keystroke: taking only the genome index is a legitimate thing to want, and
+ * a row that ignores x reads as broken rather than as automatic. */
 static int tn_locked(const tnode_t *n, const yame_ui_tree_t *spec) {
-  if (n->style == YAME_ROW_REQUIRED) return 1;
   if (!spec->have_selectable && n->style == YAME_ROW_HAVE) return 1;
   return 0;
 }
@@ -1544,9 +1547,7 @@ static void node_box(const tnode_t *n, const yame_ui_tree_t *spec,
     return;
   }
 
-  if (n->style == YAME_ROW_REQUIRED)
-    snprintf(out, cap, "%s", uni ? " ●  " : " ** ");
-  else if (!spec->have_selectable && n->style == YAME_ROW_HAVE)
+  if (!spec->have_selectable && n->style == YAME_ROW_HAVE)
     snprintf(out, cap, "%s", uni ? " ✓  " : " ok ");
   else if (n->key)
     snprintf(out, cap, "%s", n->checked ? "[x] " : "[ ] ");

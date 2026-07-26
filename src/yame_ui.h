@@ -149,7 +149,7 @@ typedef enum {
   YAME_ROW_PLAIN = 0,
   YAME_ROW_HAVE,      /* present locally -- green */
   YAME_ROW_MISSING,   /* not present -- dimmed */
-  YAME_ROW_REQUIRED,  /* comes with any fetch, not selectable -- red */
+  YAME_ROW_REQUIRED,  /* comes with any fetch from its unit -- red */
   /**
    * Some of it is here -- yellow.
    *
