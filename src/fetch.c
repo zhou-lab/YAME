@@ -100,6 +100,9 @@ static int usage(void) {
   yame_usage_opt("-g <a,b>", "Only files matching every term: name, source, collection,");
   yame_usage_cont("title or upstream database. `-g chromatin` inside a");
   yame_usage_cont("knowledgebase, `-g celltype` across a whole genome.");
+  yame_usage_opt("-n", "Say what would be fetched and stop, successfully. The same");
+  yame_usage_cont("plan a fetch prints before asking, but it exits 0, so a");
+  yame_usage_cont("script can check first. -l gives the same set as TSV.");
   yame_usage_opt("-y", "Fetch a whole folder without asking. A name covering more");
   yame_usage_cont("than one directory is confirmed first, since a short name");
   yame_usage_cont("can reach a lot -- `hg38` is 3.5 GB.");
@@ -1864,10 +1867,11 @@ int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
+  int dry_run = 0;
   const char *filter = NULL;
   int c;
 
-  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yg:h")) >= 0) {
+  while ((c = getopt(argc, argv, "d:t:kflqu:s:o:yng:h")) >= 0) {
     switch (c) {
     case 'd': dopt = optarg; break;
     case 't': tag_override = optarg; break;
@@ -1875,6 +1879,7 @@ int main_fetch(int argc, char *argv[]) {
     case 'f': force = 1; break;
     case 'l': list = 1; break;
     case 'g': filter = optarg; break;
+    case 'n': dry_run = 1; break;
     case 'y': assume_yes = 1; break;
     case 'q': quiet = 1; break;
     case 'u': url = optarg; break;
@@ -2056,6 +2061,11 @@ int main_fetch(int argc, char *argv[]) {
   PROG.idx = 0;
   PROG.tty = isatty(STDERR_FILENO);
   opt.on_progress = prog_progress;
+
+  /* -n stops here, successfully: the plan above is the whole answer. Without
+   * it, refusing non-interactively exits 1, which is right for a fetch that
+   * did not happen but wrong for a question that was answered. */
+  if (dry_run) return 0;
 
   /* Always ask. A fetch writes to a shared store and can be very large, and
    * the size is only knowable from the plan just printed -- so the plan and
