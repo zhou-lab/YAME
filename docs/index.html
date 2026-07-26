@@ -219,7 +219,7 @@
          tree, a table that has been squeezed to .7rem. The magnifier lifts
          one block out at a readable size without making every card taller. */
       .res{position:relative}
-      .zoom{position:absolute;top:6px;right:6px;font:inherit;font-size:.8rem;
+      .zoom{position:absolute;top:6px;right:6px;font:inherit;font-size:.72rem;
         line-height:1;cursor:pointer;border:1px solid var(--line);
         border-radius:6px;padding:3px 6px;background:var(--card);
         color:var(--muted);opacity:0;transition:opacity .12s}
@@ -655,7 +655,9 @@ yame <span class="sub">rowop</span> -o binasum cells.cg pseudobulk.cg  <span cla
           b.type = "button";
           b.title = "Enlarge";
           b.setAttribute("aria-label", "Enlarge this output");
-          b.textContent = "\u2315";
+          /* U+2315 looks like a magnifier but is officially TELEPHONE
+           * RECORDER, and renders as whatever the font decides. */
+          b.textContent = "\uD83D\uDD0D";
           b.addEventListener("click", function (ev) {
             ev.stopPropagation();
             lens.querySelector("code").innerHTML =
