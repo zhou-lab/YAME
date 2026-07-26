@@ -387,6 +387,20 @@ record.</figcaption>
 <section class="card">
   <h2>Data conversion <span class="m">— text in, text out</span></h2>
   <p><code class='inl'>pack</code> is the only way in. Input is one row per CpG <b>already in the reference's order</b> — nothing is sorted or matched for you.</p>
+  <pre class="res"><span class="cm">the data                 pack  one line per CpG</span>
+<span class="cm">───────────────────────────────────────────────────</span>
+methylation, M/U counts  <span class="sub">-fm</span>   M &#8677; U
+methylation, binarized   <span class="sub">-fd</span>   call &#8677; covered
+a CpG set                <span class="sub">-fd</span>   in set &#8677; in universe
+
+a beta value             <span class="sub">-fn</span>   a float, or NA
+a plain yes/no           <span class="sub">-fb</span>   0 or 1
+a state label            <span class="sub">-fs</span>   the whole line
+a small int              <span class="sub">-fc</span>   one char per line
+coordinates (.cr)        <span class="sub">-fr</span>   BED: chrom &#8677; start
+
+<span class="cm">Columns are tab-separated. Under -fd the first column must be
+exactly "1" to count as in-set, while the second is any nonzero int.</span></pre>
   <pre><code>yame <span class="sub">unpack</span> -R hg38 human_hg38_test.cg | awk '$4!=2' | head -5</code></pre>
   <pre class="res"><code>chr1  659296  659298  1
 chr1  779099  779101  0
