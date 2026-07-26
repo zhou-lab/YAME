@@ -1784,18 +1784,32 @@ static struct {
 } PROG;
 
 static void prog_bar(uint64_t now, uint64_t total) {
-  const int cells = 24;
+  const int cells = 22;
   int uni = yame_ui_unicode();
   int on = (total && now <= total) ? (int)((now * cells) / total) : 0;
-  char bar[128]; size_t o = 0;
-  for (int i = 0; i < cells && o + 8 < sizeof(bar); ++i)
+  int pct = total ? (int)((now * 100) / total) : 0;
+
+  /* Filled cells in colour, the remainder dimmed, so the boundary reads at a
+   * glance instead of having to be counted. */
+  char bar[256]; size_t o = 0;
+  o += (size_t)snprintf(bar + o, sizeof(bar) - o, "%s", yame_ui_cyan());
+  for (int i = 0; i < cells && o + 24 < sizeof(bar); ++i) {
+    if (i == on) o += (size_t)snprintf(bar + o, sizeof(bar) - o, "%s%s",
+                                       yame_ui_reset(), yame_ui_dim());
     o += (size_t)snprintf(bar + o, sizeof(bar) - o, "%s",
-                          i < on ? (uni ? "\u25b0" : "#") : (uni ? "\u25b1" : "."));
+                          i < on ? (uni ? "\u2501" : "=") : (uni ? "\u2501" : "-"));
+  }
+  snprintf(bar + o, sizeof(bar) - o, "%s", yame_ui_reset());
+
   char a[32], b[32];
   human_size(now, a, sizeof(a));
   human_size(total, b, sizeof(b));
-  fprintf(stderr, "\r  [%zu/%zu] %-28.28s %s %8s / %-8s",
-          PROG.idx, PROG.n, PROG.name, bar, a, total ? b : "?");
+
+  /* \033[K clears to end of line: a shorter repaint would otherwise leave the
+   * tail of the longer one behind it. */
+  fprintf(stderr, "\r\033[K  %s[%zu/%zu]%s %-26.26s %s %s%3d%%%s %8s/%s",
+          yame_ui_dim(), PROG.idx, PROG.n, yame_ui_reset(), PROG.name, bar,
+          yame_ui_bold(), pct, yame_ui_reset(), a, total ? b : "?");
   fflush(stderr);
 }
 
@@ -1818,8 +1832,11 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
   human_size(bytes, hs, sizeof(hs));
   /* Erase the bar before the settled line, or its tail survives underneath. */
   if (PROG.tty) fprintf(stderr, "\r\033[K");
-  fprintf(stderr, "  [%zu/%zu] %-40.40s %9s%s\n", PROG.idx, PROG.n, name,
-          ok ? hs : "failed", ok ? "" : "");
+  fprintf(stderr, "  %s[%zu/%zu]%s %s%s%s %-38.38s %9s\n",
+          yame_ui_dim(), PROG.idx, PROG.n, yame_ui_reset(),
+          ok ? yame_ui_green() : yame_ui_red(),
+          ok ? yame_ui_check() : yame_ui_cross(), yame_ui_reset(),
+          name, ok ? hs : "failed");
   fflush(stderr);
 }
 
