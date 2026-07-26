@@ -4,6 +4,7 @@
 
 # Object files (compiled source code)
 *.o
+*.d
 *.obj
 
 # Executable/binary files (compiled programs)
