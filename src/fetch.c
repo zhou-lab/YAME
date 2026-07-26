@@ -1879,7 +1879,19 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
  * layout, or the current directory under -c. */
 static int sel_present(const char *root, const yame_asset_reg_t *a,
                        const char *name, int here) {
-  return here ? yame_assets_is_file(name) : file_present(root, a, name);
+  if (!here) return file_present(root, a, name);
+  /* In a working directory a name collision is ordinary: your own
+   * human_hg38_test.cg is not the catalogue's, and the store's habit of
+   * treating any file with the right name as present would quietly leave a
+   * demo running on it. Here, present means the right bytes. */
+  if (!yame_assets_is_file(name)) return 0;
+  for (size_t i = 0; i < a->n_files; ++i)
+    if (strcmp(a->files[i].name, name) == 0) {
+      char got[65];
+      if (yame_assets_sha256_file(name, got) != 0) return 0;
+      return yame_assets_digest_equal(got, a->files[i].sha256);
+    }
+  return 1;
 }
 
 static int file_wanted(const yame_asset_reg_t *a, const char *name,
@@ -2092,8 +2104,8 @@ int main_fetch(int argc, char *argv[]) {
 
     const yame_asset_reg_t *hit[16];
     char hitpath[16][544];   /* a 264-byte browser path plus a file name */
-    size_t n_hit = 0;
-    for (size_t i = 0; i < YAME_ASSETS_N && n_hit < 16; ++i) {
+    size_t n_hit = 0, n_claim = 0;   /* shown, and how many there really are */
+    for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
       char u[128], sb[128], full[264];
       unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
       if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
@@ -2101,19 +2113,25 @@ int main_fetch(int argc, char *argv[]) {
       if (head[0] && strcasecmp(full, head) != 0) continue;
       for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
         if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
-          hit[n_hit] = &YAME_ASSETS[i];
-          snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
-                   full, fname);
-          ++n_hit;
+          ++n_claim;
+          if (n_hit < 16) {
+            hit[n_hit] = &YAME_ASSETS[i];
+            snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
+                     full, fname);
+            ++n_hit;
+          }
           break;
         }
     }
-    if (n_hit == 1) { sel[0] = hit[0]; n_sel = 1; only_file = fname; }
-    else if (n_hit > 1) {
+    if (n_claim == 1) { sel[0] = hit[0]; n_sel = 1; only_file = fname; }
+    else if (n_claim > 1) {
       fprintf(stderr, "yame fetch: %zu directories publish a file called "
-                      "%s. Name one:\n", n_hit, fname);
+                      "%s. Name one:\n", n_claim, fname);
       for (size_t i = 0; i < n_hit; ++i)
         fprintf(stderr, "  %s\n", hitpath[i]);
+      if (n_claim > n_hit)
+        fprintf(stderr, "  %s and %zu more\n",
+                yame_ui_unicode() ? "\u2026" : "...", n_claim - n_hit);
       return 1;
     }
   }
