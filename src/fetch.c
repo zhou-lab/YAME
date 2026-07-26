@@ -247,6 +247,25 @@ static void unit_of(const yame_asset_reg_t *a, char *unit, size_t nu,
   }
 }
 
+/**
+ * The row a browser path names: <unit> or <unit>/<folder>.
+ *
+ * The same string the tree displays, so what you read is what you can type.
+ * Verified unique across the catalogue -- no two rows share a unit/folder
+ * pair -- which is what makes it safe to accept as an address at all.
+ */
+static const yame_asset_reg_t *find_by_browser_path(const char *path) {
+  if (!path || !*path) return NULL;
+  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+    char u[128], s[128], full[264];
+    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
+    if (s[0]) snprintf(full, sizeof(full), "%s/%s", u, s);
+    else      snprintf(full, sizeof(full), "%s", u);
+    if (strcasecmp(full, path) == 0) return &YAME_ASSETS[i];
+  }
+  return NULL;
+}
+
 /* An array platform, or a genome build? Decides which recommended list
  * applies and what the row calls itself. */
 static int unit_is_array(const char *unit) {
@@ -1751,22 +1770,34 @@ int main_fetch(int argc, char *argv[]) {
   char *at = strchr(spec, '@');
   if (at) { *at = '\0'; tag_override = at + 1; }
 
-  char *slash = strchr(spec, '/');
-  if (!slash) {
-    fprintf(stderr,
-            "yame fetch: expected <source>/<target>, e.g. "
-            "InfiniumAnnotation/MSA.\n"
-            "  `yame fetch -l | cut -f1,2 | sort -u` lists every valid one.\n");
-    return 1;
-  }
-  *slash = '\0';
+  /* Whatever the browser showed you is what you can type. The tree names a
+   * row as <unit>[/<folder>] -- hg38/data, EPIC/KYCG, hg38 -- while the
+   * registry names it <source>/<target>, and until now only the latter was
+   * accepted. That left the browser unable to tell you the command for the
+   * thing you were looking at: the source appears nowhere in the tree, so
+   * "hg38 > data" gave no hint that it is spelled methscope/hg38/data.
+   *
+   * Both spellings work. The browser path is tried first because it is the
+   * one a reader can see; the registry spelling stays valid for anything that
+   * already uses it, including the two error messages below and the second
+   * column of `fetch -l`. The two cannot be confused -- no browser path
+   * matches a source name -- and no browser path is claimed by two rows. */
+  const yame_asset_reg_t *a = find_by_browser_path(spec);
+  char *slash = a ? NULL : strchr(spec, '/');
 
-  const yame_asset_reg_t *a = find_asset(spec, slash + 1);
+  if (!a && slash) {
+    *slash = '\0';
+    a = find_asset(spec, slash + 1);
+    if (!a) *slash = '/';               /* restore, for the message below */
+  }
+
   if (!a) {
     fprintf(stderr,
-            "yame fetch: this build knows nothing about %s/%s.\n"
-            "  `yame fetch -l | cut -f1,2 | sort -u` lists every valid one.\n",
-            spec, slash + 1);
+            "yame fetch: this build knows nothing about %s.\n"
+            "  Name it the way the browser shows it (hg38/data, EPIC/KYCG) or\n"
+            "  the way the registry does (methscope/hg38/data).\n"
+            "  `yame fetch -l | cut -f1,2 | sort -u` lists every registry name.\n",
+            spec);
     return 1;
   }
 
