@@ -54,7 +54,7 @@ static int usage(void) {
   yame_assets_root(NULL, NULL, root, sizeof(root));
 
   yame_usage_head("yame fetch                              browse the catalogue");
-  yame_usage_text("yame fetch [options] <name>[@tag]");
+  yame_usage_text("yame fetch [options] <name>[@tag] ...");
   yame_usage_text("yame fetch [options] -u <url> -s <sha256> -o <dest>");
 
   yame_usage_sec("Naming:");
@@ -63,6 +63,9 @@ static int usage(void) {
   yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
   yame_usage_text("A file resolves too, best written out: `hg38/data/test.cg`. The");
   yame_usage_text("bare name works when only one directory publishes it.");
+  yame_usage_text("Several names may be given, space-separated -- not comma-separated,");
+  yame_usage_text("which is how -g spells AND. A directory named twice is taken once,");
+  yame_usage_text("and naming it whole absorbs a file picked out of it.");
   yame_usage_text("The registry's own <source>/<target> still resolves.");
 
   yame_usage_sec("Browsing:");
@@ -1973,12 +1976,149 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
   return rc;
 }
 
+/* One selected directory, and what of it: the whole unit when `only` is
+ * NULL, one file when a name picked one out. Per entry rather than per
+ * command, because `fetch a/x.cg b/y.cg` restricts each of the two
+ * differently -- and each may carry its own @tag. */
+typedef struct {
+  const yame_asset_reg_t *a;
+  const char *only;               /* NULL: the whole directory */
+  const char *tag;                /* @tag on this name, else -t, else pinned */
+} sel_t;
+
+/**
+ * Resolve one name onto selections, appending to `out`.
+ *
+ * Naming the same directory twice is not an error, and a whole-unit selection
+ * absorbs a file-level one: `fetch hg38/data hg38/data/x.cg` takes the
+ * directory once, not the directory and then the file again.
+ */
+static int resolve_spec(const char *arg, const char *tag_opt,
+                        sel_t *out, size_t *n_out, size_t cap) {
+  char spec[512];
+  if (snprintf(spec, sizeof(spec), "%s", arg) >= (int)sizeof(spec)) {
+    fprintf(stderr, "yame fetch: target name too long.\n");
+    return 1;
+  }
+  const char *tag = tag_opt;
+  char *at = strchr(spec, '@');
+  if (at) { *at = '\0'; tag = at + 1; }
+
+  const yame_asset_reg_t *hits[64];
+  const char *only = NULL;
+
+  /* Whatever the browser showed you is what you can type. The tree names a
+   * row as <unit>[/<folder>] -- hg38/data, EPIC/KYCG, hg38 -- while the
+   * registry names it <source>/<target>, and until now only the latter was
+   * accepted. That left the browser unable to tell you the command for the
+   * thing you were looking at: the source appears nowhere in the tree, so
+   * "hg38 > data" gave no hint that it is spelled methscope/hg38/data.
+   *
+   * Both spellings work. The browser path is tried first because it is the
+   * one a reader can see; the registry spelling stays valid for anything that
+   * already uses it, including the two error messages below and the second
+   * column of `fetch -l`. The two cannot be confused -- no browser path
+   * matches a source name -- and no browser path is claimed by two rows. */
+  /* A name is a scope. "hg38" takes the unit and everything under it, the
+   * same as ticking that folder in the browser; "hg38/data" takes one row.
+   * The registry's own <source>/<target> still resolves, for anything already
+   * written against it. */
+  size_t n_sel = collect_scope(spec, hits, 64);
+
+  if (!n_sel) {
+    char *slash = strchr(spec, '/');
+    if (slash) {
+      *slash = '\0';
+      const yame_asset_reg_t *a = find_asset(spec, slash + 1);
+      if (a) { hits[0] = a; n_sel = 1; }
+      else *slash = '/';
+    }
+  }
+
+  /* A file name, bare or with a scope in front. Someone copying a command
+   * out of the documentation types the file it names; making them work out
+   * that human_hg38_test.cg lives in hg38/data is a lookup this can do. A
+   * name claimed by several directories (cpg_nocontig.cr is in three) is
+   * reported rather than guessed at. */
+  if (!n_sel) {
+    const char *cut = strrchr(spec, '/');
+    const char *fname = cut ? cut + 1 : spec;
+    char head[256] = "";
+    if (cut && (size_t)(cut - spec) < sizeof(head))
+      memcpy(head, spec, (size_t)(cut - spec));
+
+    const yame_asset_reg_t *hit[16];
+    char hitpath[16][544];   /* a 264-byte browser path plus a file name */
+    size_t n_hit = 0, n_claim = 0;   /* shown, and how many there really are */
+    for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
+      char u[128], sb[128], full[264];
+      unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
+      if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
+      else       snprintf(full, sizeof(full), "%s", u);
+      if (head[0] && strcasecmp(full, head) != 0) continue;
+      for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
+        if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
+          ++n_claim;
+          if (n_hit < 16) {
+            hit[n_hit] = &YAME_ASSETS[i];
+            snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
+                     full, fname);
+            ++n_hit;
+          }
+          break;
+        }
+    }
+    if (n_claim == 1) {
+      hits[0] = hit[0];
+      n_sel = 1;
+      /* Point into argv, not into `spec`: spec is this function's local and
+       * dies on return, while the selection it feeds outlives it. As a
+       * local in main_fetch this was accidentally safe; extracting the
+       * resolver made it a dangling pointer. */
+      only = arg + (fname - spec);
+    }
+    else if (n_claim > 1) {
+      fprintf(stderr, "yame fetch: %zu directories publish a file called "
+                      "%s. Name one:\n", n_claim, fname);
+      for (size_t i = 0; i < n_hit; ++i)
+        fprintf(stderr, "  %s\n", hitpath[i]);
+      if (n_claim > n_hit)
+        fprintf(stderr, "  %s and %zu more\n",
+                yame_ui_unicode() ? "\u2026" : "...", n_claim - n_hit);
+      return 1;
+    }
+  }
+
+  if (!n_sel) {
+    fprintf(stderr,
+            "yame fetch: nothing in the catalogue is called %s.\n"
+            "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
+            "  hg38/data, EPIC. A name takes everything under it.\n"
+            "  `yame fetch -l` lists what there is.\n", spec);
+    return 1;
+  }
+  for (size_t i = 0; i < n_sel; ++i) {
+    int dup = 0;
+    for (size_t k = 0; k < *n_out; ++k)
+      if (out[k].a == hits[i]) {
+        if (!only) out[k].only = NULL;   /* the wider name wins */
+        dup = 1; break;
+      }
+    if (dup) continue;
+    if (*n_out >= cap) { fprintf(stderr, "yame fetch: too many names.\n"); return 1; }
+    out[*n_out].a = hits[i];
+    out[*n_out].only = only;
+    out[*n_out].tag = tag;
+    ++*n_out;
+  }
+  return 0;
+}
+
 int main_fetch(int argc, char *argv[]) {
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
   int dry_run = 0, here = 0;
-  const char *only_file = NULL;
   const char *filter = NULL;
   int c;
 
@@ -2051,99 +2191,18 @@ int main_fetch(int argc, char *argv[]) {
     return dump_registry(dopt, NULL, filter); /* terminal cannot host the widget */
   }
 
-  /* ---- catalogued form: <name>[@tag] ---- */
-  char spec[512];
-  if (snprintf(spec, sizeof(spec), "%s", argv[optind]) >= (int)sizeof(spec)) {
-    fprintf(stderr, "yame fetch: target name too long.\n");
-    return 1;
-  }
-
-  char *at = strchr(spec, '@');
-  if (at) { *at = '\0'; tag_override = at + 1; }
-
-  /* Whatever the browser showed you is what you can type. The tree names a
-   * row as <unit>[/<folder>] -- hg38/data, EPIC/KYCG, hg38 -- while the
-   * registry names it <source>/<target>, and until now only the latter was
-   * accepted. That left the browser unable to tell you the command for the
-   * thing you were looking at: the source appears nowhere in the tree, so
-   * "hg38 > data" gave no hint that it is spelled methscope/hg38/data.
-   *
-   * Both spellings work. The browser path is tried first because it is the
-   * one a reader can see; the registry spelling stays valid for anything that
-   * already uses it, including the two error messages below and the second
-   * column of `fetch -l`. The two cannot be confused -- no browser path
-   * matches a source name -- and no browser path is claimed by two rows. */
-  /* A name is a scope. "hg38" takes the unit and everything under it, the
-   * same as ticking that folder in the browser; "hg38/data" takes one row.
-   * The registry's own <source>/<target> still resolves, for anything already
-   * written against it. */
-  const yame_asset_reg_t *sel[64];
-  size_t n_sel = collect_scope(spec, sel, 64);
-
-  if (!n_sel) {
-    char *slash = strchr(spec, '/');
-    if (slash) {
-      *slash = '\0';
-      const yame_asset_reg_t *a = find_asset(spec, slash + 1);
-      if (a) { sel[0] = a; n_sel = 1; }
-      else *slash = '/';
-    }
-  }
-
-  /* A file name, bare or with a scope in front. Someone copying a command
-   * out of the documentation types the file it names; making them work out
-   * that human_hg38_test.cg lives in hg38/data is a lookup this can do. A
-   * name claimed by several directories (cpg_nocontig.cr is in three) is
-   * reported rather than guessed at. */
-  if (!n_sel) {
-    const char *cut = strrchr(spec, '/');
-    const char *fname = cut ? cut + 1 : spec;
-    char head[256] = "";
-    if (cut && (size_t)(cut - spec) < sizeof(head))
-      memcpy(head, spec, (size_t)(cut - spec));
-
-    const yame_asset_reg_t *hit[16];
-    char hitpath[16][544];   /* a 264-byte browser path plus a file name */
-    size_t n_hit = 0, n_claim = 0;   /* shown, and how many there really are */
-    for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-      char u[128], sb[128], full[264];
-      unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
-      if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
-      else       snprintf(full, sizeof(full), "%s", u);
-      if (head[0] && strcasecmp(full, head) != 0) continue;
-      for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j)
-        if (strcmp(YAME_ASSETS[i].files[j].name, fname) == 0) {
-          ++n_claim;
-          if (n_hit < 16) {
-            hit[n_hit] = &YAME_ASSETS[i];
-            snprintf(hitpath[n_hit], sizeof(hitpath[0]), "%.263s/%.270s",
-                     full, fname);
-            ++n_hit;
-          }
-          break;
-        }
-    }
-    if (n_claim == 1) { sel[0] = hit[0]; n_sel = 1; only_file = fname; }
-    else if (n_claim > 1) {
-      fprintf(stderr, "yame fetch: %zu directories publish a file called "
-                      "%s. Name one:\n", n_claim, fname);
-      for (size_t i = 0; i < n_hit; ++i)
-        fprintf(stderr, "  %s\n", hitpath[i]);
-      if (n_claim > n_hit)
-        fprintf(stderr, "  %s and %zu more\n",
-                yame_ui_unicode() ? "\u2026" : "...", n_claim - n_hit);
+  /* ---- catalogued form: <name>[@tag] ... ---- */
+  sel_t sel[64];
+  size_t n_sel = 0;
+  char shown[512] = "";           /* the names, for the plan and the errors */
+  for (int ai = optind; ai < argc; ++ai) {
+    if (resolve_spec(argv[ai], tag_override, sel, &n_sel,
+                     sizeof(sel)/sizeof(sel[0])) != 0)
       return 1;
-    }
+    size_t l = strlen(shown);
+    snprintf(shown + l, sizeof(shown) - l, "%s%s", l ? " " : "", argv[ai]);
   }
 
-  if (!n_sel) {
-    fprintf(stderr,
-            "yame fetch: nothing in the catalogue is called %s.\n"
-            "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
-            "  hg38/data, EPIC. A name takes everything under it.\n"
-            "  `yame fetch -l` lists what there is.\n", spec);
-    return 1;
-  }
 
   char root[4096];
   yame_assets_root(dopt, NULL, root, sizeof(root));
@@ -2163,15 +2222,15 @@ int main_fetch(int argc, char *argv[]) {
   uint64_t total = 0;
   for (size_t i = 0; i < n_sel; ++i) {
     size_t n_here = 0;
-    for (size_t j = 0; j < sel[i]->n_files; ++j) {
-      if (!file_wanted(sel[i], sel[i]->files[j].name, filter, only_file))
+    for (size_t j = 0; j < sel[i].a->n_files; ++j) {
+      if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter, sel[i].only))
         continue;
       ++n_here;
       /* Already-present files are skipped unless -f, so counting their bytes
        * in the total would quote a transfer that is not going to happen. */
-      if (!force && sel_present(root, sel[i], sel[i]->files[j].name, here))
+      if (!force && sel_present(root, sel[i].a, sel[i].a->files[j].name, here))
         ++n_have;
-      else total += sel[i]->files[j].size;
+      else total += sel[i].a->files[j].size;
     }
     if (n_here) { ++n_dirs; n_files += n_here; }
   }
@@ -2180,16 +2239,16 @@ int main_fetch(int argc, char *argv[]) {
     if (filter)
       fprintf(stderr, "yame fetch: nothing under %s matches -g %s.\n"
                       "  Terms are ANDed and match the file name, its source, "
-                      "collection, title or upstream database.\n", spec, filter);
+                      "collection, title or upstream database.\n", shown, filter);
     else
-      fprintf(stderr, "yame fetch: %s holds no files.\n", spec);
+      fprintf(stderr, "yame fetch: %s holds no files.\n", shown);
     return 1;
   }
 
   /* Nothing to move is a finished job, not an empty plan: say so plainly and
    * stop, rather than printing a size of nothing and asking to confirm it. */
   if (n_have == n_files) {
-    fprintf(stderr, "%s%s%s: all %zu file%s already %s.\n", spec,
+    fprintf(stderr, "%s%s%s: all %zu file%s already %s.\n", shown,
             filter ? " -g " : "", filter ? filter : "", n_files,
             n_files == 1 ? "" : "s", here ? "here" : "in the store");
     return 0;
@@ -2208,7 +2267,7 @@ int main_fetch(int argc, char *argv[]) {
    * among six small files is the thing worth seeing. Capped, because -g array
    * matches 225 files and a prompt nobody reads is not a confirmation. */
   {
-    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s", spec,
+    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s", shown,
             filter ? " -g " : "", filter ? filter : "",
             n_files, n_files == 1 ? "" : "s",
             n_dirs, n_dirs == 1 ? "y" : "ies");
@@ -2222,13 +2281,13 @@ int main_fetch(int argc, char *argv[]) {
     if (v) {
       size_t k = 0;
       for (size_t i = 0; i < n_sel; ++i)
-        for (size_t j = 0; j < sel[i]->n_files && k < n_files; ++j) {
-          if (!file_wanted(sel[i], sel[i]->files[j].name, filter, only_file))
+        for (size_t j = 0; j < sel[i].a->n_files && k < n_files; ++j) {
+          if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter, sel[i].only))
             continue;
-          if (!force && sel_present(root, sel[i], sel[i]->files[j].name, here))
+          if (!force && sel_present(root, sel[i].a, sel[i].a->files[j].name, here))
             continue;                 /* listing what will move, not what is */
-          v[k].name = sel[i]->files[j].name;
-          v[k].size = sel[i]->files[j].size;
+          v[k].name = sel[i].a->files[j].name;
+          v[k].size = sel[i].a->files[j].size;
           ++k;
         }
       /* Insertion sort: k is at most a few hundred, and this keeps the
@@ -2298,21 +2357,21 @@ int main_fetch(int argc, char *argv[]) {
   }
 
   for (size_t i = 0; i < n_sel; ++i) {
-    const yame_asset_reg_t *a = sel[i];
-    const char *tag = tag_override ? tag_override : a->tag;
+    const yame_asset_reg_t *a = sel[i].a;
+    const char *tag = sel[i].tag ? sel[i].tag : a->tag;
     const char *anchor = a->anchor;
 
     /* A tag this build does not pin carries no digest for its manifest, so
      * the anchor check has to be dropped -- a decision the caller makes
      * explicitly, not something that happens quietly because they typed a
      * tag. */
-    if (tag_override && strcmp(tag_override, a->tag) != 0) {
+    if (sel[i].tag && strcmp(sel[i].tag, a->tag) != 0) {
       if (!unpinned_ok) {
         fprintf(stderr,
                 "yame fetch: this build pins %s at %s, so it holds no digest "
                 "for %s and cannot verify the manifest published there. "
                 "Re-run with -k to accept that, or regenerate the registry "
-                "and rebuild.\n", a->target, a->tag, tag_override);
+                "and rebuild.\n", a->target, a->tag, sel[i].tag);
         return 1;
       }
       anchor = NULL;
@@ -2324,8 +2383,8 @@ int main_fetch(int argc, char *argv[]) {
       return 1;
     }
 
-    int rc = here ? fetch_entry_here(a, tag, filter, only_file, &opt, &err)
-                  : fetch_entry(a, root, tag, anchor, filter, only_file,
+    int rc = here ? fetch_entry_here(a, tag, filter, sel[i].only, &opt, &err)
+                  : fetch_entry(a, root, tag, anchor, filter, sel[i].only,
                                 &opt, &err);
     if (rc != 0) {
       fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
