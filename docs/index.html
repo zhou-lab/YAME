@@ -203,6 +203,12 @@
       .tab.on .fno{background:var(--accent);color:var(--on-accent);
         border-color:var(--accent)}
       .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+      /* Every tab is addressable: opening one writes its id into the URL, so
+         the address bar is the link to it. The '#' says so. Its width is
+         reserved on all of them, so revealing it shuffles nothing. */
+      .tab .hash{display:inline-block;width:.8em;margin-left:5px;
+        font-weight:400;color:var(--line);visibility:hidden}
+      .tab:hover .hash,.tab.on .hash{visibility:visible;color:var(--muted)}
       .tab:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;
         border-radius:6px}
       /* a hidden tab is still part of the document on paper */
@@ -286,23 +292,23 @@
 
 <nav class="tabs" role="tablist" aria-label="Sections">
   <button class="tab on" type="button" role="tab" id="tab-use"
-    aria-controls="panel-use" aria-selected="true">Usage</button>
+    aria-controls="panel-use" aria-selected="true">Usage<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-model" tabindex="-1"
-    aria-controls="panel-model" aria-selected="false">Data model</button>
+    aria-controls="panel-model" aria-selected="false">Data model<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f3" tabindex="-1"
-    aria-controls="panel-f3" aria-selected="false"><span class="fno">3</span>M/U</button>
+    aria-controls="panel-f3" aria-selected="false"><span class="fno">3</span>M/U<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f6" tabindex="-1"
-    aria-controls="panel-f6" aria-selected="false"><span class="fno">6</span>set+uni</button>
+    aria-controls="panel-f6" aria-selected="false"><span class="fno">6</span>set+uni<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f0" tabindex="-1"
-    aria-controls="panel-f0" aria-selected="false"><span class="fno">0</span>binary</button>
+    aria-controls="panel-f0" aria-selected="false"><span class="fno">0</span>binary<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f1" tabindex="-1"
-    aria-controls="panel-f1" aria-selected="false"><span class="fno">1</span>byte</button>
+    aria-controls="panel-f1" aria-selected="false"><span class="fno">1</span>byte<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f2" tabindex="-1"
-    aria-controls="panel-f2" aria-selected="false"><span class="fno">2</span>states</button>
+    aria-controls="panel-f2" aria-selected="false"><span class="fno">2</span>states<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f4" tabindex="-1"
-    aria-controls="panel-f4" aria-selected="false"><span class="fno">4</span>beta</button>
+    aria-controls="panel-f4" aria-selected="false"><span class="fno">4</span>beta<span class="hash" title="link to this tab">#</span></button>
   <button class="tab" type="button" role="tab" id="tab-f7" tabindex="-1"
-    aria-controls="panel-f7" aria-selected="false"><span class="fno">7</span>coords</button>
+    aria-controls="panel-f7" aria-selected="false"><span class="fno">7</span>coords<span class="hash" title="link to this tab">#</span></button>
 </nav>
 
 <div class="panel" id="panel-use" role="tabpanel" aria-labelledby="tab-use">
@@ -726,6 +732,17 @@ record.</figcaption>
        * a bookmark into the format side has to open its tab before it can
        * scroll, so the hash drives the same code path the buttons do. */
       (function () {
+        /* Opening a tab writes its id into the URL, so the address bar is
+         * always a link to what is on screen. replaceState rather than
+         * location.hash: no history entry per tab click, and no hashchange
+         * to bounce back through fromHash. */
+        var syncing = false;
+        function setHash(id) {
+          if (syncing || location.hash === "#" + id) return;
+          try { history.replaceState(null, "", "#" + id); }
+          catch (e) { location.hash = id; }   /* file:// on some browsers */
+        }
+
         /* Every [role=tablist] on the page drives its own group, so a nested
          * strip (one per format) works the same way as the top one. */
         document.querySelectorAll('[role="tablist"]').forEach(function (list) {
@@ -742,30 +759,39 @@ record.</figcaption>
             });
           }
           tabs.forEach(function (t) {
-            t.addEventListener("click", function () { show(t.id); });
+            t.addEventListener("click", function () { show(t.id); setHash(t.id); });
             t.addEventListener("keydown", function (e) {
               var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
               if (!d) return;
               e.preventDefault();
               var n = tabs[(tabs.indexOf(t) + d + tabs.length) % tabs.length];
-              show(n.id); n.focus();
+              show(n.id); n.focus(); setHash(n.id);
             });
           });
         });
 
         /* A link into a nested panel has to open every tab above it, so walk
-         * out from the target rather than assuming one level. */
+         * out from the target rather than assuming one level. The target can
+         * be a tab itself (#tab-f3) or anything inside a panel (#panel-f3, a
+         * heading); syncing keeps the walk-out from rewriting the deep link
+         * it is resolving. */
         function fromHash() {
           var el = location.hash.length > 1 &&
                    document.getElementById(location.hash.slice(1));
           if (!el) return;
-          var p = el.closest('[role="tabpanel"]');
+          var inner = el.closest('[role="tabpanel"]');
+          syncing = true;
+          if (el.getAttribute("role") === "tab") el.click();
+          var p = inner;
           while (p) {
             var t = document.querySelector('[aria-controls="' + p.id + '"]');
             if (t) t.click();
             p = p.parentElement && p.parentElement.closest('[role="tabpanel"]');
           }
-          el.scrollIntoView();
+          syncing = false;
+          /* a top-level tab is already at the top of the page; scrolling to
+             it would only shove the header off screen */
+          if (inner) el.scrollIntoView();
         }
         window.addEventListener("hashchange", fromHash);
         fromHash();
