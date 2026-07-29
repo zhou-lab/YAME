@@ -242,13 +242,82 @@ static const yame_asset_file_t *file_of(const yame_asset_reg_t *a,
   return NULL;
 }
 
+/* One store directory's own SHA256SUMS, cached a directory at a time. Every
+ * caller walks a unit's files in a row, so a single slot turns what would be
+ * a parse per file into a parse per directory. */
+static struct {
+  char             dir[4096];
+  yame_sums_ent_t *ents;
+  size_t           n;
+  int              loaded;
+} g_dsums;
+
+/* A fetch rewrites the manifest under us, so the next question has to re-read
+ * it -- otherwise a file that just arrived keeps answering from the tag it
+ * replaced. */
+static void dir_sums_forget(void) {
+  free(g_dsums.ents);
+  g_dsums.ents = NULL;
+  g_dsums.n = 0;
+  g_dsums.loaded = 0;
+  g_dsums.dir[0] = '\0';
+}
+
+static const yame_sums_ent_t *dir_sums(const char *dir, size_t *n) {
+  if (!g_dsums.loaded || strcmp(g_dsums.dir, dir) != 0) {
+    char p[4096];
+    /* The slot outlives every caller, so hand it back at exit rather than
+     * leave the one reachable block in an otherwise clean leak report --
+     * a known-benign block is exactly what makes the next real one easy to
+     * miss. */
+    static int at_exit_set = 0;
+    if (!at_exit_set) { atexit(dir_sums_forget); at_exit_set = 1; }
+    free(g_dsums.ents);
+    g_dsums.ents = NULL;
+    g_dsums.n = 0;
+    if (yame_assets_join(p, sizeof(p), dir, YAME_ASSETS_SUMS_FILE) == 0)
+      g_dsums.ents = yame_assets_sums_load_file(p, &g_dsums.n);
+    if (!g_dsums.ents) g_dsums.n = 0;
+    snprintf(g_dsums.dir, sizeof(g_dsums.dir), "%s", dir);
+    g_dsums.loaded = 1;
+  }
+  *n = g_dsums.n;
+  return g_dsums.ents;
+}
+
+/**
+ * Does the directory's own manifest record this file at a DIFFERENT digest
+ * than this build pins?
+ *
+ * Then the copy on disk is the previous tag's, not this one's -- the tag moved
+ * under it. Calling that "present" is what let a superseded hg38_wg.updecx sit
+ * in an upgraded store forever: the selection dropped it for having the right
+ * name, so no digest was ever read and no re-download was ever proposed.
+ *
+ * A name the manifest does not list carries no such evidence, so it stays
+ * present on the strength of existing -- an .idx that upstream does not
+ * publish must not read as stale.
+ */
+static int file_superseded(const char *dir, const char *name,
+                           const char *want) {
+  if (!want || !*want) return 0;
+  size_t n = 0;
+  const yame_sums_ent_t *e = dir_sums(dir, &n);
+  for (size_t i = 0; i < n; ++i)
+    if (strcmp(e[i].name, name) == 0)
+      return !yame_assets_digest_equal(e[i].sha, want);
+  return 0;
+}
+
 static int file_present(const char *store_root, const yame_asset_reg_t *a,
                         const char *name) {
+  const yame_asset_file_t *f = file_of(a, name);
   char dir[4096], path[4096];
   if (yame_assets_join(dir, sizeof(dir), store_root,
-                       file_store_sub(a, file_of(a, name))) != 0) return 0;
+                       file_store_sub(a, f)) != 0) return 0;
   if (yame_assets_join(path, sizeof(path), dir, name) != 0) return 0;
-  return yame_assets_is_file(path);
+  if (!yame_assets_is_file(path)) return 0;
+  return !file_superseded(dir, name, f ? f->sha256 : NULL);
 }
 
 static void human_size(uint64_t b, char *out, size_t n) {
@@ -559,6 +628,10 @@ static void unit_counts(const char *store_root, const char *unit,
  * looks half-fetched rather than blocked. Selecting the missing file then
  * fails inside the guard in yame_assets_fetch_dir(), which is a bad way to
  * learn that the whole directory needs -f. Ask the pin, and say so on the row.
+ *
+ * A directory merely one of OUR tags behind is not that: it fetches on its own
+ * now, and the files whose digest moved already read as missing, so the row's
+ * ordinary gauge tells the truth and no marker is wanted.
  */
 static int unit_pin_conflict(const char *store_root, const char *unit) {
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
@@ -570,7 +643,8 @@ static int unit_pin_conflict(const char *store_root, const char *unit) {
     char dir[4096];
     if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0)
       continue;
-    if (yame_assets_pin_check(dir, a->anchor) == YAME_PIN_CONFLICT) return 1;
+    if (yame_assets_pin_state(dir, a->anchor, a->prior, a->n_prior)
+        == YAME_PIN_CONFLICT) return 1;
   }
   return 0;
 }
@@ -816,10 +890,11 @@ static int dump_registry(const char *dopt, const char *scope,
     yame_assets_join(dir, sizeof(dir), root, a->store_sub);
 
     const char *state = "-";
-    switch (yame_assets_pin_check(dir, a->anchor)) {
+    switch (yame_assets_pin_state(dir, a->anchor, a->prior, a->n_prior)) {
     case YAME_PIN_MATCH:    state = "present";   break;
     case YAME_PIN_CONFLICT: state = "other_tag"; break;
     case YAME_PIN_UNKNOWN:  state = "unpinned";  break;
+    case YAME_PIN_ANCESTOR: state = "old_tag";   break;
     default:                state = "-";         break;
     }
 
@@ -831,9 +906,6 @@ static int dump_registry(const char *dopt, const char *scope,
         file_facets(a, f->name, facets, sizeof(facets));
         if (!facets_match(facets, filter)) continue;
       }
-
-      char path[4096];
-      yame_assets_join(path, sizeof(path), dir, f->name);
 
       char ikey[256];
       info_key_of(f->name, ikey, sizeof(ikey));
@@ -854,7 +926,7 @@ static int dump_registry(const char *dopt, const char *scope,
       printf("%s\t%s\t%s\t%s\t%s\t%" PRIu64 "\t%s\t%s\t%s\t%s\n",
              a->target, a->source, a->tag, file_store_sub(a, f), f->name,
              f->size, f->sha256 ? f->sha256 : "-", state,
-             yame_assets_is_file(path) ? "yes" : "no", title);
+             file_present(root, a, f->name) ? "yes" : "no", title);
     }
   }
   return 0;
@@ -1412,6 +1484,9 @@ static int confirm_plan(browse_t *b) {
   size_t n_files = 0, n_dirs = 0, unknown = 0;
   uint64_t bytes = 0;
   size_t seen[512], n_seen = 0;
+  /* Whether any pick for that asset lands in the asset's OWN directory: only
+   * those write its manifest, so only those can carry its tag forward. */
+  int owns[512];
 
   for (size_t i = 0; i < b->n_pick; ++i) {
     size_t idx = b->pick[i].asset;
@@ -1420,18 +1495,45 @@ static int confirm_plan(browse_t *b) {
 
     const yame_asset_reg_t *a = &YAME_ASSETS[idx];
     uint64_t sz = 0;
+    int own = 0;
     for (size_t j = 0; j < a->n_files; ++j)
       if (strcmp(a->files[j].name, b->pick[i].name) == 0) {
         sz = a->files[j].size;
+        own = !a->files[j].store_sub;
         break;
       }
     if (sz) bytes += sz; else ++unknown;
 
     size_t k = 0;
     for (; k < n_seen; ++k) if (seen[k] == idx) break;
-    if (k == n_seen && n_seen < 512) seen[n_seen++] = idx;
+    if (k == n_seen && n_seen < 512) { seen[n_seen] = idx; owns[n_seen++] = own; }
+    else if (k < n_seen) owns[k] |= own;
   }
   n_dirs = n_seen;
+
+  /* A directory carried forward from an earlier tag has its SHA256SUMS
+   * rewritten, not merely files added to it -- a larger claim than the count
+   * above, and this panel is the last place it can be declined. In the
+   * browser the fetch itself runs quiet, so if it is not said here it is not
+   * said at all. */
+  char carry[160];
+  size_t n_carry = 0;
+  carry[0] = '\0';
+  for (size_t k = 0; k < n_seen; ++k) {
+    const yame_asset_reg_t *a = &YAME_ASSETS[seen[k]];
+    if (!owns[k] || !a->n_prior) continue;
+    char dir[4096];
+    if (yame_assets_join(dir, sizeof(dir), b->root, a->store_sub) != 0) continue;
+    const char *from = yame_assets_pin_prior_tag(dir, a->prior, a->n_prior);
+    if (!from) continue;
+    if (!n_carry)
+      snprintf(carry, sizeof(carry), "%s: %s to %s", a->store_sub, from, a->tag);
+    ++n_carry;
+  }
+  if (n_carry > 1) {
+    size_t l = strlen(carry);
+    snprintf(carry + l, sizeof(carry) - l, " (+%zu more)", n_carry - 1);
+  }
 
   char sz[32], label[256], value[128];
   human_size(bytes, sz, sizeof(sz));
@@ -1442,19 +1544,26 @@ static int confirm_plan(browse_t *b) {
   else if (unknown)    snprintf(value, sizeof(value), "at least %s", sz);
   else                 snprintf(value, sizeof(value), "%s", sz);
 
-  yame_ui_panel_open(4);
+  /* The carry note gets its own line rather than competing with the others:
+     a truncated selection and a tag being rewritten are both worth reading,
+     and dropping either to fit would drop the one that matters more. */
+  int row = 1;
+  yame_ui_panel_open(carry[0] ? 5 : 4);
   panel_row(0, yame_ui_bold(), yame_ui_unicode() ? "⤓" : ">", label, value);
+  if (carry[0])
+    panel_row(row++, yame_ui_yellow(), yame_ui_unicode() ? "↻" : "^",
+              "carries forward", carry);
   if (b->n_dropped) {
     char note[128];
     snprintf(note, sizeof(note), "%zu more did not fit and will NOT be fetched",
              b->n_dropped);
-    panel_row(1, yame_ui_red(), yame_ui_cross(), "selection truncated", note);
+    panel_row(row, yame_ui_red(), yame_ui_cross(), "selection truncated", note);
   } else if (unknown) {
-    panel_row(1, NULL, " ", "", "some sizes are not published upstream");
+    panel_row(row, NULL, " ", "", "some sizes are not published upstream");
   } else {
-    yame_ui_panel_line(1, "");
+    yame_ui_panel_line(row, "");
   }
-  return yame_ui_panel_confirm(2, "   Proceed?", 1);
+  return yame_ui_panel_confirm(row + 1, "   Proceed?", 1);
 }
 
 /* Fetch everything picked, grouped by directory so each group costs a single
@@ -2004,6 +2113,18 @@ static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
   size_t n_own = 0;
   int rc = 0;
 
+  /* The ancestry travels with the anchor: both are per-unit registry facts,
+   * and carrying one without the other would either refuse an upgrade this
+   * build knows how to make, or adopt a manifest it cannot verify. A caller
+   * that dropped the anchor to take an unpinned -t tag has left the lineage,
+   * so it gets no ancestry either. Attaching it here rather than at each call
+   * site keeps the two from being set apart. */
+  yame_fetch_opt_t o;
+  if (opt) o = *opt; else memset(&o, 0, sizeof(o));
+  int pinned = anchor && a->anchor && strcmp(anchor, a->anchor) == 0;
+  o.prior   = pinned ? a->prior   : NULL;
+  o.n_prior = pinned ? a->n_prior : 0;
+
   for (size_t i = 0; i < n_names && rc == 0; ++i) {
     const yame_asset_file_t *f = file_of(a, names[i]);
     if (!f || !f->store_sub) { own[n_own++] = names[i]; continue; }
@@ -2018,15 +2139,28 @@ static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
       : snprintf(url, sizeof(url), "%s/%s/%s", a->base_url, tag, f->name);
     if (n < 0 || (size_t)n >= sizeof(url)) { rc = -1; break; }
     int got = 0;
-    rc = yame_assets_download_verify(url, f->sha256, dest, opt, &got, err);
+    rc = yame_assets_download_verify(url, f->sha256, dest, &o, &got, err);
   }
 
   if (rc == 0 && n_own) {
     char sub[4096];
     if (yame_assets_join(sub, sizeof(sub), store_root, a->store_sub) != 0) rc = -1;
-    else rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, sub,
-                                       anchor, own, n_own, opt, err);
+    else {
+      /* Name the upgrade while it happens. Carrying a directory forward moves
+       * bytes an ordinary fetch would not, and an unexplained re-download of
+       * something the store already had reads as a bug. */
+      const char *from = o.n_prior
+        ? yame_assets_pin_prior_tag(sub, o.prior, o.n_prior) : NULL;
+      if (from && !o.quiet)
+        fprintf(stderr, "[yame] %s: %s -> %s\n", a->store_sub, from, tag);
+      rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, sub,
+                                    anchor, own, n_own, &o, err);
+    }
   }
+
+  /* The manifest just changed on disk; the next presence question has to read
+   * the new one. */
+  dir_sums_forget();
   free(own);
   return rc;
 }
@@ -2430,6 +2564,50 @@ int main_fetch(int argc, char *argv[]) {
         fprintf(stderr, "%s\n", yame_ui_reset());
       }
       free(v);
+    }
+  }
+
+  /* Carrying a directory forward from an earlier tag rewrites its SHA256SUMS,
+   * which is a larger claim than "these files arrived" -- it relabels a
+   * directory another tool may be reading. The question is a few lines below,
+   * so say it here, while it can still be answered no. */
+  if (!here) {
+    const char *said[64];
+    size_t n_said = 0;
+    for (size_t i = 0; i < n_sel; ++i) {
+      const yame_asset_reg_t *a = sel[i].a;
+      if (!a->n_prior) continue;
+
+      /* An unpinned -t tag has left the lineage, and fetch_names drops the
+       * ancestry with the anchor, so nothing is carried forward there. */
+      if (sel[i].tag && strcmp(sel[i].tag, a->tag) != 0) continue;
+
+      /* Only when something is actually going to move into THIS directory:
+       * the manifest is written by the fetch of the unit's own files, so a
+       * selection of nothing -- or of nothing but files lifted into another
+       * directory -- carries no tag anywhere. */
+      int moving = 0;
+      for (size_t j = 0; j < a->n_files && !moving; ++j)
+        if (!a->files[j].store_sub &&
+            file_wanted(a, a->files[j].name, filter, sel[i].only) &&
+            (force || !sel_present(root, a, a->files[j].name, here)))
+          moving = 1;
+      if (!moving) continue;
+
+      /* Two names can select the same directory; it is carried forward once. */
+      int dup = 0;
+      for (size_t p = 0; p < n_said; ++p)
+        if (strcmp(said[p], a->store_sub) == 0) { dup = 1; break; }
+      if (dup) continue;
+
+      char dir[4096];
+      if (yame_assets_join(dir, sizeof(dir), root, a->store_sub) != 0) continue;
+      const char *from = yame_assets_pin_prior_tag(dir, a->prior, a->n_prior);
+      if (!from) continue;
+
+      fprintf(stderr, "  carries %s forward from %s to %s\n",
+              a->store_sub, from, a->tag);
+      if (n_said < sizeof(said) / sizeof(said[0])) said[n_said++] = a->store_sub;
     }
   }
 

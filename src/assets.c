@@ -314,7 +314,8 @@ yame_sums_ent_t *yame_assets_sums_load_file(const char *path, size_t *n) {
 
 /* ----------------------------------------------------------------- the pin */
 
-int yame_assets_pin_check(const char *dir, const char *anchor_sha) {
+int yame_assets_pin_state(const char *dir, const char *anchor_sha,
+                          const yame_pin_prior_t *prior, size_t n_prior) {
   char sums[YAME_PATH_MAX];
   if (yame_assets_join(sums, sizeof(sums), dir, YAME_ASSETS_SUMS_FILE) != 0)
     return YAME_PIN_ABSENT;
@@ -323,8 +324,33 @@ int yame_assets_pin_check(const char *dir, const char *anchor_sha) {
 
   char got[65];
   if (yame_assets_sha256_file(sums, got) != 0) return YAME_PIN_ABSENT;
-  return yame_assets_digest_equal(got, anchor_sha) ? YAME_PIN_MATCH
-                                                   : YAME_PIN_CONFLICT;
+  if (yame_assets_digest_equal(got, anchor_sha)) return YAME_PIN_MATCH;
+
+  /* Not the pinned tag. Before calling that a conflict, ask whether it is a
+   * tag this build came from: an upgrade and a stranger are the same
+   * inequality until the ancestry is consulted. */
+  for (size_t i = 0; i < n_prior; ++i)
+    if (prior[i].anchor && yame_assets_digest_equal(got, prior[i].anchor))
+      return YAME_PIN_ANCESTOR;
+
+  return YAME_PIN_CONFLICT;
+}
+
+int yame_assets_pin_check(const char *dir, const char *anchor_sha) {
+  return yame_assets_pin_state(dir, anchor_sha, NULL, 0);
+}
+
+const char *yame_assets_pin_prior_tag(const char *dir,
+                                      const yame_pin_prior_t *prior,
+                                      size_t n_prior) {
+  char sums[YAME_PATH_MAX], got[65];
+  if (yame_assets_join(sums, sizeof(sums), dir, YAME_ASSETS_SUMS_FILE) != 0)
+    return NULL;
+  if (yame_assets_sha256_file(sums, got) != 0) return NULL;
+  for (size_t i = 0; i < n_prior; ++i)
+    if (prior[i].anchor && yame_assets_digest_equal(got, prior[i].anchor))
+      return prior[i].tag;
+  return NULL;
 }
 
 /* --------------------------------------------------------------- fetching */
@@ -551,11 +577,17 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
                              const char *anchor_sha,
                              const char *const *only, size_t n_only,
                              const yame_fetch_opt_t *opt, char **err) {
-  /* Whose tag filled this directory? A conflict means another tool, or an
-   * older build of this one, populated it from a tag this build does not pin.
-   * Overwriting would start a re-download war between the two binaries, so
-   * stop and let the human decide. */
-  int pin = yame_assets_pin_check(store_sub, anchor_sha);
+  /* Whose tag filled this directory? A conflict means another tool, or a
+   * build with a lineage this one does not know, populated it from a tag this
+   * build does not pin. Overwriting would start a re-download war between the
+   * two binaries, so stop and let the human decide.
+   *
+   * An ANCESTOR is the other case that inequality used to hide: a store this
+   * build's own registry moved past. Upgrading it is the whole point of the
+   * fetch, so it proceeds without -f. */
+  int pin = yame_assets_pin_state(store_sub, anchor_sha,
+                                  opt ? opt->prior : NULL,
+                                  opt ? opt->n_prior : 0);
   if (pin == YAME_PIN_CONFLICT && !(opt && opt->force)) {
     /* Remedy first: this is rendered into a fixed-width panel row by the
      * browser, and the one word the reader needs is -f. Leading with the

@@ -163,8 +163,17 @@ enum {
   YAME_PIN_MATCH    =  0,   /* stored manifest hashes to the caller's anchor */
   YAME_PIN_ABSENT   =  1,   /* no manifest stored yet -- nothing to conflict */
   YAME_PIN_UNKNOWN  =  2,   /* manifest present but caller passed no anchor */
+  YAME_PIN_ANCESTOR =  3,   /* filled at an earlier tag this build supersedes */
   YAME_PIN_CONFLICT = -1    /* populated at a tag this build does not pin */
 };
+
+/* A tag this build knows it supersedes: `anchor` identifies a store filled at
+ * that tag, `tag` is what to call it when reporting the upgrade. The registry
+ * emits one of these per past tag it has cached a manifest for. */
+typedef struct {
+  const char *tag;
+  const char *anchor;
+} yame_pin_prior_t;
 
 /**
  * Compare <dir>/SHA256SUMS against the caller's compiled anchor.
@@ -177,11 +186,46 @@ enum {
  */
 int yame_assets_pin_check(const char *dir, const char *anchor_sha);
 
+/**
+ * As pin_check, but able to tell an UPGRADE from a conflict.
+ *
+ * Plain pin_check is a scalar equality, so a store this build simply moved
+ * past looks exactly like one some stranger filled. Given the anchors of the
+ * tags this build knows it supersedes, a stored manifest matching one of them
+ * is YAME_PIN_ANCESTOR: safe to overwrite without -f, because the two tags are
+ * the same lineage and this build holds the later one.
+ *
+ * The re-download war pin_check exists to prevent is still prevented. An older
+ * binary meeting a newer store sees a hash it has never heard of -- a newer tag
+ * is not among its ancestors -- and still stops. Only a strictly known-earlier
+ * tag is adopted, and only in the direction of the newer build.
+ *
+ * `prior` may be NULL (n_prior 0), which makes this identical to pin_check.
+ */
+int yame_assets_pin_state(const char *dir, const char *anchor_sha,
+                          const yame_pin_prior_t *prior, size_t n_prior);
+
+/* Which known earlier tag filled this directory, for the message that reports
+ * the upgrade. NULL when no prior matches -- i.e. whenever pin_state did not
+ * say YAME_PIN_ANCESTOR. */
+const char *yame_assets_pin_prior_tag(const char *dir,
+                                      const yame_pin_prior_t *prior,
+                                      size_t n_prior);
+
 /* --------------------------------------------------------------- fetching */
 
 typedef struct {
   int force;                 /* re-download what is present; overrule a pin */
   int quiet;                 /* no progress reporting */
+
+  /* The tags this build supersedes, for the directory being fetched. Left
+   * NULL, a fetch keeps the old all-or-nothing behaviour: any manifest that
+   * is not the pinned one is a conflict needing -f. Set, an upgrade from one
+   * of these proceeds on its own. It rides here rather than in the argument
+   * list because it is per-directory registry data, like the anchor it
+   * qualifies, and every caller already carries an options struct. */
+  const yame_pin_prior_t *prior;
+  size_t n_prior;
 
   /* Optional progress hooks. Left NULL, a fetch is silent apart from errors,
    * which is what a library caller with its own UI wants: a caller passes its

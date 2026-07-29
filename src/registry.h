@@ -13,6 +13,10 @@
  * is what makes every per-file digest trustworthy, and comparing a STORED
  * manifest against it is how a directory says which tag filled it.
  *
+ * `prior` is the same hash for every EARLIER tag still cached in the repo.
+ * Without it a store one tag behind is indistinguishable from a store some
+ * other tool filled, and both need -f; with it, catching up is just a fetch.
+ *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2021-present Wanding Zhou
  */
@@ -21,6 +25,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "assets.h"   /* yame_pin_prior_t */
 
 /* One file a directory publishes, with the digest it must have.
  *
@@ -38,6 +44,7 @@ typedef struct {
 } yame_asset_file_t;
 
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
+#define YAME_NPRIOR(t) (sizeof(t)/sizeof((t)[0]))
 
 typedef struct {
     const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
@@ -49,6 +56,8 @@ typedef struct {
     const char *anchor;      /* sha256 of that directory's SHA256SUMS */
     const yame_asset_file_t *files;  /* what the directory holds */
     size_t      n_files;
+    const yame_pin_prior_t *prior;   /* earlier tags this build supersedes */
+    size_t      n_prior;
 } yame_asset_reg_t;
 
 static const yame_asset_file_t YAME_FILES_InfiniumAnnotation_EPIC[] = {
@@ -481,31 +490,41 @@ static const yame_asset_file_t YAME_FILES_methscope_models_mm10_models[] = {
     { NULL, NULL, 0, NULL }
 };
 
+static const yame_pin_prior_t YAME_PRIOR_methscope_models_hg38_models[] = {
+    { "v1", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5" },
+    { "v2", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7" },
+};
+
+static const yame_pin_prior_t YAME_PRIOR_methscope_models_mm10_models[] = {
+    { "v1", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5" },
+    { "v2", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7" },
+};
+
 static const yame_asset_reg_t YAME_ASSETS[] = {
-    { "InfiniumAnnotation", "EPIC", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC", "EPIC", "b97d9481f07b5f39dc6424b55d686ba9baac66b80e6bfd11615a1db9ebb3b629", YAME_FILES_InfiniumAnnotation_EPIC, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC) },
-    { "InfiniumAnnotation", "EPIC/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC/KYCG", "EPIC/KYCG", "1678294f10134013db3fe274dfeb5243cd5e4352d40e01ef50528c91ac3b077b", YAME_FILES_InfiniumAnnotation_EPIC_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC_KYCG) },
-    { "InfiniumAnnotation", "EPICv2", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPICv2", "EPICv2", "3a0eb8523b1a1de3194846afaeff72d9ee907edae271952e34809b1f7dce5e30", YAME_FILES_InfiniumAnnotation_EPICv2, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPICv2) },
-    { "InfiniumAnnotation", "EPICv2/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPICv2/KYCG", "EPICv2/KYCG", "82c17bbc0b59fbf96545ea029cdc089a19214395d8d3f6e6826ee161b8b8eb17", YAME_FILES_InfiniumAnnotation_EPICv2_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPICv2_KYCG) },
-    { "InfiniumAnnotation", "HM27", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM27", "HM27", "2b070eb62e6818410bea118da3881ff211b78857fad73078a0403e8b9303eec8", YAME_FILES_InfiniumAnnotation_HM27, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM27) },
-    { "InfiniumAnnotation", "HM27/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM27/KYCG", "HM27/KYCG", "450bdb2bb74d152ba8d8b96646e6976122ebe00900d41e7aa67ebcadcf739b68", YAME_FILES_InfiniumAnnotation_HM27_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM27_KYCG) },
-    { "InfiniumAnnotation", "HM450", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM450", "HM450", "8ea679ca36fb0c0b1d4acce2843c9534b2a3dfca2656cd182187178d47dcac8a", YAME_FILES_InfiniumAnnotation_HM450, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM450) },
-    { "InfiniumAnnotation", "HM450/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM450/KYCG", "HM450/KYCG", "27e4d8ef73bcd1c8b75ddb0fc203e17218bd5de1b05e0bfc847b217621c308bf", YAME_FILES_InfiniumAnnotation_HM450_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM450_KYCG) },
-    { "InfiniumAnnotation", "Mammal40", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "Mammal40", "Mammal40", "f97bfab4f14ea58408cfc677ac8dfec20b5d54d2ec4b87700e8076b64745d7c2", YAME_FILES_InfiniumAnnotation_Mammal40, YAME_NFILES(YAME_FILES_InfiniumAnnotation_Mammal40) },
-    { "InfiniumAnnotation", "Mammal40/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "Mammal40/KYCG", "Mammal40/KYCG", "f49d45d83eac05f556595980aadba6cce39ee64172050f065a7b2137b73ea351", YAME_FILES_InfiniumAnnotation_Mammal40_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_Mammal40_KYCG) },
-    { "InfiniumAnnotation", "MM285", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MM285", "MM285", "c5d4d485c9b076bab7bedee903ba838d087a58f2d280d3300cc25c9ead6da0c4", YAME_FILES_InfiniumAnnotation_MM285, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MM285) },
-    { "InfiniumAnnotation", "MM285/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MM285/KYCG", "MM285/KYCG", "2cb53129949cfce5f8149c6ab1321069f30a236757a3f4095c2e5e00b3c141e9", YAME_FILES_InfiniumAnnotation_MM285_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MM285_KYCG) },
-    { "InfiniumAnnotation", "MSA", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MSA", "MSA", "16e0e3204cec42935a690860c849b8d259f29d9e634164e68f395607948a7c40", YAME_FILES_InfiniumAnnotation_MSA, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MSA) },
-    { "InfiniumAnnotation", "MSA/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MSA/KYCG", "MSA/KYCG", "cc63264354f71f436e7aa4e7b9820430461e6923d657c54a24bb03cca4682db5", YAME_FILES_InfiniumAnnotation_MSA_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MSA_KYCG) },
-    { "KYCGKB", "hg38", "https://github.com/zhou-lab/KYCGKB_hg38/raw", "v2", "", "hg38/KYCG", "8e0594ade2936a7b837306cec8e4d29bb9028a6a3be5b2cdbd372af7c16f650a", YAME_FILES_KYCGKB_hg38, YAME_NFILES(YAME_FILES_KYCGKB_hg38) },
-    { "KYCGKB", "mm10", "https://github.com/zhou-lab/KYCGKB_mm10/raw", "v2", "", "mm10/KYCG", "fbb75f8198a731f3ea2de7d2fb65e92c84f4e0f0e2ff335b9ff2e2000606f289", YAME_FILES_KYCGKB_mm10, YAME_NFILES(YAME_FILES_KYCGKB_mm10) },
-    { "KYCGKB", "mm39", "https://github.com/zhou-lab/KYCGKB_mm39/raw", "v2", "", "mm39/KYCG", "0dfa2114daa79c8c5fabae2d4795d250266d48f7e941fd99e81cf459e72ead64", YAME_FILES_KYCGKB_mm39, YAME_NFILES(YAME_FILES_KYCGKB_mm39) },
-    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v3", "hg38", "hg38", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38) },
-    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
-    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },
-    { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v3", "test", "hg38/data", "150e6ae8b929e59e5b49cec241683abe6e20614bc2d29bc00f083ee01da7e19b", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data) },
-    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v3", "", "hg38/models", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models) },
-    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v3", "", "mm10/models", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models) },
-    { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
+    { "InfiniumAnnotation", "EPIC", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC", "EPIC", "b97d9481f07b5f39dc6424b55d686ba9baac66b80e6bfd11615a1db9ebb3b629", YAME_FILES_InfiniumAnnotation_EPIC, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC), NULL, 0 },
+    { "InfiniumAnnotation", "EPIC/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPIC/KYCG", "EPIC/KYCG", "1678294f10134013db3fe274dfeb5243cd5e4352d40e01ef50528c91ac3b077b", YAME_FILES_InfiniumAnnotation_EPIC_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPIC_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "EPICv2", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPICv2", "EPICv2", "3a0eb8523b1a1de3194846afaeff72d9ee907edae271952e34809b1f7dce5e30", YAME_FILES_InfiniumAnnotation_EPICv2, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPICv2), NULL, 0 },
+    { "InfiniumAnnotation", "EPICv2/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "EPICv2/KYCG", "EPICv2/KYCG", "82c17bbc0b59fbf96545ea029cdc089a19214395d8d3f6e6826ee161b8b8eb17", YAME_FILES_InfiniumAnnotation_EPICv2_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_EPICv2_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "HM27", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM27", "HM27", "2b070eb62e6818410bea118da3881ff211b78857fad73078a0403e8b9303eec8", YAME_FILES_InfiniumAnnotation_HM27, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM27), NULL, 0 },
+    { "InfiniumAnnotation", "HM27/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM27/KYCG", "HM27/KYCG", "450bdb2bb74d152ba8d8b96646e6976122ebe00900d41e7aa67ebcadcf739b68", YAME_FILES_InfiniumAnnotation_HM27_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM27_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "HM450", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM450", "HM450", "8ea679ca36fb0c0b1d4acce2843c9534b2a3dfca2656cd182187178d47dcac8a", YAME_FILES_InfiniumAnnotation_HM450, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM450), NULL, 0 },
+    { "InfiniumAnnotation", "HM450/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "HM450/KYCG", "HM450/KYCG", "27e4d8ef73bcd1c8b75ddb0fc203e17218bd5de1b05e0bfc847b217621c308bf", YAME_FILES_InfiniumAnnotation_HM450_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_HM450_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "Mammal40", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "Mammal40", "Mammal40", "f97bfab4f14ea58408cfc677ac8dfec20b5d54d2ec4b87700e8076b64745d7c2", YAME_FILES_InfiniumAnnotation_Mammal40, YAME_NFILES(YAME_FILES_InfiniumAnnotation_Mammal40), NULL, 0 },
+    { "InfiniumAnnotation", "Mammal40/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "Mammal40/KYCG", "Mammal40/KYCG", "f49d45d83eac05f556595980aadba6cce39ee64172050f065a7b2137b73ea351", YAME_FILES_InfiniumAnnotation_Mammal40_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_Mammal40_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "MM285", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MM285", "MM285", "c5d4d485c9b076bab7bedee903ba838d087a58f2d280d3300cc25c9ead6da0c4", YAME_FILES_InfiniumAnnotation_MM285, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MM285), NULL, 0 },
+    { "InfiniumAnnotation", "MM285/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MM285/KYCG", "MM285/KYCG", "2cb53129949cfce5f8149c6ab1321069f30a236757a3f4095c2e5e00b3c141e9", YAME_FILES_InfiniumAnnotation_MM285_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MM285_KYCG), NULL, 0 },
+    { "InfiniumAnnotation", "MSA", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MSA", "MSA", "16e0e3204cec42935a690860c849b8d259f29d9e634164e68f395607948a7c40", YAME_FILES_InfiniumAnnotation_MSA, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MSA), NULL, 0 },
+    { "InfiniumAnnotation", "MSA/KYCG", "https://github.com/zhou-lab/InfiniumAnnotation/raw", "v8.1", "MSA/KYCG", "MSA/KYCG", "cc63264354f71f436e7aa4e7b9820430461e6923d657c54a24bb03cca4682db5", YAME_FILES_InfiniumAnnotation_MSA_KYCG, YAME_NFILES(YAME_FILES_InfiniumAnnotation_MSA_KYCG), NULL, 0 },
+    { "KYCGKB", "hg38", "https://github.com/zhou-lab/KYCGKB_hg38/raw", "v2", "", "hg38/KYCG", "8e0594ade2936a7b837306cec8e4d29bb9028a6a3be5b2cdbd372af7c16f650a", YAME_FILES_KYCGKB_hg38, YAME_NFILES(YAME_FILES_KYCGKB_hg38), NULL, 0 },
+    { "KYCGKB", "mm10", "https://github.com/zhou-lab/KYCGKB_mm10/raw", "v2", "", "mm10/KYCG", "fbb75f8198a731f3ea2de7d2fb65e92c84f4e0f0e2ff335b9ff2e2000606f289", YAME_FILES_KYCGKB_mm10, YAME_NFILES(YAME_FILES_KYCGKB_mm10), NULL, 0 },
+    { "KYCGKB", "mm39", "https://github.com/zhou-lab/KYCGKB_mm39/raw", "v2", "", "mm39/KYCG", "0dfa2114daa79c8c5fabae2d4795d250266d48f7e941fd99e81cf459e72ead64", YAME_FILES_KYCGKB_mm39, YAME_NFILES(YAME_FILES_KYCGKB_mm39), NULL, 0 },
+    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v3", "hg38", "hg38", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38), NULL, 0 },
+    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10), NULL, 0 },
+    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39), NULL, 0 },
+    { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v3", "test", "hg38/data", "150e6ae8b929e59e5b49cec241683abe6e20614bc2d29bc00f083ee01da7e19b", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data), NULL, 0 },
+    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v3", "", "hg38/models", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
+    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v3", "", "mm10/models", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
+    { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0 }
 };
 
 #define YAME_ASSETS_N (sizeof(YAME_ASSETS)/sizeof(YAME_ASSETS[0]) - 1)

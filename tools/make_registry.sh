@@ -74,6 +74,46 @@ nsets_of() {
   grep -c '\.cm$' "$p" || true
 }
 
+## The tags this build supersedes for one directory: every OTHER tag we have a
+## cached manifest for, as "<anchor>\t<tag>". A cached tag is by construction a
+## tag this registry pinned at some point -- the bump procedure is cache, bump,
+## regenerate -- so "cached and not current" means "we came from there".
+##
+## Caching a manifest for a tag WITHOUT bumping TAGS would therefore describe a
+## future tag as an ancestor, and a store already at it would be walked back to
+## the pinned one. Cache and bump in the same commit and that cannot arise.
+priors_of() {   ## source tag subpath
+  local d t p
+  for d in "$sums_dir/$1"/*/; do
+    [ -d "$d" ] || continue
+    t=$(basename "$d")
+    [ "$t" = "$2" ] && continue
+    p=$(sums_path "$1" "$t" "$3")
+    [ -s "$p" ] || continue
+    printf '%s\t%s\n' "$(sha256_of "$p")" "$t"
+  done
+}
+
+## The ancestry table for one directory, emitted only when there is one.
+emit_prior_table() {   ## slug source tag subpath
+  local rows; rows=$(priors_of "$2" "$3" "$4")
+  [ -n "$rows" ] || return 0
+  printf 'static const yame_pin_prior_t YAME_PRIOR_%s[] = {\n' "$1"
+  printf '%s\n' "$rows" | while IFS=$'\t' read -r sha t; do
+    printf '    { "%s", "%s" },\n' "$t" "$sha"
+  done
+  printf '};\n\n'
+}
+
+## The two struct fields naming that table, or the empty ancestry.
+prior_ref() {   ## slug source tag subpath
+  if [ -n "$(priors_of "$2" "$3" "$4")" ]; then
+    printf 'YAME_PRIOR_%s, YAME_NPRIOR(YAME_PRIOR_%s)' "$1" "$1"
+  else
+    printf 'NULL, 0'
+  fi
+}
+
 # --------------------------------------------------------------- refresh mode
 
 if [ "$refresh" = 1 ]; then
@@ -241,6 +281,10 @@ emit_yame() {
  * is what makes every per-file digest trustworthy, and comparing a STORED
  * manifest against it is how a directory says which tag filled it.
  *
+ * \`prior\` is the same hash for every EARLIER tag still cached in the repo.
+ * Without it a store one tag behind is indistinguishable from a store some
+ * other tool filled, and both need -f; with it, catching up is just a fetch.
+ *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2021-present Wanding Zhou
  */
@@ -249,6 +293,8 @@ emit_yame() {
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "assets.h"   /* yame_pin_prior_t */
 
 /* One file a directory publishes, with the digest it must have.
  *
@@ -266,6 +312,7 @@ typedef struct {
 } yame_asset_file_t;
 
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
+#define YAME_NPRIOR(t) (sizeof(t)/sizeof((t)[0]))
 
 typedef struct {
     const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
@@ -277,6 +324,8 @@ typedef struct {
     const char *anchor;      /* sha256 of that directory's SHA256SUMS */
     const yame_asset_file_t *files;  /* what the directory holds */
     size_t      n_files;
+    const yame_pin_prior_t *prior;   /* earlier tags this build supersedes */
+    size_t      n_prior;
 } yame_asset_reg_t;
 
 EOF
@@ -303,6 +352,29 @@ EOF
                     "$msm_tag" "" "methscope/models" "$pfx"
   done
 
+  ## Then the ancestries, for the directories that have one. A source only
+  ## grows one the first time it is bumped, so most of these are absent and
+  ## their rows carry NULL -- which is exactly the old behaviour.
+  rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _t _b _r _o; do
+    emit_prior_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation \
+                     "$ia_tag" "$p"
+    emit_prior_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation \
+                     "$ia_tag" "$p/KYCG"
+  done
+  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+    emit_prior_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g"
+  done
+  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
+    emit_prior_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g"
+  done
+  rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
+    emit_prior_table "$(slug_of methscope "$g")" methscope "$ms_tag" "$sub"
+  done
+  rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t pfx store; do
+    emit_prior_table "$(slug_of methscope_models "$t")" methscope_models \
+                     "$msm_tag" ""
+  done
+
   cat <<EOF
 static const yame_asset_reg_t YAME_ASSETS[] = {
 EOF
@@ -311,24 +383,28 @@ EOF
   ## Both are fetchable on their own -- sesame wants the first, kycg wants both.
   rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _t _b _r _o; do
     s1=$(slug_of InfiniumAnnotation "$p"); s2=$(slug_of InfiniumAnnotation "$p/KYCG")
-    printf '    { "InfiniumAnnotation", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p")" "$s1" "$s1"
-    printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")" "$s2" "$s2"
+    printf '    { "InfiniumAnnotation", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p")" "$s1" "$s1" \
+      "$(prior_ref "$s1" InfiniumAnnotation "$ia_tag" "$p")"
+    printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")" "$s2" "$s2" \
+      "$(prior_ref "$s2" InfiniumAnnotation "$ia_tag" "$p/KYCG")"
   done
 
   ## Whole-genome knowledgebases: one repo each, manifest at the repo root.
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
     s=$(slug_of KYCGKB "$g")
-    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$s" "$s"
+    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$s" "$s" \
+      "$(prior_ref "$s" KYCGKB "$kb_tag" "$g")"
   done
 
   ## Genome-level annotation (seqinfo / gaps / cytoband).
   rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
     s=$(slug_of genomes "$g")
-    printf '    { "genomes", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")" "$s" "$s"
+    printf '    { "genomes", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")" "$s" "$s" \
+      "$(prior_ref "$s" genomes "$g_tag" "$g")"
   done
 
   ## Example query methylomes -- the only source here that is data rather than
@@ -336,20 +412,22 @@ EOF
   ## it; the manifest sits at a differently-named path upstream.
   rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
     s=$(slug_of methscope "$g")
-    printf '    { "methscope", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$g" "$ms_base" "$ms_tag" "$sub" "$g" "$(anchor_of methscope "$ms_tag" "$sub")" "$s" "$s"
+    printf '    { "methscope", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$g" "$ms_base" "$ms_tag" "$sub" "$g" "$(anchor_of methscope "$ms_tag" "$sub")" "$s" "$s" \
+      "$(prior_ref "$s" methscope "$ms_tag" "$sub")"
   done
 
   ## Model bundles: manifest at the repo root, so remote_sub is empty. Mixed
   ## genomes in one directory, so the target is not a genome name.
   rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t pfx store; do
     s=$(slug_of methscope_models "$t")
-    printf '    { "methscope", "%s", "%s", "%s", "", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s) },\n' \
-      "$t" "$msm_base" "$msm_tag" "$t" "$(anchor_of methscope_models "$msm_tag" "")" "$s" "$s"
+    printf '    { "methscope", "%s", "%s", "%s", "", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$t" "$msm_base" "$msm_tag" "$t" "$(anchor_of methscope_models "$msm_tag" "")" "$s" "$s" \
+      "$(prior_ref "$s" methscope_models "$msm_tag" "")"
   done
 
   cat <<'EOF'
-    { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
+    { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0 }
 };
 
 #define YAME_ASSETS_N (sizeof(YAME_ASSETS)/sizeof(YAME_ASSETS[0]) - 1)
