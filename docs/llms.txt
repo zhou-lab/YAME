@@ -1,0 +1,90 @@
+# YAME — agent reference
+# Canonical: https://zhou-lab.github.io/YAME/llms.txt
+# Human guide: https://zhou-lab.github.io/YAME/
+# Source: https://github.com/zhou-lab/YAME
+# For exact flags, always run: yame <command> -h
+
+## What it is
+
+YAME (Yet Another Methylation Encoder) is a C toolkit for compact CX/BGZF
+storage and bitwise processing of DNA methylation data. A file stores rows, not
+coordinates: row i is defined by a reference row space. Arrays and whole-genome
+CpG tracks therefore use the same pack/subset/summary operations.
+
+Used by kycg, sesame-cli and methscope-cli; `libyame.a` and the verified asset
+store are shared across those tools. Supported row spaces include hg38, mm10,
+mm39, EPIC, EPICv2, HM450, HM27, MM285, MSA and Mammal40.
+
+## Install/build
+
+  conda install -c zhou-lab -c conda-forge yame
+
+Use zhou-lab rather than the older bioconda build for `fetch` and reference
+resolution. Source build: `make` (requires libcurl); `make CURL=0` intentionally
+builds without network fetching. For recent behavior use `~/repo/YAME/yame` or
+`yamedev`, not a copied `yame` on PATH.
+
+## Asset store and fetch
+
+Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
+`${XDG_DATA_HOME:-$HOME/.local/share}/yame`. Paths mirror browser names, e.g.
+`<root>/hg38/data`, `<root>/hg38/KYCG`, `<root>/EPIC`.
+
+  yame fetch -l                         # registry TSV
+  yame fetch hg38/data                  # browser path; asks on a terminal
+  yame fetch hg38/KYCG -g chromatin    # facet filter
+  yame fetch -n hg38/models             # dry-run
+  yame fetch -y hg38/data               # scripted/non-interactive
+  yame fetch -c human_hg38_test.cg     # verified file in current directory
+
+Downloads verify the pinned `SHA256SUMS` anchor and each file digest; `.part`
+files are renamed only after verification. `-c` writes to cwd without a
+manifest. `-f` overrides an unrelated stored tag; known earlier registry tags
+upgrade automatically. `.idx`/`.tbi` companions are fetched with their data.
+
+Models are in the shared registry (`yame fetch hg38/models` or `mm10/models`).
+`hg38_wg.updecx` is a stable filename, not a stable model version: cite
+`zhou-lab/methscope@v4` plus SHA-256, or YAME v1.35, which pins the bytes.
+
+## Formats
+
+  0  bit-packed binary states       1  M/U counts
+  2  categorical terms + key table 3  compact variable-width M/U counts
+  4  methylation fractions          6  set/universe or producer-defined 2-bit
+  7  CpG coordinate stream (.cr)
+
+Format 6 has multiple producer-defined meanings (set/universe, binarized
+methylome, differential/pairwise); identify the producer before interpreting it.
+Format 7 is a coordinate stream, not an ordinary row-packed state file.
+
+## Commands
+
+`info` inspect; `pack`/`unpack` convert; `subset` select samples; `rowsub` select
+rows; `split` split records; `chunk` partition rows; `summary` summarize or
+apply masks; `binarize` methylation to binary; `pairwise` compare format-3
+records; `perturb` make test perturbations; `dsample` downsample; `hprint`
+render whole-genome/region views. Run each command's `-h` for syntax.
+
+## Traps
+
+- `pack -f1` keeps only the first character; `pack -f0` treats any line not
+  starting with `0` as one, so `NA` is not missing.
+- `rowsub -B beg_end` is half-open `[beg,end)`.
+- Format-3 counts are compact and may be lossy at large counts.
+- `pack -fr` reads chromosome/start and starts a new block on backwards
+  coordinates; it does not sort.
+- CX files do not contain coordinates. Supply the correct `-R`/`-m` reference
+  where required; YAME can infer references only from unique known row counts.
+- A `.cg` with an index needs its companion `.idx`; use registry fetches rather
+  than manually copying only the data file.
+
+## Development
+
+  cd ~/repo/YAME && make
+  ./yame <command> -h
+  ./tools/make_registry.sh --tool=yame -o src/registry.h
+  ./tools/make_assetinfo.sh -o src/assetinfo.h
+
+`src/registry.h` and `src/assetinfo.h` are generated: edit catalog/source inputs,
+then regenerate. The org-mode journal is the canonical release and provenance
+record. Do not hand-edit generated headers.
