@@ -471,7 +471,7 @@ static const yame_asset_file_t YAME_FILES_methscope_models_hg38_models[] = {
     { "hg38_65celltypes.refx", "ce16678dd410c83e3df1c6f1c9b912a796f69c77722b28fc83c5690df69a6c03", 28900711, NULL },
     { "hg38_celltype.ubjx", "e1f738290b05f824873b599894228a33b189ffbda0644ed2aad0e82e7768bc7c", 25661483, NULL },
     { "hg38_sex.ubjx", "3d1618f6ca24d9a9d5b0fe1806673540515e5f6e7d7950e7c8873a85bb5c742b", 30931, NULL },
-    { "hg38_wg.updecx", "4aa5968c86aeba228a2001996c6a31501fd98fc40ad383ba956c988101ae0b98", 2960796438, NULL },
+    { "hg38_wg.updecx", "ae6bb632cb0adc42fb1e691d1aca70e0eeba4414a4ad9d6f58f8b0f452512765", 2835749302, NULL },
     { NULL, NULL, 0, NULL }
 };
 
@@ -502,8 +502,8 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10) },
     { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39) },
     { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v3", "test", "hg38/data", "150e6ae8b929e59e5b49cec241683abe6e20614bc2d29bc00f083ee01da7e19b", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data) },
-    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v1", "", "hg38/models", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models) },
-    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v1", "", "mm10/models", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models) },
+    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v2", "", "hg38/models", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models) },
+    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v2", "", "mm10/models", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models) },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0 }
 };
 
