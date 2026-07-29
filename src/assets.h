@@ -28,11 +28,11 @@
  * implementation they all link, and the one store they all read.
  *
  * THE STORE
- *   $YAME_DATA_HOME/<source>/<platform-or-build>/...
+ *   $YAME_DATA_HOME/<platform-or-build>/...
  *
- *   The key convention is the reuse mechanism: a file fetched by one tool is
- *   found by the next because the path is derived from the upstream repo and
- *   the platform, not from who asked for it.
+ *   The path mirrors the catalogue browser: hg38/data in the tree lands at
+ *   <root>/hg38/data, while the upstream repository remains registry metadata.
+ *   Every tool uses these same paths, so one tool's fetch satisfies the next.
  *
  * THE TRUST CHAIN
  *   Each directory holds a SHA256SUMS that is a byte-identical copy of the
@@ -95,8 +95,8 @@ const char *yame_assets_root(const char *override, const char *tool_env,
  * moved: this exists only so a user whose downloads appear to have vanished is
  * told where they went.
  *
- * Prints at most once per process. Safe to call directly; yame_assets_root()
- * already does.
+ * Prints at most once per process. Callers invoke it when they are about to
+ * use the store; yame_assets_root() deliberately only resolves a path.
  */
 void yame_assets_legacy_notice(const char *root);
 

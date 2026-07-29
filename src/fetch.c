@@ -2279,11 +2279,10 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     if (n_claim == 1) {
       hits[0] = hit[0];
       n_sel = 1;
-      /* Point into argv, not into `spec`: spec is this function's local and
-       * dies on return, while the selection it feeds outlives it. As a
-       * local in main_fetch this was accidentally safe; extracting the
-       * resolver made it a dangling pointer. */
-      only = arg + (fname - spec);
+      /* The registry string outlives this resolver. Pointing back into `arg`
+       * retained an @tag suffix, while pointing into local `spec` would
+       * dangle on return. */
+      only = file_of(hit[0], fname)->name;
     }
     else if (n_claim > 1) {
       fprintf(stderr, "yame fetch: %zu directories publish a file called "

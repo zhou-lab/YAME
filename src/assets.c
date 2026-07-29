@@ -572,6 +572,28 @@ static int wanted(const char *name, const char *const *only, size_t n_only) {
   return 0;
 }
 
+/* Write a manifest without ever exposing a truncated one. The manifest is the
+ * directory's tag identity, so preserve the old bytes until its replacement
+ * is complete. */
+static int write_manifest(const char *path, const char *text, size_t len) {
+  char part[YAME_PATH_MAX];
+  if (snprintf(part, sizeof(part), "%s.%ld.part", path, (long)getpid())
+      >= (int)sizeof(part)) return -1;
+
+  int fd = open(part, O_WRONLY | O_CREAT | O_EXCL, 0644);
+  if (fd < 0) return -1;
+  FILE *fp = fdopen(fd, "wb");
+  if (!fp) { close(fd); unlink(part); return -1; }
+
+  int ok = fwrite(text, 1, len, fp) == len;
+  if (fclose(fp) != 0) ok = 0;
+  if (!ok || rename(part, path) != 0) {
+    unlink(part);
+    return -1;
+  }
+  return 0;
+}
+
 int yame_assets_fetch_subset(const char *base, const char *tag,
                              const char *remote_sub, const char *store_sub,
                              const char *anchor_sha,
@@ -643,6 +665,22 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
     return -1;
   }
 
+  /* A registry name can outlive an upstream tag. Under an unpinned -t/-k
+   * fetch, reject that mismatch before moving anything instead of writing the
+   * tag's manifest and reporting success with zero requested files. */
+  for (size_t j = 0; only && j < n_only; ++j) {
+    int found = 0;
+    for (size_t i = 0; i < n; ++i)
+      if (only[j] && strcmp(only[j], ents[i].name) == 0) { found = 1; break; }
+    if (!found) {
+      set_err(err, "%s is not published at tag %s",
+              only[j] ? only[j] : "(null)", tag ? tag : "(none)");
+      free(sums_text);
+      free(ents);
+      return -1;
+    }
+  }
+
   int failed = 0, taken = 0;
   for (size_t i = 0; i < n; ++i) {
     char dest[YAME_PATH_MAX], furl[YAME_PATH_MAX];
@@ -671,9 +709,12 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
    * fetch too -- it describes the tag, not the subset taken from it. */
   if (!failed) {
     char sp[YAME_PATH_MAX];
-    if (yame_assets_join(sp, sizeof(sp), store_sub, YAME_ASSETS_SUMS_FILE) == 0) {
-      FILE *fp = fopen(sp, "wb");
-      if (fp) { fwrite(sums_text, 1, sums_len, fp); fclose(fp); }
+    if (yame_assets_join(sp, sizeof(sp), store_sub,
+                         YAME_ASSETS_SUMS_FILE) != 0 ||
+        write_manifest(sp, sums_text, sums_len) != 0) {
+      set_err(err, "files arrived, but cannot write %s/%s",
+              store_sub, YAME_ASSETS_SUMS_FILE);
+      failed = 1;
     }
   }
 
@@ -681,8 +722,9 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
   free(ents);
 
   if (failed) {
-    set_err(err, "%d of %d files failed; the manifest was not written",
-            failed, taken);
+    if (!err || !*err)
+      set_err(err, "%d of %d files failed; the manifest was not written",
+              failed, taken);
     return -1;
   }
   return 0;
