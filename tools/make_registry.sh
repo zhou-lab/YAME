@@ -74,20 +74,27 @@ nsets_of() {
   grep -c '\.cm$' "$p" || true
 }
 
-## The tags this build supersedes for one directory: every OTHER tag we have a
-## cached manifest for, as "<anchor>\t<tag>". A cached tag is by construction a
-## tag this registry pinned at some point -- the bump procedure is cache, bump,
-## regenerate -- so "cached and not current" means "we came from there".
+## The tags this build supersedes for one directory: every cached tag STRICTLY
+## EARLIER than the pinned one, as "<anchor>\t<tag>".
 ##
-## Caching a manifest for a tag WITHOUT bumping TAGS would therefore describe a
-## future tag as an ancestor, and a store already at it would be walked back to
-## the pinned one. Cache and bump in the same commit and that cannot arise.
+## "Earlier" is enforced here rather than assumed. The rule used to be every
+## cached tag except the current one, which is correct only while the procedure
+## is followed -- cache a manifest and bump TAGS in the same commit. Pre-caching
+## a future tag's manifest (to make a later bump a one-line change, which is a
+## reasonable thing to want) then listed it as an ancestor, and
+## YAME_PIN_ANCESTOR grants overwrite-without--f on the promise that this build
+## holds the LATER tag. A store already at the newer tag would be walked back to
+## the pinned one and the message would call it catching up. Comparing versions
+## makes that structurally impossible instead of merely discouraged, so a cached
+## manifest is now safe to land ahead of its bump.
 priors_of() {   ## source tag subpath
   local d t p
   for d in "$sums_dir/$1"/*/; do
     [ -d "$d" ] || continue
     t=$(basename "$d")
     [ "$t" = "$2" ] && continue
+    ## sort -V puts the pair in version order; keep t only when it sorts first.
+    [ "$(printf '%s\n%s\n' "$t" "$2" | sort -V | head -1)" = "$t" ] || continue
     p=$(sums_path "$1" "$t" "$3")
     [ -s "$p" ] || continue
     printf '%s\t%s\n' "$(sha256_of "$p")" "$t"
