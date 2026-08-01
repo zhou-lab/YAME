@@ -203,30 +203,17 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
   index_pair_t *pairs = index_pairs(idx, &npairs);
   if (npairs <= 0) { clean_index_pairs(pairs, npairs); return 0; }
 
-  /* every requested record must begin at a block boundary */
-  for (int i = 0; i < snames.n; ++i) {
-    int64_t v = getIndex(idx, snames.s[i]);
-    if (v < 0 || (v & 0xFFFF) != 0) { clean_index_pairs(pairs, npairs); return 0; }
-  }
-
-  /* A raw copy moves bytes without reading them, so it would not notice an
-   * index that points at the wrong place -- the decode path catches that on
-   * the record signature. Check the signature here too, before anything is
-   * written, at the cost of inflating one block per record. */
-  {
-    BGZF *fh = bgzf_open(fname_in, "r");
-    if (!fh) { clean_index_pairs(pairs, npairs); return 0; }
-    for (int i = 0; i < snames.n; ++i) {
-      if (!cx_record_at(fh, getIndex(idx, snames.s[i]))) {
-        bgzf_close(fh);
-        clean_index_pairs(pairs, npairs);
-        wzfatal("[%s:%d] %s: the index entry for %s does not point at a "
-                "record. Re-run `yame index` on it.\n",
-                __func__, __LINE__, fname_in, snames.s[i]);
-      }
+  /* EVERY record must begin at a block boundary, not just the requested ones.
+   * A record's extent ends where the next record begins, so a neighbour that
+   * starts mid-block puts the tail of an aligned record inside the neighbour's
+   * first block; copying up to that block address would silently truncate it.
+   * This is arithmetic on the index alone, no I/O. */
+  for (int i = 0; i < npairs; ++i)
+    if (pairs[i].value & 0xFFFF) { clean_index_pairs(pairs, npairs); return 0; }
+  for (int i = 0; i < snames.n; ++i)
+    if (getIndex(idx, snames.s[i]) < 0) {
+      clean_index_pairs(pairs, npairs); return 0;
     }
-    bgzf_close(fh);
-  }
 
   /* record boundaries, in file order */
   int64_t *addr = malloc(npairs * sizeof(int64_t));
@@ -239,6 +226,30 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
     fclose(in); free(addr); clean_index_pairs(pairs, npairs); return 0;
   }
   int64_t fsize = ftello(in);
+
+  /* A raw copy moves bytes without reading them, so it would not notice an
+   * index pointing at the wrong place -- the decode path catches that on the
+   * record signature. Check both ends of every extent about to be copied,
+   * before anything is written; a failure hands the job back to the decode
+   * path, which reports it. Costs one block inflate per boundary. */
+  {
+    BGZF *fh = bgzf_open(fname_in, "r");
+    if (!fh) {
+      fclose(in); free(addr); clean_index_pairs(pairs, npairs); return 0;
+    }
+    for (int i = 0; i < snames.n; ++i) {
+      int64_t beg = getIndex(idx, snames.s[i]) >> 16, end = fsize;
+      for (int j = 0; j < npairs; ++j)
+        if (addr[j] > beg) { end = addr[j]; break; }
+      if (!cx_record_at(fh, beg << 16) ||
+          (end != fsize && !cx_record_at(fh, end << 16))) {
+        bgzf_close(fh); fclose(in);
+        free(addr); clean_index_pairs(pairs, npairs);
+        return 0;
+      }
+    }
+    bgzf_close(fh);
+  }
 
   FILE *out = fname_out ? fopen(fname_out, "wb") : stdout;
   if (!out) {
@@ -433,7 +444,15 @@ int main_subset(int argc, char *argv[]) {
     case 's': filter_fmt2_states = 1; break;
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
-    case 'z': level = atoi(optarg); break;
+    case 'z': {                 /* not atoi: "abc" would pass as level 0,
+                                 * i.e. silently store instead of compress */
+      char *endp = NULL;
+      long v = strtol(optarg, &endp, 10);
+      if (endp == optarg || *endp || v < 0 || v > 9)
+        wzfatal("-z takes a zlib level 0-9, given \"%s\".\n", optarg);
+      level = (int)v;
+      break;
+    }
     case 'v': verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
@@ -463,8 +482,6 @@ int main_subset(int argc, char *argv[]) {
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);
   }
-
-  if (level > 9) wzfatal("-z takes a zlib level 0-9, given %d.\n", level);
 
   if (filter_fmt2_states) {
     subset_fmt2_states(cf, snames, fname_out, level);
