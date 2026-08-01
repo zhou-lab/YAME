@@ -37,6 +37,36 @@ int read_cdata2(cfile_t *cf, cdata_t *c) {
   return 1;
 }
 
+const uint8_t CX_BGZF_EOF[28] =
+  "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0";
+
+int cx_record_at(BGZF *fh, int64_t voffset) {
+  if (voffset < 0 || (voffset & 0xFFFF) != 0) return 0;
+  if (bgzf_seek(fh, voffset, SEEK_SET) < 0) return 0;
+  /* after a seek into a concatenated file the block has to be pulled in
+   * explicitly before the first read, same as read_cdata2() above */
+  if (fh->block_length == 0) bgzf_read_block(fh);
+  uint64_t sig = 0;
+  if (bgzf_read(fh, &sig, sizeof(sig)) != (ssize_t)sizeof(sig)) return 0;
+  return sig == CDSIG;
+}
+
+int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out) {
+  if (fseeko(in, beg, SEEK_SET) != 0) return 0;
+  size_t bufsz = 1<<20;
+  uint8_t *buf = malloc(bufsz);
+  if (!buf) return 0;
+  int ok = 1;
+  for (int64_t left = end - beg; left > 0; ) {
+    size_t want = left < (int64_t)bufsz ? (size_t)left : bufsz;
+    size_t got = fread(buf, 1, want, in);
+    if (got != want || fwrite(buf, 1, got, out) != got) { ok = 0; break; }
+    left -= got;
+  }
+  free(buf);
+  return ok;
+}
+
 cfile_t open_cfile(char *fname) { /* for read */
   cfile_t cf = {0};
   if (strcmp(fname, "-")==0) {

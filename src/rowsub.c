@@ -586,6 +586,7 @@ int main_rowsub(int argc, char *argv[]) {
       if (row_indices) cr2 = fmt7_sliceToIndices(&cr, row_indices, n_indices);
       else if (c_mask.n) cr2 = fmt7_sliceToMask(&cr, &c_mask);
       else cr2 = fmt7_sliceToBlock(&cr, config.beg, config.end);
+      bgzf_flush(fp_out);       /* start this record on a block boundary */
       cdata_write1(fp_out, &cr2);
       free_cdata(&cr2);
     }
@@ -601,6 +602,7 @@ int main_rowsub(int argc, char *argv[]) {
       if (row_indices) c2 = fmt7_sliceToIndices(&c, row_indices, n_indices);
       else if (c_mask.n) c2 = fmt7_sliceToMask(&c, &c_mask);
       else c2 = fmt7_sliceToBlock(&c, config.beg, config.end);
+      bgzf_flush(fp_out);       /* start this record on a block boundary */
       cdata_write1(fp_out, &c2);
       free_cdata(&c2);
     } else {
@@ -610,6 +612,7 @@ int main_rowsub(int argc, char *argv[]) {
       else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);
       else c3 = sliceToBlock(&c2, config.beg, config.end);
       cdata_compress(&c3);
+      bgzf_flush(fp_out);       /* start this record on a block boundary */
       cdata_write1(fp_out, &c3);
       free(c3.s); free(c2.s);
     }

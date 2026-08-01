@@ -44,6 +44,7 @@ void mask_fmt3(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
     }
   }
   cdata_compress(c);
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
   cdata_write1(fp_out, c);
 }
 
@@ -52,6 +53,7 @@ void mask_fmt0(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
     c->s[i] &= ~c_mask.s[i];
   }
   /* cdata_compress(&c); */
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
   cdata_write1(fp_out, c);
 }
 
@@ -62,6 +64,7 @@ void mask_fmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
     }
   }
   cdata_compress(c);
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
   cdata_write1(fp_out, c);
 }
 
@@ -75,6 +78,7 @@ void fmt0ContextualizeFmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
     }
   }
   cdata_compress(&c6);
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
   cdata_write1(fp_out, &c6);
   free_cdata(&c6);
 }

@@ -47,6 +47,29 @@ typedef struct cfile_t {
 cfile_t open_cfile(char *fname);
 
 /**
+ * Raw block passthrough helpers.
+ *
+ * A record that begins on a BGZF block boundary can be moved between files by
+ * copying its compressed bytes, with no inflate and no deflate. The unit that
+ * can be copied is a whole block, so this only applies when the record starts
+ * a block; otherwise the first block also holds the previous record's tail.
+ * Producers that write each record through its own BGZF stream, or that flush
+ * before each record, leave every record aligned.
+ */
+
+/** The 28-byte empty BGZF member that terminates a file. */
+extern const uint8_t CX_BGZF_EOF[28];
+
+/** 1 if the virtual offset is block-aligned and a record signature sits there.
+ *  Reading it costs one block inflate. Used to catch a stale index before a
+ *  raw copy, which otherwise moves bytes without ever looking at them. */
+int cx_record_at(BGZF *fh, int64_t voffset);
+
+/** Copy [beg,end) of `in` to `out`. Both are plain handles; beg and end are
+ *  byte offsets, which for an aligned record are block boundaries. */
+int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out);
+
+/**
  * Reads cdata from a cfile_t instance.
  *
  * @param cf The cfile_t instance to read from.

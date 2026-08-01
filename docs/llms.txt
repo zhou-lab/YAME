@@ -12,8 +12,7 @@ coordinates: row i is defined by a reference row space. Arrays and whole-genome
 CpG tracks therefore use the same pack/subset/summary operations.
 
 Used by kycg, sesame-cli and methscope-cli; `libyame.a` and the verified asset
-store are shared across those tools. Supported row spaces include hg38, mm10,
-mm39, EPIC, EPICv2, HM450, HM27, MM285, MSA and Mammal40.
+store are shared across those tools.
 
 ## Install/build
 
@@ -24,23 +23,60 @@ resolution. Source build: `make` (requires libcurl); `make CURL=0` intentionally
 builds without network fetching. For recent behavior use `~/repo/YAME/yame` or
 `yamedev`, not a copied `yame` on PATH.
 
+## Data model
+
+A record is an 8-byte signature, a 1-byte format code, the row count n, then
+data packed per that code, inside BGZF frames. Records concatenate, so a cohort
+is one file; the `<file>.idx` beside it maps sample name -> BGZF offset, which
+is what makes `subset`/`unpack` by name possible without decompressing the rest.
+
+Position is never stored. Two files are comparable only if they share a row
+space, so an intersection is a bitwise AND rather than a genomic join, and a
+row count is an identity — which is why `-R` and `-m` accept a name instead of
+a path, and why some are inferred from the input's row count.
+
+## Row spaces (row count = identity)
+
+  hg38    29,401,795     EPIC      866,553     MM285    287,692
+  mm10    21,867,837     HM450     486,427     MSA      284,309
+  mm39    21,889,506     EPICv2    937,690     Mammal40  38,607
+                                               HM27      27,722
+
 ## Asset store and fetch
 
+Nothing ships with the binary: no coordinates, no feature sets, no examples.
 Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
 `${XDG_DATA_HOME:-$HOME/.local/share}/yame`. Paths mirror browser names, e.g.
 `<root>/hg38/data`, `<root>/hg38/KYCG`, `<root>/EPIC`.
 
-  yame fetch -l                         # registry TSV
+  yame fetch                            # tree browser (terminal only)
+  yame fetch -l                         # registry TSV; same when piped
   yame fetch hg38/data                  # browser path; asks on a terminal
-  yame fetch hg38/KYCG -g chromatin    # facet filter
-  yame fetch -n hg38/models             # dry-run
+  yame fetch -g chromatin hg38/KYCG     # facet filter (name/source/
+                                        #   collection/title/database)
+  yame fetch -n hg38/models             # dry-run plan, exits 0
+  yame fetch -l -g methscope hg38       # the same set as TSV
   yame fetch -y hg38/data               # scripted/non-interactive
-  yame fetch -c human_hg38_test.cg     # verified file in current directory
+  yame fetch -y -c hg38/data/human_hg38_test.cg  # into cwd, no manifest
+  yame fetch -u <url> -s <sha256> -o <dest>    # single-file form
+
+A name is a scope: `hg38` takes the unit and all beneath it, `hg38/data` one
+directory, `hg38/data/test.cg` one file. Several names may be given, separated
+by spaces or commas. Options may come before or after the names. Others:
+`-d <dir>` store root, `-t <tag>` upstream tag override (needs `-k` to accept
+an unpinned tag), `-q` no progress.
+
+Off a terminal a fetch will not proceed without `-y` — it prints the plan and
+exits with "Refusing to fetch ... Re-run with -y", so every scripted or agent
+fetch needs `-y` (or `-n` to plan only). `-l` prints ten columns: target,
+source, tag, store_path, file, bytes, sha256, dir_state, local, description.
 
 Downloads verify the pinned `SHA256SUMS` anchor and each file digest; `.part`
 files are renamed only after verification. `-c` writes to cwd without a
-manifest. `-f` overrides an unrelated stored tag; known earlier registry tags
-upgrade automatically. `.idx`/`.tbi` companions are fetched with their data.
+manifest. `-f` re-downloads what is present and overwrites a store populated
+from an unrelated tag; known earlier registry tags upgrade automatically.
+`.idx`/`.tbi` companions are fetched with their data. Verify by hand with
+`shasum -a 256 -c SHA256SUMS` in any store directory.
 
 Models are in the shared registry (`yame fetch hg38/models` or `mm10/models`).
 `hg38_wg.updecx` is a stable filename, not a stable model version: cite
@@ -48,35 +84,193 @@ Models are in the shared registry (`yame fetch hg38/models` or `mm10/models`).
 
 ## Formats
 
-  0  bit-packed binary states       1  M/U counts
-  2  categorical terms + key table 3  compact variable-width M/U counts
-  4  methylation fractions          6  set/universe or producer-defined 2-bit
-  7  CpG coordinate stream (.cr)
+  fmt  data                     pack -f   on disk           NA
+  0    binary yes/no            b or 0    1 bit/row         none
+  1    one byte per row         c or 1    3 B per RLE run   none
+  2    categorical states       s or 2    key table + runs  a label
+  3    M/U counts               m or 3    1/2/8 B/site      M=U=0
+  4    beta / fraction          n or 4    4 B/value         negative float
+  6    set + universe (2-bit)   d or 6    2 bits/row        00
+  7    CpG coordinates (.cr)    r or 7    delta varint      n/a
 
-Format 6 has multiple producer-defined meanings (set/universe, binarized
-methylome, differential/pairwise); identify the producer before interpreting it.
-Format 7 is a coordinate stream, not an ordinary row-packed state file.
+Format 5 is obsolete: still decodable by `unpack`, no longer packable.
+
+fmt3 on disk is tagged by the low two bits: 01 = 1 byte (M,U <= 6), 10 = 2 bytes
+(M,U <= 126), 11 = 8 bytes (M,U <= 2^31-1), 00 = a 14-bit run of M=U=0.
+fmt6 codes: 00 outside universe, 10 in universe/0, 11 in universe/1 — the
+universe bit is what separates "not measured" from "measured and zero", so a
+query and its background travel in one file. fmt6 has multiple producer-defined
+meanings (set/universe, binarized methylome, differential); identify the
+producer before interpreting it. fmt7 is a coordinate stream, not a row-packed
+state file.
 
 ## Commands
 
-`info` inspect; `pack`/`unpack` convert; `subset` select samples; `rowsub` select
-rows; `split` split records; `chunk` partition rows; `summary` summarize or
-apply masks; `binarize` methylation to binary; `pairwise` compare format-3
-records; `perturb` make test perturbations; `dsample` downsample; `hprint`
-render whole-genome/region views. Run each command's `-h` for syntax.
+Text in and out
+  pack -f <spec> [-u 1-8] [-v] <in.txt|-> [out.cx]
+        `-f` is required; there is no default. Input is one row per CpG,
+        already in the reference's order — nothing is sorted or matched.
+        Tab-separated columns; extra columns are extra samples. Input may be
+        gzipped or `-` (stdin); omitting out.cx writes stdout (no index).
+        `-u` is the fmt3 inflated unit (default 8; 1 leaves 4 bits apiece).
+        Per-format input: -fm "M<TAB>U"; -fd "set<TAB>universe" (set must be
+        exactly "1"); -fn a float or NA; -fs the whole line as a label;
+        -fb 0 or 1; -fc one char; -fr BED (only chrom and start are read).
+  unpack [options] <in.cx|-> [sample ...]
+        -a all records; -l <list>; -H <N> first N; -T <N> last N (index).
+        -R <rows.cx|name> prepend coordinates (never inferred here);
+        -r 0 chrm/beg0/end1 (cg-style, default), 1 chrm/beg0/end0 (allc),
+        else chrm_beg1. -C header line. -u <bytes> unit override.
+        -f <N>: fmt3 — 0 packed (M<<32)|U, <0 M<TAB>U, >0 beta with NA below
+        coverage N; fmt6 — 0 prints 0/1 with NA as '2', <0 value<TAB>universe,
+        >0 the raw 2-bit code. -c chunked printing, -s <rows> chunk size
+        (not for fmt7).
+  chunkchar [-s size] [-v] <in.txt>      split text before packing
+
+Inspect and index
+  info [-1] <in.cx> ...   File Sample Ncol Nrow Format UnitBytes Keys, one row
+                          per record; -1 reports only the first record of each
+                          file — the cheap way to see what a directory holds
+  index [-s list] [-1 name] [-c] <in.cx>    writes <in.cx>.idx; -c to console
+  split [-s list] [-v] <in.cx> <out_prefix>
+        One file per record. Same raw copy as subset when the input is indexed
+        and its records are block-aligned; -v says which path ran.
+  hprint [-r reg | -R ref] [-c] [-g] [-l W] [-t N] [-w N] <in.cx>
+        -r chr16 or chr16:10000000-10100000, reference inferred from the row
+        count; -R gives the whole-genome window view; neither = legacy fmt6
+        dump. -c disables color, -g prints deciles, -w caps columns (wider
+        regions are window-averaged, not truncated). fmt6 blocks/shades,
+        fmt3/4 H/M/L, fmt0 1/0.
+
+Subset
+  subset [-o out.cx] [-l list] [-s] [-H N] [-T N] [-z 0-9] [-v]
+         <in.cx> [name ...]
+        By sample name (needs the index) or, with -s, one fmt0 bitset per
+        requested fmt2 state. -o also writes an output index. Records come out
+        in **list order, not store order** — as does `unpack`.
+        A subset copies whole records unchanged, so when every requested record
+        starts on a BGZF block boundary its compressed bytes are moved verbatim
+        — no decompression, no re-compression, roughly 20x faster. Anything
+        unaligned falls back to decode/encode. -z forces a re-encode at that
+        zlib level (and so turns the copy off); -v says which path ran.
+  rowsub [mode] <in.cx> > out.cx    (always stdout)
+        -l <idx.txt> 1-based row indices; -L <coord.txt> "chrm_beg1" lines;
+        -R <rows.cx|name> coordinates, optional with -L/-1 (inferred from the
+        row count); -1 emit the subsetted coordinates as the first record;
+        -m <mask.cx> keep rows with bit 1 (mask must be fmt0 or fmt1);
+        -B beg0[_end1] half-open block; -I blockIdx0[_blockSize] (default
+        1000000). Precedence: -l/-L > -m > -B/-I. Order is preserved and no
+        sorting is required; fmt2 keys survive the slice.
+  chunk [-s size] [-v] <in.cx> [outdir]   fixed row blocks; fatal on fmt2/fmt7
+
+Compare and summarize
+  summary [-m mask|-b] [options] <query.cx|-> [query2.cx ...]
+        Queries may be fmt 0/1/2/3/4/6/7 and multi-sample. -m accepts a name
+        resolved in the query's own row space (`-m CGI`, `-m ChromHMM`); -b
+        picks masks in the browser and fetches what is missing. Every query
+        sample is summarized against every mask sample. A fmt2 mask emits one
+        row per state. With no mask, Mask is 'global'.
+        Columns (-V set, default; also -V 2bit): QFile Query MFile Mask N_univ
+        N_query N_mask N_overlap Log2OddsRatio Beta Depth.
+        -V meth (all records must be fmt6): QFile Query MFile Mask N_covered
+        N_meth N_covered_in_mask N_meth_in_mask Log2OddsRatio Beta Beta_bg.
+        -M preload masks, -H no header, -F full paths, -T always name states,
+        -s <list> rename query samples, -q <name> names a stdin query,
+        -6 deprecated alias for -V 2bit.
+  pairwise [-o out] [-c cov] [-d delta] [-H 1|2|3] <MU1.cx> [MU2.cx]
+        fmt3 x fmt3 -> one fmt6 record. Universe = both samples at coverage
+        >= -c (default 1); set = direction (-H 1 hyper in sample 1, 2 hypo,
+        3 either) and |beta1-beta2| > -d (default 0). Without MU2.cx the
+        second record of MU1.cx is used. The delta magnitude is not stored.
+  rowop -o <op> [-c mincov] <in.cx> [out]
+        binasum  fmt0/1/3 -> fmt3 per-row sample counts (-p/-q beta cutoffs,
+                 default 0.4/0.6; betas between them are ignored) — this is
+                 how a pseudobulk is made
+        musum    fmt3 -> one fmt3 record, counts summed
+        stat     fmt3 -> text: count mean_beta sd_beta delta_beta min_n
+                 delta_mean
+        binstring fmt3 -> text row-wise binary strings (-b threshold 0.5,
+                 -m max ambiguous fraction, -M min majority fold)
+        cometh   fmt3 -> text packed UU/UM/MU/MM per neighbor offset
+                 (-w window 5, -v unpacked)
+  binarize [-t 0.5] [-m Mmin] [-c cov] [-o out] <mu.cx>
+        fmt3 -> fmt6. set = beta > -t, or M >= -m when -m > 0 (overrides -t);
+        universe = coverage >= -c.
+
+Perturb and mask (benchmarking)
+  mask [-o out] [-c] [-v] <in.cg> <mask.cx>
+        The mask is positional, not -m, and row counts must match. Data may be
+        fmt 0/1/3/6; the mask must reduce to fmt0 (fmt1/fmt3 are converted,
+        fmt3 by coverage M+U>0). -c contextualizes fmt0 data to fmt6 (implicit
+        for fmt6 input), -v inverts the mask. Deterministic and file-driven:
+        it decides which sites are valid.
+  dsample [-N 100] [-s seed] [-r reps] [-p prefix] [-b] [-o out] <in.cx>
+        fmt3 and fmt6 only. fmt3 masks by setting M=U=0, fmt6 by clearing the
+        universe bit. Stochastic: fix -s or it is not reproducible.
+  perturb [-p 0.05] [-s seed] [-o out] <in.cx>
+        fmt0 and fmt6 only. fmt6 flips only in-universe set bits; NA is left
+        alone. Fix -s.
+
+Reference data
+  fetch     see the store section above
+
+## Recipes
+
+  ## look at a shipped example (-y: nothing fetches unattended without it)
+  yame fetch -y -c hg38/data/human_hg38_test.cg
+  yame fetch -y hg38/cpg_nocontig.cr          # coordinates, into the store
+  yame unpack -R hg38 human_hg38_test.cg | awk '$4!=2' | head
+
+  ## fmt6 round trip (verified byte-identical)
+  yame unpack -f -1 human_hg38_test.cg > rt.txt
+  yame pack -f6 rt.txt rt.cg
+
+  ## per-CpG M and U for a region, with coordinates
+  yame rowsub -R hg38 -L coords.txt -1 in.cg | yame unpack -a -f -1 -
+
+  ## enrichment against a knowledgebase set
+  yame fetch -y -g CGI hg38/KYCG
+  yame summary -m CGI human_hg38_test.cg
+
+  ## pseudobulk from single cells
+  yame subset -l cluster_ids.txt -o cluster.cg cells.cg
+  yame rowop -o binasum cluster.cg pseudobulk.cg
 
 ## Traps
 
+- `unpack` on fmt3 defaults to `-f 0`, which prints the packed uint64
+  `(M<<32)|U` and looks like garbage. Use `-f -1` for M and U columns, or
+  `-f <N>` for beta. On fmt6, the default prints NA as '2'.
 - `pack -f1` keeps only the first character; `pack -f0` treats any line not
-  starting with `0` as one, so `NA` is not missing.
-- `rowsub -B beg_end` is half-open `[beg,end)`.
-- Format-3 counts are compact and may be lossy at large counts.
-- `pack -fr` reads chromosome/start and starts a new block on backwards
-  coordinates; it does not sort.
+  starting with `0` as one, so `NA` is not missing; `pack -f6` needs exactly
+  `1` in the first column to count as in-set.
+- Format-3 counts are compact and lossy beyond 2^31-1: `fitMU` right-shifts M
+  and U together, so the ratio survives and the absolute depth does not.
+- `pack -fr` reads chromosome and start only, and starts a new block on
+  backwards coordinates; it does not sort.
+- `rowsub -B beg_end` is half-open `[beg,end)`; `-l` is 1-based, `-B`/`-I` are
+  0-based.
+- `chunk` (and any block slice) is fatal on fmt2 and fmt7 — use `rowsub`.
+- The index is `<file>.idx`; some older help text calls it `.cxi`.
+- `mask` takes its mask as a positional argument, not `-m`.
 - CX files do not contain coordinates. Supply the correct `-R`/`-m` reference
-  where required; YAME can infer references only from unique known row counts.
+  where required; YAME can infer references only from unique known row counts,
+  and `unpack -R` is never inferred.
 - A `.cg` with an index needs its companion `.idx`; use registry fetches rather
   than manually copying only the data file.
+- Records written by a command that streams several of them through one writer
+  (`subset`, `rowsub`, `binarize`, `dsample`, `perturb`, `mask`) now start on a
+  block boundary, which is what lets a later `subset`/`split` copy them without
+  decoding. Files written before that change are still read normally, just not
+  copied; one pass through `yame subset` realigns a store.
+- `subset -l` and `unpack -l` emit records in **list order**, not store order.
+  That is the useful behaviour, but `yame index -s names.txt` pairs names to
+  records **positionally**, so a name list in store order applied to output in
+  list order silently mispairs every sample with someone else's data.
+- `yame fetch` with no target opens the browser on a terminal but dumps the
+  registry TSV when piped or redirected, so a script never blocks. Off a
+  terminal a fetch still refuses to download without `-y`. `NO_COLOR` disables
+  ANSI output.
 
 ## Development
 
@@ -85,6 +279,6 @@ render whole-genome/region views. Run each command's `-h` for syntax.
   ./tools/make_registry.sh --tool=yame -o src/registry.h
   ./tools/make_assetinfo.sh -o src/assetinfo.h
 
-`src/registry.h` and `src/assetinfo.h` are generated: edit catalog/source inputs,
-then regenerate. The org-mode journal is the canonical release and provenance
+`src/registry.h` and `src/assetinfo.h` are generated: edit catalog/source
+inputs, then regenerate. The org-mode journal is the canonical release and provenance
 record. Do not hand-edit generated headers.

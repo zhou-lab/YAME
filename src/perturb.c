@@ -103,6 +103,7 @@ int main_perturb(int argc, char *argv[]) {
     }
 
     cdata_compress(&cin);
+    bgzf_flush(fp_out);         /* start this record on a block boundary */
     cdata_write1(fp_out, &cin);
     free_cdata(&cin);
   }

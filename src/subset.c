@@ -105,7 +105,16 @@
  *   snames.n is non-zero and head/tail logic is skipped.
  */
 
-void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
+/* BGZF write mode carrying a zlib level. bgzf_open2()/bgzf_dopen() pass the
+ * mode through mode2level(), which picks up the first digit, so "w1" is a
+ * level-1 writer and "w0" stores. level < 0 leaves the zlib default. */
+static void write_mode(char *buf, size_t n, int level) {
+  if (level >= 0 && level <= 9) snprintf(buf, n, "w%c", '0' + level);
+  else snprintf(buf, n, "w");
+}
+
+void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out,
+                        int level) {
   cdata_t c = read_cdata1(&cf);
   decompress_in_situ(&c);
   if (c.fmt != '2') {
@@ -114,12 +123,18 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
 
   // output
   BGZF *fp;
-  if (fname_out) fp = bgzf_open2(fname_out, "w");
-  else fp = bgzf_dopen(fileno(stdout), "w");
+  char wmode[8]; write_mode(wmode, sizeof(wmode), level);
+  if (fname_out) fp = bgzf_open2(fname_out, wmode);
+  else fp = bgzf_dopen(fileno(stdout), wmode);
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);
   }
+
+  /* The index is built from the writer: bgzf_tell() before a record is the
+   * same virtual offset a reader recovers by reading up to it, so there is no
+   * need to inflate the finished file a second time to find the offsets. */
+  index_t *idx2 = fname_out ? kh_init(index) : NULL;
 
   if (!c.aux) fmt2_set_aux(&c);
   f2_aux_t *aux = (f2_aux_t*) c.aux;
@@ -140,40 +155,138 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out) {
     for (uint64_t ii = 0; ii < c.n; ++ii) {
       if (f2_get_uint64(&c, ii) == i_term) FMT0_SET(c0, ii);
     }
+    bgzf_flush(fp);             /* start this record on a block boundary */
+    if (idx2) insert_index(idx2, snames.s[i], bgzf_tell(fp));
     cdata_write1(fp, &c0);
   }
   free_cdata(&c);
   free_cdata(&c0);
   bgzf_close(fp);
-  
-  if (fname_out) {              // output index
-    cfile_t cf2 = open_cfile(fname_out);
-    index_t *idx2 = kh_init(index);
-    int64_t addr = bgzf_tell(cf2.fh);
-    cdata_t c_tmp = {0};
-    for (int i=0; i< snames.n; ++i) {
-      if (!read_cdata2(&cf2, &c_tmp)) {
-        fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
-        fflush(stderr);
-        exit(1);
-      }
-      insert_index(idx2, snames.s[i], addr);
-      addr = bgzf_tell(cf2.fh);
-    }
-    free_cdata(&c_tmp);
 
+  if (fname_out) {              // output index
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
     writeIndex(out, idx2);
     fclose(out);
     free(fname_index2);
     free(fname_out);
-    bgzf_close(cf2.fh);
     freeIndex(idx2);
   }
 }
 
-void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_out, int head, int tail) {
+static int cmp_int64(const void *a, const void *b) {
+  int64_t x = *(const int64_t*)a, y = *(const int64_t*)b;
+  return (x > y) - (x < y);
+}
+
+/**
+ * Raw block passthrough.
+ *
+ * subset copies whole records that come out byte-identical, so when a record
+ * starts on a BGZF block boundary its compressed bytes can be moved with
+ * fread/fwrite -- no inflate, no deflate, no CRC. A record is aligned when its
+ * index offset has a zero in-block part, which is what happens when it was
+ * written to its own file and the files were concatenated (mergeCG2). Records
+ * appended to a shared writer land mid-block, so this is a fast path: it
+ * returns 0 without writing anything if any requested record is unaligned, and
+ * the caller falls back to the decode/encode path.
+ *
+ * A record's compressed extent runs to the start of the record that follows it
+ * *in the file*, hence the sorted copy of all index offsets; the last record
+ * runs to end of file. Any embedded end-of-file marker inside that extent is
+ * copied along with it, which is what concatenated stores already contain.
+ */
+static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
+                      char *fname_out, int verbose) {
+
+  int npairs = 0;
+  index_pair_t *pairs = index_pairs(idx, &npairs);
+  if (npairs <= 0) { clean_index_pairs(pairs, npairs); return 0; }
+
+  /* every requested record must begin at a block boundary */
+  for (int i = 0; i < snames.n; ++i) {
+    int64_t v = getIndex(idx, snames.s[i]);
+    if (v < 0 || (v & 0xFFFF) != 0) { clean_index_pairs(pairs, npairs); return 0; }
+  }
+
+  /* A raw copy moves bytes without reading them, so it would not notice an
+   * index that points at the wrong place -- the decode path catches that on
+   * the record signature. Check the signature here too, before anything is
+   * written, at the cost of inflating one block per record. */
+  {
+    BGZF *fh = bgzf_open(fname_in, "r");
+    if (!fh) { clean_index_pairs(pairs, npairs); return 0; }
+    for (int i = 0; i < snames.n; ++i) {
+      if (!cx_record_at(fh, getIndex(idx, snames.s[i]))) {
+        bgzf_close(fh);
+        clean_index_pairs(pairs, npairs);
+        wzfatal("[%s:%d] %s: the index entry for %s does not point at a "
+                "record. Re-run `yame index` on it.\n",
+                __func__, __LINE__, fname_in, snames.s[i]);
+      }
+    }
+    bgzf_close(fh);
+  }
+
+  /* record boundaries, in file order */
+  int64_t *addr = malloc(npairs * sizeof(int64_t));
+  for (int i = 0; i < npairs; ++i) addr[i] = pairs[i].value >> 16;
+  qsort(addr, npairs, sizeof(int64_t), cmp_int64);
+
+  FILE *in = fopen(fname_in, "rb");
+  if (!in) { free(addr); clean_index_pairs(pairs, npairs); return 0; }
+  if (fseeko(in, 0, SEEK_END) != 0) {
+    fclose(in); free(addr); clean_index_pairs(pairs, npairs); return 0;
+  }
+  int64_t fsize = ftello(in);
+
+  FILE *out = fname_out ? fopen(fname_out, "wb") : stdout;
+  if (!out) {
+    fclose(in); free(addr); clean_index_pairs(pairs, npairs);
+    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
+    exit(1);
+  }
+
+  index_t *idx2 = fname_out ? kh_init(index) : NULL;
+  int64_t written = 0;
+
+  for (int i = 0; i < snames.n; ++i) {
+    int64_t beg = getIndex(idx, snames.s[i]) >> 16, end = fsize;
+    for (int j = 0; j < npairs; ++j)     /* first boundary past this record */
+      if (addr[j] > beg) { end = addr[j]; break; }
+
+    /* the output offset is a block address too, since only whole blocks are
+     * ever appended, so the in-block part of the virtual offset stays 0 */
+    if (idx2) insert_index(idx2, snames.s[i], written << 16);
+
+    if (!cx_copy_bytes(in, beg, end, out))
+      wzfatal("Failed copying %s out of %s.\n", snames.s[i], fname_in);
+    written += end - beg;
+  }
+  if (fwrite(CX_BGZF_EOF, 1, sizeof(CX_BGZF_EOF), out) != sizeof(CX_BGZF_EOF))
+    wzfatal("Short write.\n");
+
+  free(addr); clean_index_pairs(pairs, npairs);
+  fclose(in);
+  if (fname_out) fclose(out); else fflush(out);
+  if (verbose)
+    fprintf(stderr, "[subset] raw block passthrough: %"PRId64" bytes copied.\n",
+            written);
+
+  if (fname_out) {
+    char *fname_index2 = get_fname_index(fname_out);
+    FILE *fidx = fopen(fname_index2, "w");
+    writeIndex(fidx, idx2);
+    fclose(fidx);
+    free(fname_index2);
+    freeIndex(idx2);
+  }
+  return 1;
+}
+
+void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
+                    char *fname_out, int head, int tail, int level,
+                    int verbose) {
 
   // check if we have index
   if (!idx) {
@@ -203,14 +316,32 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_out, 
     clean_index_pairs(pairs, npairs);
   }
 
+  /* Fast path: move the compressed bytes without touching the codec. Only
+   * possible when every requested record starts on a block boundary, and only
+   * when no output level was asked for, since a raw copy keeps whatever
+   * compression the input has. */
+  if (level < 0 && fname_in &&
+      subset_raw(fname_in, idx, snames, fname_out, verbose)) return;
+  if (verbose)
+    fprintf(stderr, "[subset] re-encoding (records are not block-aligned, "
+            "or -z was given).\n");
+
   // output
   BGZF *fp;
-  if (fname_out) fp = bgzf_open2(fname_out, "w");
-  else fp = bgzf_dopen(fileno(stdout), "w");
+  char wmode[8]; write_mode(wmode, sizeof(wmode), level);
+  if (fname_out) fp = bgzf_open2(fname_out, wmode);
+  else fp = bgzf_dopen(fileno(stdout), wmode);
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);
   }
+
+  /* Index from the writer, not from a second pass over the finished file:
+   * bgzf_tell() before a record gives the block address already flushed plus
+   * the offset inside the block being filled, which is exactly where a reader
+   * has to seek to find that record. */
+  index_t *idx2 = fname_out ? kh_init(index) : NULL;
+
   cdata_t c = {0};              // output data
   for (int i=0; i<snames.n; ++i) {
     int64_t index = getIndex(idx, snames.s[i]);
@@ -222,32 +353,20 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_out, 
       fflush(stderr);
       exit(1);
     }
+    bgzf_flush(fp);             /* start this record on a block boundary */
+    if (idx2) insert_index(idx2, snames.s[i], bgzf_tell(fp));
     cdata_write1(fp, &c);
   }
   bgzf_close(fp);
+  free(c.s);
 
   if (fname_out) {              // output index
-    cfile_t cf2 = open_cfile(fname_out);
-    index_t *idx2 = kh_init(index);
-    int64_t addr = bgzf_tell(cf2.fh);
-    for (int i=0; i< snames.n; ++i) {
-      if (!read_cdata2(&cf2, &c)) {
-        fprintf(stderr, "[Error] Data is shorter than the sample name list.\n");
-        fflush(stderr);
-        exit(1);
-      }
-      insert_index(idx2, snames.s[i], addr);
-      addr = bgzf_tell(cf2.fh);
-    }
-    free(c.s);
-
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
     writeIndex(out, idx2);
     fclose(out);
     free(fname_index2);
     free(fname_out);
-    bgzf_close(cf2.fh);
     freeIndex(idx2);
   }
 }
@@ -277,8 +396,19 @@ static int usage(void) {
   yame_usage_opt("-s", "Format-2 state filtering mode (output format 0; one record per term).");
   yame_usage_opt("-H <N>", "If no names are provided, take the first N samples from the input index.");
   yame_usage_opt("-T <N>", "If no names are provided, take the last  N samples from the input index.");
+  yame_usage_opt("-z <0-9>", "Re-encode the output at this zlib level, turning off the raw");
+  yame_usage_cont("copy below. Only useful when the copy cannot run, or when you");
+  yame_usage_cont("want a different compression than the input has: -z1 is much");
+  yame_usage_cont("faster than the default 6, -z0 stores. Any level reads back");
+  yame_usage_cont("identically.");
+  yame_usage_opt("-v", "Say which path ran (raw copy or re-encode).");
   yame_usage_opt("-h", "Show this help message.");
   yame_usage_sec("Notes:");
+  yame_usage_text("* A subset copies whole records unchanged, so when every requested record");
+  yame_usage_text("  starts on a BGZF block boundary its compressed bytes are moved verbatim");
+  yame_usage_text("  -- no decompression, no re-compression. Records written to their own");
+  yame_usage_text("  file and concatenated are aligned; records appended to a shared writer");
+  yame_usage_text("  are not, and those fall back to decode/encode. -v says which ran.");
   yame_usage_text("* -H/-T only apply when you did NOT provide an explicit name list.");
   yame_usage_text("* -T requires an index (same as default sample subsetting).");
   yame_usage_text("* In -s mode, the input is expected to be a single fmt2 record; the output");
@@ -294,13 +424,17 @@ int main_subset(int argc, char *argv[]) {
   int head = -1, tail = -1;
   char *fname_out = NULL;
   int filter_fmt2_states = 0;
-  while ((c0 = getopt(argc, argv, "o:l:sH:T:h"))>=0) {
+  int level = -1;               // -1 = zlib default (6), and lets raw copy run
+  int verbose = 0;
+  while ((c0 = getopt(argc, argv, "o:l:sH:T:z:vh"))>=0) {
     switch (c0) {
     case 'o': fname_out = strdup(optarg); break;
     case 'l': fname_snames = strdup(optarg); break;
     case 's': filter_fmt2_states = 1; break;
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
+    case 'z': level = atoi(optarg); break;
+    case 'v': verbose = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
     }
@@ -312,8 +446,9 @@ int main_subset(int argc, char *argv[]) {
   }
 
   // input
-  cfile_t cf = open_cfile(argv[optind]);
-  char *fname_index = get_fname_index(argv[optind]);
+  char *fname_in = argv[optind];
+  cfile_t cf = open_cfile(fname_in);
+  char *fname_index = get_fname_index(fname_in);
   index_t *idx = loadIndex(fname_index);
   free(fname_index);
   optind++;
@@ -329,10 +464,13 @@ int main_subset(int argc, char *argv[]) {
     snames = loadSampleNames(fname_snames, 1);
   }
 
+  if (level > 9) wzfatal("-z takes a zlib level 0-9, given %d.\n", level);
+
   if (filter_fmt2_states) {
-    subset_fmt2_states(cf, snames, fname_out);
+    subset_fmt2_states(cf, snames, fname_out, level);
   } else {
-    subset_samples(cf, idx, snames, fname_out, head, tail);
+    subset_samples(cf, idx, snames, fname_in, fname_out, head, tail, level,
+                   verbose);
   }
   
   // clean up

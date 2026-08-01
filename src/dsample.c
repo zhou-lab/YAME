@@ -401,6 +401,7 @@ int main_dsample(int argc, char *argv[]) {
         cdata_compress(&c_out);
       }
       fflush(stderr);
+      bgzf_flush(fp_out);       /* start this record on a block boundary */
       cdata_write1(fp_out, &c_out);
       free_cdata(&c_out);
     }
