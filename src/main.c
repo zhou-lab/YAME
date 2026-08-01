@@ -25,14 +25,6 @@
 #include "cfile.h"
 #include "yame_version.h"
 
-const int unit_base[40] = {
-  0,  1,  1,  4,  4,  8,  8,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  8,
-  8,  0,  0,  0,  0,  0,  0,  0
-};
-
 int main_pack(int argc, char *argv[]);
 int main_unpack(int argc, char *argv[]);
 int main_hprint(int argc, char *argv[]);

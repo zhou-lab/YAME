@@ -32,7 +32,6 @@
 #include <inttypes.h>
 #include "khash.h"
 #include "wzmisc.h"
-#include "wzmisc.h"
 #include "wzbed.h"
 #include "bgzf.h"
 
@@ -135,16 +134,21 @@ static inline void free_cdata(cdata_t *c) {
   c->s = NULL;
 }
 
-static inline size_t bit_count(cdata_t c) {
+/* Set bits per byte value. Built once at load rather than rebuilt on every
+ * bit_count() call, which used to cost 2048 iterations before counting a
+ * single bit. */
+static const uint8_t byte2cnt[256] = {
+  0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4, 1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5, 2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5, 2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6, 3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5, 2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6, 3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6, 3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+  3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7, 4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
+};
 
-  /* create a look-up table */
-  int byte2cnt[256]; int p;
-  for (p=0; p<256; ++p) {
-    unsigned char q = p; int ii, cnt = 0;
-    for (ii=0; ii<8; ++ii) { if (q&1) cnt++; q>>=1; }
-    byte2cnt[p] = cnt;
-  }
-  
+static inline size_t bit_count(cdata_t c) {
   size_t i,k,m = 0;
   for (i=0; i<(c.n>>3); ++i) m += byte2cnt[c.s[i]];   // full bytes
   for (k=0; k<(c.n&0x7); ++k) m += (c.s[i]>>k) & 0x1; // last byte

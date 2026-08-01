@@ -607,7 +607,8 @@ stats_t* summarize1_queryfmt2(
     for (uint64_t im=0; im<aux_m->nk; ++im) {
       for (uint64_t iq=0; iq<aux_q->nk; ++iq) {
         stats_t *st1 = &st[im * aux_q->nk + iq];
-        st1->n_o++;
+        /* n_o was counted per position in the loop above; incrementing it
+         * again here added one phantom overlap to every state pair. */
         st1->n_u = c->n;
         st1->n_q = nq[iq];
         st1->n_m = nm[im];
