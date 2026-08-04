@@ -22,6 +22,7 @@
 #include "yame_ui.h"
 #include <sys/types.h>
 #include <time.h>
+#include <pthread.h>
 #include "cfile.h"
 #include "snames.h"
 
@@ -133,6 +134,7 @@ typedef struct config_rowop_t {
   int cometh_window;
   int verbose;
   unsigned seed;
+  int threads;             // -t; 1 = the serial scan
 } config_rowop_t;
 
 static int usage(void) {
@@ -166,6 +168,17 @@ static int usage(void) {
   yame_usage_cont("Use -v to print unpacked lanes.");
   yame_usage_sec("Common filters:");
   yame_usage_opt("-c <mincov>", "Minimum coverage (M+U) for a sample/row to contribute (default: 1).");
+  yame_usage_sec("Threads:");
+  yame_usage_opt("-t <N>", "Split the records over N threads (default 1). Applies to");
+  yame_usage_cont("binasum, musum and stat, whose accumulators combine; the other");
+  yame_usage_cont("ops stay serial. An indexed file lets each thread seek to its");
+  yame_usage_cont("own run, so the decompression parallelises too; a stream or an");
+  yame_usage_cont("unindexed file is read once and dispatched to the threads, which");
+  yame_usage_cont("still parallelises everything after the inflate. Each thread");
+  yame_usage_cont("holds its own accumulator, so memory is N x (8 bytes/row) for");
+  yame_usage_cont("binasum/musum and N x (52 bytes/row) for stat -- at hg38 scale,");
+  yame_usage_cont("235 MB and 1.5 GB per thread. Output is byte-identical at every");
+  yame_usage_cont("N for all three ops.");
   yame_usage_text("binasum (fmt3 input) thresholds:");
   yame_usage_opt("-p <beta0>", "Call unmethylated if beta < beta0 (default: 0.4).");
   yame_usage_opt("-q <beta1>", "Call methylated   if beta > beta1 (default: 0.6).");
@@ -314,7 +327,56 @@ static cdata_t rowop_musum(cfile_t cf) {
   return cout;
 }
 
-static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, double *b0max, double *b1min, double *b0sum, double *b1sum, int *b0n, int *b1n, cdata_t *c, config_rowop_t *cfg) {
+/* The sufficient statistics stat() carries per row.
+ *
+ * The sums are fixed point, not floating point: a beta in [0,1] is carried as
+ * round(beta * 2^31), so accumulation is integer addition. That matters
+ * because integer addition is associative and floating-point addition is not
+ * -- with doubles, splitting the records across threads regroups the sums and
+ * can move the last decimal, and delta_mean feeds threshold filters (the MRMP
+ * >=0.6 cut) where that changes which probes are selected. In fixed point
+ * every thread count gives bit-identical output by construction.
+ *
+ * Widths: beta_fx <= 2^31 fits uint32; a sum of N of them fits int64 for N up
+ * to 2^32 samples. sum_sq keeps beta^2 * 2^31 by shifting the product back
+ * down, so it fits the same width. Per-term rounding is 2^-32 ~ 2e-10, seven
+ * orders below the three decimals printed.
+ *
+ * Every field combines -- sums add, the extremes take min/max -- which is what
+ * lets the record list be split at all. */
+#define STAT_FX_BITS 31
+#define STAT_FX_ONE  (1u << STAT_FX_BITS)          /* 1.0 in fixed point */
+#define STAT_FX_SCALE ((double) STAT_FX_ONE)
+
+typedef struct {
+  uint32_t *cnts;
+  int64_t *sum, *sum_sq, *b0sum, *b1sum;   /* fixed point, scale 2^31 */
+  uint32_t *b0max, *b1min;                 /* fixed point, scale 2^31 */
+  int *b0n, *b1n;
+} statacc_t;
+
+static void statacc_alloc(statacc_t *a, uint64_t n) {
+  a->cnts   = calloc(n, sizeof(uint32_t));
+  a->sum    = calloc(n, sizeof(int64_t));
+  a->sum_sq = calloc(n, sizeof(int64_t));
+  a->b0max  = calloc(n, sizeof(uint32_t));
+  a->b1min  = calloc(n, sizeof(uint32_t));
+  a->b0sum  = calloc(n, sizeof(int64_t));
+  a->b1sum  = calloc(n, sizeof(int64_t));
+  a->b0n    = calloc(n, sizeof(int));
+  a->b1n    = calloc(n, sizeof(int));
+  for (uint64_t i = 0; i < n; ++i) a->b1min[i] = STAT_FX_ONE;
+}
+
+static void statacc_free(statacc_t *a) {
+  free(a->cnts); free(a->sum); free(a->sum_sq); free(a->b0max);
+  free(a->b1min); free(a->b0sum); free(a->b1sum); free(a->b0n); free(a->b1n);
+}
+
+
+/* The <0.5 / >0.5 split still tests the double, so which side a beta lands on
+ * is decided exactly as before; only the accumulation moved to fixed point. */
+static void collect_stat_fmt3(statacc_t *a, cdata_t *c, config_rowop_t *cfg) {
   for (uint64_t i=0; i<c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
     if (!mu0) continue; // 0-0 is skipped
@@ -323,25 +385,33 @@ static void collect_stat_fmt3(uint32_t *cnts, double *sum, double *sum_sq, doubl
     uint64_t U = (mu0<<32>>32);
     if (M+U >= cfg->mincov) {
       double x = (double) M / (M+U);
-      sum[i] += x;
-      sum_sq[i] += x * x;
-      cnts[i]++;
+      uint32_t xf = (uint32_t) llround(x * STAT_FX_SCALE);
+      /* round the square back down rather than truncate: truncation biases
+       * sum_sq low, which drives the variance below zero on rows where every
+       * sample agrees and turns sd into NaN */
+      uint64_t sq = (uint64_t) xf * xf;
+      int64_t xf2 = (int64_t)((sq + (1ull << (STAT_FX_BITS-1))) >> STAT_FX_BITS);
+      a->sum[i] += xf;
+      a->sum_sq[i] += xf2;
+      a->cnts[i]++;
       if (x < 0.5) {
-        b0n[i]++;
-        b0sum[i] += x;
-        if (x > b0max[i])
-          b0max[i] = x;
+        a->b0n[i]++;
+        a->b0sum[i] += xf;
+        if (xf > a->b0max[i])
+          a->b0max[i] = xf;
       }
       if (x > 0.5) {
-        b1n[i]++;
-        b1sum[i] += x;
-        if (x < b1min[i])
-          b1min[i] = x;
+        a->b1n[i]++;
+        a->b1sum[i] += xf;
+        if (xf < a->b1min[i])
+          a->b1min[i] = xf;
       }
     }
   }
 }
 
+
+static void stat_emit(statacc_t *a, uint64_t n, char *fname_out);
 
 // the following standard deviation doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
@@ -350,18 +420,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return; // nothing in cfile, output nothing
   uint64_t n = cdata_n(&c);
-  uint32_t *cnts = calloc(n, sizeof(uint32_t));
-  double *sum = calloc(n, sizeof(double));
-  double *sum_sq = calloc(n, sizeof(double));
-  double *b0max = calloc(n, sizeof(double));
-  double *b1min = calloc(n, sizeof(double));
-  double *b0sum = calloc(n, sizeof(double));
-  double *b1sum = calloc(n, sizeof(double));
-  int *b0n = calloc(n, sizeof(int));
-  int *b1n = calloc(n, sizeof(int));
-
-  srand(cfg->seed);
-  for (uint64_t i = 0; i < n; ++i) b1min[i] = 1.0;
+  statacc_t a; statacc_alloc(&a, n);
 
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -369,7 +428,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
-    case '3': collect_stat_fmt3(cnts, sum, sum_sq, b0max, b1min, b0sum, b1sum, b0n, b1n, &c2, cfg); break;
+    case '3': collect_stat_fmt3(&a, &c2, cfg); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -378,6 +437,17 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
 
     free(c.s); free(c2.s);
   }
+
+  stat_emit(&a, n, fname_out);
+  statacc_free(&a);
+}
+
+static void stat_emit(statacc_t *a, uint64_t n, char *fname_out) {
+
+  uint32_t *cnts = a->cnts;
+  int64_t *sum = a->sum, *sum_sq = a->sum_sq, *b0sum = a->b0sum, *b1sum = a->b1sum;
+  uint32_t *b0max = a->b0max, *b1min = a->b1min;
+  int *b0n = a->b0n, *b1n = a->b1n;
 
   FILE *out;
   if (fname_out) {
@@ -393,16 +463,24 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
       continue;
     }
 
-    double mean = sum[i] / cnts[i];
-    double sd   = sqrt((sum_sq[i] / cnts[i]) - mean * mean);
+    /* fixed point back to a fraction only here, once per row, after all the
+     * combining is done -- so the arithmetic that had to be exact was */
+    double mean = (double) sum[i] / STAT_FX_SCALE / cnts[i];
+    /* a true variance of zero (one sample, or every sample equal) can come out
+     * a hair negative from the rounding; clamp rather than emit NaN */
+    double var  = ((double) sum_sq[i] / STAT_FX_SCALE / cnts[i]) - mean * mean;
+    double sd   = sqrt(var > 0 ? var : 0.0);
 
     /* delta_beta = b1min - b0max, but only meaningful if both sides exist */
-    double delta_beta = (b0n[i] > 0 && b1n[i] > 0) ? (b1min[i] - b0max[i]) : -1.0;
+    double delta_beta = (b0n[i] > 0 && b1n[i] > 0)
+      ? ((double) b1min[i] - (double) b0max[i]) / STAT_FX_SCALE : -1.0;
 
     /* delta_mean = mean(beta>0.5) - mean(beta<0.5); robust group separation,
        only defined when both sides exist */
     int both = (b0n[i] > 0 && b1n[i] > 0);
-    double delta_mean = both ? (b1sum[i] / b1n[i] - b0sum[i] / b0n[i]) : -1.0;
+    double delta_mean = both
+      ? ((double) b1sum[i] / b1n[i] - (double) b0sum[i] / b0n[i]) / STAT_FX_SCALE
+      : -1.0;
 
     /* min_n = min(#beta<0.5, #beta>0.5) */
     uint32_t min_n = (b1n[i] < b0n[i]) ? b1n[i] : b0n[i];
@@ -415,16 +493,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     if (both) fprintf(out, "%1.3f\n", delta_mean);
     else      fputs("NA\n", out);
   }
-  free(cnts);
-  free(sum_sq);
-  free(sum);
-  free(b0max);
-  free(b1min);
-  free(b0sum);
-  free(b1sum);
-  free(b0n);
-  free(b1n);
-  if (fname_out) fclose(out);
+  if (fname_out) fclose(out);   /* the accumulator belongs to the caller */
 }
 
 static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
@@ -567,6 +636,378 @@ void rowop_cometh(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   if (fname_out) fclose(out);
 }
 
+/* ---- parallel reduction over records ------------------------------------
+ *
+ * Every reducing op walks the records one at a time into an accumulator that
+ * is indexed by genomic row, so the accumulator's size is O(rows) and never
+ * O(samples x rows), and combining two of them is just the op's merge. That
+ * makes the record list splittable: give each thread a contiguous run of
+ * records and its own accumulator, then merge in chunk order.
+ *
+ * Threads need to seek to their first record, so this wants the .cg index.
+ * Without one -- or reading a stream -- there is nothing to partition and the
+ * serial scan runs instead, with a word on stderr rather than silently.
+ *
+ * Exactness: binasum and musum accumulate integer counts, so any thread count
+ * gives byte-identical output. stat sums doubles, and floating-point addition
+ * is not associative, so a different -t can move the last bits (well below the
+ * 3 decimals printed). Merging in chunk order at least makes a given -t
+ * reproducible.
+ */
+
+typedef enum { ROWOP_BINASUM, ROWOP_MUSUM, ROWOP_STAT } rowop_kind_t;
+
+/* Wall-clock seconds, for the -v phase breakdown. Threading only helps the
+ * reduce phase, so knowing how much time is spent outside it is what tells
+ * you whether more threads will buy anything. */
+static double rowop_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double) ts.tv_sec + (double) ts.tv_nsec * 1e-9;
+}
+
+typedef struct {
+  char *fname;
+  int64_t *off;                 /* record virtual offsets, file order */
+  int beg, end;                 /* this worker's records, [beg,end) */
+  rowop_kind_t kind;
+  config_rowop_t *cfg;
+  uint64_t n;                   /* rows */
+  char fmt;                     /* format of record 0 */
+  cdata_t acc;                  /* binasum/musum */
+  statacc_t st;                 /* stat */
+  struct recq_t *q;             /* non-NULL: take records from the queue
+                                 * instead of seeking (stream input) */
+  int err;                      /* non-zero on failure */
+  char errmsg[256];
+} rowop_worker_t;
+
+/**
+ * A bounded queue of *compressed* records, for input that cannot be seeked.
+ *
+ * With an index each thread seeks to its own run, so the BGZF inflate happens
+ * in parallel. A pipe has no index and no way to find record boundaries
+ * without inflating, so one reader has to walk the stream and hand records
+ * out. Only the inflate is serialised that way; decompressing the CX payload
+ * and accumulating still spread across the workers.
+ *
+ * The queue holds records still compressed. A decompressed fmt3 record is 8
+ * bytes a row -- 235 MB at hg38 scale -- so queueing those would cost more
+ * memory than the whole reduction.
+ */
+typedef struct recq_t {
+  cdata_t *slot;
+  int cap, head, tail, count, done;
+  pthread_mutex_t mu;
+  pthread_cond_t not_empty, not_full;
+} recq_t;
+
+static void recq_init(recq_t *q, int cap) {
+  q->slot = calloc(cap, sizeof(cdata_t));
+  q->cap = cap; q->head = q->tail = q->count = q->done = 0;
+  pthread_mutex_init(&q->mu, NULL);
+  pthread_cond_init(&q->not_empty, NULL);
+  pthread_cond_init(&q->not_full, NULL);
+}
+
+static void recq_free(recq_t *q) {
+  free(q->slot);
+  pthread_mutex_destroy(&q->mu);
+  pthread_cond_destroy(&q->not_empty);
+  pthread_cond_destroy(&q->not_full);
+}
+
+static void recq_push(recq_t *q, cdata_t c) {
+  pthread_mutex_lock(&q->mu);
+  while (q->count == q->cap) pthread_cond_wait(&q->not_full, &q->mu);
+  q->slot[q->tail] = c;
+  q->tail = (q->tail + 1) % q->cap;
+  q->count++;
+  pthread_cond_signal(&q->not_empty);
+  pthread_mutex_unlock(&q->mu);
+}
+
+/* 1 with a record in *out, 0 when the stream is finished and drained */
+static int recq_pop(recq_t *q, cdata_t *out) {
+  pthread_mutex_lock(&q->mu);
+  while (q->count == 0 && !q->done) pthread_cond_wait(&q->not_empty, &q->mu);
+  if (q->count == 0) { pthread_mutex_unlock(&q->mu); return 0; }
+  *out = q->slot[q->head];
+  q->head = (q->head + 1) % q->cap;
+  q->count--;
+  pthread_cond_signal(&q->not_full);
+  pthread_mutex_unlock(&q->mu);
+  return 1;
+}
+
+static void recq_close(recq_t *q) {
+  pthread_mutex_lock(&q->mu);
+  q->done = 1;
+  pthread_cond_broadcast(&q->not_empty);
+  pthread_mutex_unlock(&q->mu);
+}
+
+
+/* Merging serially costs (nt-1) passes over every row, so the tail grew with
+ * the thread count -- measured 0.57 s at -t 2 and 3.96 s at -t 8, which is
+ * the wrong direction. Rows are independent, so instead each thread folds all
+ * the accumulators down for one slice of the rows. Same arithmetic, same
+ * order (accumulator 0 upward), so the result is unchanged. */
+typedef struct {
+  rowop_worker_t *w;
+  int nt;
+  rowop_kind_t kind;
+  uint64_t beg, end;            /* rows */
+} rowop_merger_t;
+
+static void *rowop_merge_rows(void *arg) {
+  rowop_merger_t *m = (rowop_merger_t*) arg;
+  for (int t = 1; t < m->nt; ++t) {
+    if (m->kind == ROWOP_STAT) {
+      statacc_t *d = &m->w[0].st, *s = &m->w[t].st;
+      for (uint64_t i = m->beg; i < m->end; ++i) {
+        d->cnts[i]   += s->cnts[i];
+        d->sum[i]    += s->sum[i];
+        d->sum_sq[i] += s->sum_sq[i];
+        d->b0sum[i]  += s->b0sum[i];
+        d->b1sum[i]  += s->b1sum[i];
+        d->b0n[i]    += s->b0n[i];
+        d->b1n[i]    += s->b1n[i];
+        if (s->b0max[i] > d->b0max[i]) d->b0max[i] = s->b0max[i];
+        if (s->b1min[i] < d->b1min[i]) d->b1min[i] = s->b1min[i];
+      }
+    } else {
+      cdata_t *d = &m->w[0].acc, *s = &m->w[t].acc;
+      for (uint64_t i = m->beg; i < m->end; ++i) {
+        uint64_t a = f3_get_mu(d, i), b = f3_get_mu(s, i);
+        f3_set_mu(d, i, (a>>32) + (b>>32), (a<<32>>32) + (b<<32>>32));
+      }
+    }
+  }
+  return NULL;
+}
+
+/* Fold one already-read record into this worker's accumulator. */
+static void rowop_absorb(rowop_worker_t *w, cdata_t c) {
+    if (c.fmt != w->fmt) {
+      w->err = 1;
+      snprintf(w->errmsg, sizeof(w->errmsg),
+               "formats are inconsistent: %c vs %c", w->fmt, c.fmt);
+      return;
+    }
+    cdata_t c2 = decompress(c);
+    if (c2.n != w->n) {
+      w->err = 1;
+      snprintf(w->errmsg, sizeof(w->errmsg),
+               "dimensions are inconsistent: %"PRIu64" vs %"PRIu64, w->n, c2.n);
+      free(c2.s);
+      return;
+    }
+    switch (w->kind) {
+    case ROWOP_BINASUM:
+      switch (w->fmt) {
+      case '0': binasumFmt0(&w->acc, &c2); break;
+      case '1': binasumFmt1(&w->acc, &c2); break;
+      case '3': binasumFmt3(&w->acc, &c2, w->cfg); break;
+      default:
+        w->err = 1;
+        snprintf(w->errmsg, sizeof(w->errmsg), "format %c unsupported", w->fmt);
+      }
+      break;
+    case ROWOP_MUSUM:
+      if (w->fmt == '3') musumFmt3(&w->acc, &c2);
+      else {
+        w->err = 1;
+        snprintf(w->errmsg, sizeof(w->errmsg), "format %c unsupported", w->fmt);
+      }
+      break;
+    case ROWOP_STAT:
+      if (w->fmt == '3')
+        collect_stat_fmt3(&w->st, &c2, w->cfg);
+      else {
+        w->err = 1;
+        snprintf(w->errmsg, sizeof(w->errmsg), "format %c unsupported", w->fmt);
+      }
+      break;
+    }
+    free(c2.s);
+}
+
+static void *rowop_worker(void *arg) {
+  rowop_worker_t *w = (rowop_worker_t*) arg;
+
+  if (w->q) {                   /* stream: take whatever the reader hands out */
+    cdata_t c;
+    while (!w->err && recq_pop(w->q, &c)) {
+      rowop_absorb(w, c);
+      free(c.s);
+    }
+    return NULL;
+  }
+
+  cfile_t cf = open_cfile(w->fname);
+  cdata_t c = {0};
+  for (int k = w->beg; k < w->end; ++k) {
+    if (k == w->beg) {          /* one seek, then the run reads sequentially */
+      if (bgzf_seek(cf.fh, w->off[k], SEEK_SET) < 0) {
+        w->err = 1;
+        snprintf(w->errmsg, sizeof(w->errmsg), "cannot seek record %d", k);
+        break;
+      }
+    }
+    if (!read_cdata2(&cf, &c)) {
+      w->err = 1;
+      snprintf(w->errmsg, sizeof(w->errmsg), "short read at record %d", k);
+      break;
+    }
+    rowop_absorb(w, c);
+    if (w->err) break;
+  }
+  free(c.s);
+  bgzf_close(cf.fh);
+  return NULL;
+}
+
+/* Record offsets in file order, or NULL when the input cannot be partitioned
+ * (no index). Caller frees. */
+static int64_t *rowop_record_offsets(char *fname, int *n_rec) {
+  *n_rec = 0;
+  if (strcmp(fname, "-") == 0) return NULL;
+  char *fname_index = get_fname_index(fname);
+  index_t *idx = loadIndex(fname_index);
+  free(fname_index);
+  if (!idx) return NULL;
+  int npairs = 0;
+  index_pair_t *pairs = index_pairs(idx, &npairs);
+  if (npairs <= 0) { clean_index_pairs(pairs, npairs); cleanIndex(idx); return NULL; }
+  int64_t *off = malloc(npairs * sizeof(int64_t));
+  for (int i = 0; i < npairs; ++i) off[i] = pairs[i].value;
+  clean_index_pairs(pairs, npairs);
+  cleanIndex(idx);
+  /* index_pairs() gives hash order; the file order is by offset */
+  for (int i = 1; i < npairs; ++i) {   /* insertion sort: n is sample count */
+    int64_t v = off[i]; int j = i - 1;
+    while (j >= 0 && off[j] > v) { off[j+1] = off[j]; --j; }
+    off[j+1] = v;
+  }
+  *n_rec = npairs;
+  return off;
+}
+
+/**
+ * Run a reducing op across `threads` workers. Returns 1 when it ran, 0 when
+ * the input could not be partitioned and the caller should fall back.
+ * On success the reduced result is left in *out (binasum/musum) or *stout
+ * (stat), which the caller emits exactly as the serial path does.
+ */
+static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
+                          cdata_t *out, statacc_t *stout, uint64_t *n_out) {
+
+  int n_rec = 0;
+  int64_t *off = rowop_record_offsets(fname, &n_rec);
+  /* No index: fall back to reading the stream once and handing records out. */
+  int streaming = (off == NULL);
+  if (!streaming && n_rec < 2) { free(off); return 0; }  /* nothing to split */
+
+  /* rows and format come from the first record, as in the serial path. For a
+   * stream that record cannot be re-read, so it is kept and queued first. */
+  cfile_t cf0 = open_cfile(fname);
+  cdata_t c0 = read_cdata1(&cf0);
+  if (c0.n == 0) { free(c0.s); bgzf_close(cf0.fh); free(off); return 0; }
+  char fmt = c0.fmt;
+  uint64_t n = cdata_n(&c0);
+  if (!streaming) { free(c0.s); bgzf_close(cf0.fh); }
+
+  int nt = cfg->threads;
+  if (!streaming && nt > n_rec) nt = n_rec;
+
+  recq_t q;
+  if (streaming) recq_init(&q, nt + 2);
+
+  rowop_worker_t *w = calloc(nt, sizeof(rowop_worker_t));
+  pthread_t *tid = calloc(nt, sizeof(pthread_t));
+  int per = streaming ? 0 : (n_rec + nt - 1) / nt;
+  for (int t = 0; t < nt; ++t) {
+    w[t].fname = fname; w[t].off = off; w[t].kind = kind; w[t].cfg = cfg;
+    w[t].n = n; w[t].fmt = fmt;
+    w[t].q = streaming ? &q : NULL;
+    if (!streaming) {
+      w[t].beg = t * per;
+      w[t].end = (t+1) * per < n_rec ? (t+1) * per : n_rec;
+      if (w[t].beg > n_rec) w[t].beg = n_rec;
+    }
+    if (kind == ROWOP_STAT) statacc_alloc(&w[t].st, n);
+    else {
+      w[t].acc.n = n; w[t].acc.compressed = 0;
+      w[t].acc.fmt = '3'; w[t].acc.unit = 8;
+      w[t].acc.s = calloc(n, sizeof(uint64_t));
+    }
+  }
+  if (cfg->verbose) {
+    if (streaming)
+      fprintf(stderr, "[rowop] no index: one reader feeding %d threads.\n", nt);
+    else
+      fprintf(stderr, "[rowop] %d records over %d threads (%d each).\n",
+              n_rec, nt, per);
+  }
+
+  double t_reduce = rowop_now();
+  for (int t = 0; t < nt; ++t) pthread_create(&tid[t], NULL, rowop_worker, &w[t]);
+  if (streaming) {
+    /* this thread is the reader: inflate records and hand them out */
+    recq_push(&q, c0);          /* record 0, already in hand */
+    for (;;) {
+      cdata_t c = {0};
+      if (!read_cdata2(&cf0, &c)) { free(c.s); break; }
+      recq_push(&q, c);
+    }
+    recq_close(&q);
+  }
+  for (int t = 0; t < nt; ++t) pthread_join(tid[t], NULL);
+  if (streaming) { recq_free(&q); bgzf_close(cf0.fh); }
+  t_reduce = rowop_now() - t_reduce;
+
+  for (int t = 0; t < nt; ++t) {
+    if (w[t].err) {
+      fprintf(stderr, "[%s:%d] %s\n", __func__, __LINE__, w[t].errmsg);
+      fflush(stderr);
+      exit(1);
+    }
+  }
+
+  /* merge into worker 0, split by rows so the tail does not grow with -t */
+  double t_merge = rowop_now();
+  if (nt > 1) {
+    rowop_merger_t *m = calloc(nt, sizeof(rowop_merger_t));
+    uint64_t rows_per = (n + nt - 1) / nt;
+    for (int t = 0; t < nt; ++t) {
+      m[t].w = w; m[t].nt = nt; m[t].kind = kind;
+      m[t].beg = (uint64_t) t * rows_per;
+      m[t].end = m[t].beg + rows_per < n ? m[t].beg + rows_per : n;
+      if (m[t].beg > n) m[t].beg = n;
+      pthread_create(&tid[t], NULL, rowop_merge_rows, &m[t]);
+    }
+    for (int t = 0; t < nt; ++t) pthread_join(tid[t], NULL);
+    free(m);
+    for (int t = 1; t < nt; ++t) {
+      if (kind == ROWOP_STAT) statacc_free(&w[t].st);
+      else free(w[t].acc.s);
+    }
+  }
+  t_merge = rowop_now() - t_merge;
+
+  if (kind == ROWOP_STAT) *stout = w[0].st;
+  else *out = w[0].acc;
+  *n_out = n;
+
+  if (cfg->verbose)
+    fprintf(stderr, "[rowop] reduce %.2f s (%d threads), merge %.2f s.\n",
+            t_reduce, nt, t_merge);
+
+  free(w); free(tid); free(off);
+  return 1;
+}
+
 int main_rowop(int argc, char *argv[]) {
 
   int c;
@@ -579,12 +1020,14 @@ int main_rowop(int argc, char *argv[]) {
     .min_major_fold = 10.0,
     .cometh_window = 5,
     .seed = (unsigned) time(NULL),
-    .verbose = 0};
-    
+    .verbose = 0,
+    .threads = 1};
+
   char *op = NULL;
-  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:t:h"))>=0) {
     switch (c) {
     case 'o': op = strdup(optarg); break;
+    case 't': config.threads = atoi(optarg); break;
     case 'p': config.beta0 = atof(optarg); break;
     case 'q': config.beta1 = atof(optarg); break;
     case 'c': config.mincov = atoi(optarg); break;
@@ -608,6 +1051,39 @@ int main_rowop(int argc, char *argv[]) {
   char *fname_out = NULL;
   if (argc >= optind + 2)
     fname_out = strdup(argv[optind+1]);
+
+  if (config.threads < 1) wzfatal("-t takes a thread count >= 1, given %d.\n",
+                                  config.threads);
+
+  /* The reducing ops can split the record list; the rest are serial. */
+  if (config.threads > 1) {
+    rowop_kind_t kind; int reducing = 1;
+    if (!op || strcmp(op, "binasum") == 0) kind = ROWOP_BINASUM;
+    else if (strcmp(op, "musum") == 0)     kind = ROWOP_MUSUM;
+    else if (strcmp(op, "stat") == 0)      kind = ROWOP_STAT;
+    else { reducing = 0; kind = ROWOP_BINASUM; }
+
+    if (!reducing) {
+      fprintf(stderr, "[rowop] -t applies to binasum, musum and stat; %s runs "
+              "single-threaded.\n", op);
+    } else {
+      cdata_t cout = {0}; statacc_t st = {0}; uint64_t n = 0;
+      if (rowop_parallel(fname, kind, &config, &cout, &st, &n)) {
+        double t_out = rowop_now();
+        if (kind == ROWOP_STAT) { stat_emit(&st, n, fname_out); statacc_free(&st); }
+        else { cdata_write(fname_out, &cout, "wb", config.verbose); free(cout.s); }
+        /* The write is single-threaded whatever -t says: for a CX result it is
+         * a BGZF deflate of the whole accumulator. When this is a large share
+         * of the run, more threads cannot help. */
+        if (config.verbose)
+          fprintf(stderr, "[rowop] write %.2f s (single-threaded).\n",
+                  rowop_now() - t_out);
+        if (fname_out) free(fname_out);
+        free(op);
+        return 0;
+      }
+    }
+  }
 
   cfile_t cf = open_cfile(fname);
   cdata_t cout = {0};
