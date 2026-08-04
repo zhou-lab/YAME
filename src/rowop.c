@@ -135,6 +135,7 @@ typedef struct config_rowop_t {
   int verbose;
   unsigned seed;
   int threads;             // -t; 1 = the serial scan
+  int decimals;            // -d; digits printed for stat's fractions
 } config_rowop_t;
 
 static int usage(void) {
@@ -168,6 +169,12 @@ static int usage(void) {
   yame_usage_cont("Use -v to print unpacked lanes.");
   yame_usage_sec("Common filters:");
   yame_usage_opt("-c <mincov>", "Minimum coverage (M+U) for a sample/row to contribute (default: 1).");
+  yame_usage_opt("-d <0-9>", "Decimals printed for stat's fractions (default 6). The old");
+  yame_usage_cont("default of 3 put many values on a rounding boundary: a beta is a");
+  yame_usage_cont("ratio of small integers, so a mean like 9/400 = 0.0225 sits exactly");
+  yame_usage_cont("between 0.022 and 0.023 and any change to the arithmetic flips it.");
+  yame_usage_cont("It also matters downstream, since a threshold applied to a printed");
+  yame_usage_cont("value inherits half the last digit as slop.");
   yame_usage_sec("Threads:");
   yame_usage_opt("-t <N>", "Split the records over N threads (default 1). Applies to");
   yame_usage_cont("binasum, musum and stat, whose accumulators combine; the other");
@@ -411,7 +418,7 @@ static void collect_stat_fmt3(statacc_t *a, cdata_t *c, config_rowop_t *cfg) {
 }
 
 
-static void stat_emit(statacc_t *a, uint64_t n, char *fname_out);
+static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec);
 
 // the following standard deviation doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
@@ -438,11 +445,11 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     free(c.s); free(c2.s);
   }
 
-  stat_emit(&a, n, fname_out);
+  stat_emit(&a, n, fname_out, cfg->decimals);
   statacc_free(&a);
 }
 
-static void stat_emit(statacc_t *a, uint64_t n, char *fname_out) {
+static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec) {
 
   uint32_t *cnts = a->cnts;
   int64_t *sum = a->sum, *sum_sq = a->sum_sq, *b0sum = a->b0sum, *b1sum = a->b1sum;
@@ -486,11 +493,13 @@ static void stat_emit(statacc_t *a, uint64_t n, char *fname_out) {
     uint32_t min_n = (b1n[i] < b0n[i]) ? b1n[i] : b0n[i];
 
     if (delta_beta < 0) {
-      fprintf(out, "%u\t%1.3f\t%1.3f\tNA\t%u\t", cnts[i], mean, sd, min_n);
+      fprintf(out, "%u\t%1.*f\t%1.*f\tNA\t%u\t",
+              cnts[i], dec, mean, dec, sd, min_n);
     } else {
-      fprintf(out, "%u\t%1.3f\t%1.3f\t%1.3f\t%u\t", cnts[i], mean, sd, delta_beta, min_n);
+      fprintf(out, "%u\t%1.*f\t%1.*f\t%1.*f\t%u\t",
+              cnts[i], dec, mean, dec, sd, dec, delta_beta, min_n);
     }
-    if (both) fprintf(out, "%1.3f\n", delta_mean);
+    if (both) fprintf(out, "%1.*f\n", dec, delta_mean);
     else      fputs("NA\n", out);
   }
   if (fname_out) fclose(out);   /* the accumulator belongs to the caller */
@@ -669,7 +678,6 @@ static double rowop_now(void) {
 typedef struct {
   char *fname;
   int64_t *off;                 /* record virtual offsets, file order */
-  int beg, end;                 /* this worker's records, [beg,end) */
   rowop_kind_t kind;
   config_rowop_t *cfg;
   uint64_t n;                   /* rows */
@@ -678,9 +686,40 @@ typedef struct {
   statacc_t st;                 /* stat */
   struct recq_t *q;             /* non-NULL: take records from the queue
                                  * instead of seeking (stream input) */
+  struct rowdisp_t *d;          /* shared cursor over the record list */
+  double secs;                  /* -v: this worker's own reduce time */
+  uint64_t nrec, bytes;         /* -v: records and compressed bytes handled */
   int err;                      /* non-zero on failure */
   char errmsg[256];
 } rowop_worker_t;
+
+/**
+ * Which record a thread does next, decided when it asks rather than up front.
+ *
+ * Splitting the list into equal *counts* is not an equal split of *work*:
+ * records differ in coverage, so they differ in compressed size, and time
+ * tracks size closely. Measured over 200 single cells on 8 threads, an equal
+ * count of 25 records each gave 279.6 to 389.8 MB per thread and 11.48 to
+ * 14.29 s, leaving 13% of the reduce phase idle behind the straggler.
+ *
+ * Weighting the split by bytes would still be predicting. Handing out one
+ * record at a time measures instead: a thread that draws a heavy record only
+ * delays itself, and the worst imbalance falls to a single record rather than
+ * a whole share. It is also what the stream path does already, which is why
+ * that path balanced itself.
+ */
+typedef struct rowdisp_t {
+  int next, n;
+  pthread_mutex_t mu;
+} rowdisp_t;
+
+/* -1 when the list is exhausted */
+static int rowdisp_take(rowdisp_t *d) {
+  pthread_mutex_lock(&d->mu);
+  int k = (d->next < d->n) ? d->next++ : -1;
+  pthread_mutex_unlock(&d->mu);
+  return k;
+}
 
 /**
  * A bounded queue of *compressed* records, for input that cannot be seeked.
@@ -835,36 +874,41 @@ static void rowop_absorb(rowop_worker_t *w, cdata_t c) {
 
 static void *rowop_worker(void *arg) {
   rowop_worker_t *w = (rowop_worker_t*) arg;
+  double t0 = rowop_now();
 
   if (w->q) {                   /* stream: take whatever the reader hands out */
     cdata_t c;
     while (!w->err && recq_pop(w->q, &c)) {
+      w->nrec++; w->bytes += cdata_nbytes(&c);
       rowop_absorb(w, c);
       free(c.s);
     }
+    w->secs = rowop_now() - t0;
     return NULL;
   }
 
   cfile_t cf = open_cfile(w->fname);
   cdata_t c = {0};
-  for (int k = w->beg; k < w->end; ++k) {
-    if (k == w->beg) {          /* one seek, then the run reads sequentially */
-      if (bgzf_seek(cf.fh, w->off[k], SEEK_SET) < 0) {
-        w->err = 1;
-        snprintf(w->errmsg, sizeof(w->errmsg), "cannot seek record %d", k);
-        break;
-      }
+  for (;;) {                    /* take the next record whenever free */
+    int k = rowdisp_take(w->d);
+    if (k < 0) break;
+    if (bgzf_seek(cf.fh, w->off[k], SEEK_SET) < 0) {
+      w->err = 1;
+      snprintf(w->errmsg, sizeof(w->errmsg), "cannot seek record %d", k);
+      break;
     }
     if (!read_cdata2(&cf, &c)) {
       w->err = 1;
       snprintf(w->errmsg, sizeof(w->errmsg), "short read at record %d", k);
       break;
     }
+    w->nrec++; w->bytes += cdata_nbytes(&c);
     rowop_absorb(w, c);
     if (w->err) break;
   }
   free(c.s);
   bgzf_close(cf.fh);
+  w->secs = rowop_now() - t0;
   return NULL;
 }
 
@@ -923,19 +967,16 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
 
   recq_t q;
   if (streaming) recq_init(&q, nt + 2);
+  rowdisp_t disp = { .next = 0, .n = n_rec };
+  pthread_mutex_init(&disp.mu, NULL);
 
   rowop_worker_t *w = calloc(nt, sizeof(rowop_worker_t));
   pthread_t *tid = calloc(nt, sizeof(pthread_t));
-  int per = streaming ? 0 : (n_rec + nt - 1) / nt;
   for (int t = 0; t < nt; ++t) {
     w[t].fname = fname; w[t].off = off; w[t].kind = kind; w[t].cfg = cfg;
     w[t].n = n; w[t].fmt = fmt;
     w[t].q = streaming ? &q : NULL;
-    if (!streaming) {
-      w[t].beg = t * per;
-      w[t].end = (t+1) * per < n_rec ? (t+1) * per : n_rec;
-      if (w[t].beg > n_rec) w[t].beg = n_rec;
-    }
+    w[t].d = streaming ? NULL : &disp;
     if (kind == ROWOP_STAT) statacc_alloc(&w[t].st, n);
     else {
       w[t].acc.n = n; w[t].acc.compressed = 0;
@@ -947,8 +988,8 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
     if (streaming)
       fprintf(stderr, "[rowop] no index: one reader feeding %d threads.\n", nt);
     else
-      fprintf(stderr, "[rowop] %d records over %d threads (%d each).\n",
-              n_rec, nt, per);
+      fprintf(stderr, "[rowop] %d records over %d threads, taken one at a "
+              "time.\n", n_rec, nt);
   }
 
   double t_reduce = rowop_now();
@@ -1000,10 +1041,26 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
   else *out = w[0].acc;
   *n_out = n;
 
-  if (cfg->verbose)
+  if (cfg->verbose) {
     fprintf(stderr, "[rowop] reduce %.2f s (%d threads), merge %.2f s.\n",
             t_reduce, nt, t_merge);
+    /* Per-worker time against per-worker input. If the slowest thread is much
+     * slower than the fastest, the split is uneven and the reduce phase ends
+     * when the straggler does; if they all agree, the shortfall is elsewhere. */
+    double lo = 1e30, hi = 0, tot = 0;
+    for (int t = 0; t < nt; ++t) {
+      if (w[t].secs < lo) lo = w[t].secs;
+      if (w[t].secs > hi) hi = w[t].secs;
+      tot += w[t].secs;
+      fprintf(stderr, "[rowop]   thread %d: %6.2f s  %4"PRIu64" records  "
+              "%6.1f MB\n", t, w[t].secs, w[t].nrec, w[t].bytes/1e6);
+    }
+    fprintf(stderr, "[rowop]   spread: fastest %.2f s, slowest %.2f s "
+            "(%.0f%% idle waiting on the straggler)\n",
+            lo, hi, nt > 0 ? 100.0 * (1.0 - tot / (hi * nt)) : 0.0);
+  }
 
+  pthread_mutex_destroy(&disp.mu);
   free(w); free(tid); free(off);
   return 1;
 }
@@ -1021,13 +1078,22 @@ int main_rowop(int argc, char *argv[]) {
     .cometh_window = 5,
     .seed = (unsigned) time(NULL),
     .verbose = 0,
-    .threads = 1};
+    .threads = 1,
+    .decimals = 6};
 
   char *op = NULL;
-  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:t:h"))>=0) {
+  while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:t:d:h"))>=0) {
     switch (c) {
     case 'o': op = strdup(optarg); break;
     case 't': config.threads = atoi(optarg); break;
+    case 'd': {
+      char *endp = NULL;
+      long v = strtol(optarg, &endp, 10);
+      if (endp == optarg || *endp || v < 0 || v > 9)
+        wzfatal("-d takes 0-9 decimals, given \"%s\".\n", optarg);
+      config.decimals = (int) v;
+      break;
+    }
     case 'p': config.beta0 = atof(optarg); break;
     case 'q': config.beta1 = atof(optarg); break;
     case 'c': config.mincov = atoi(optarg); break;
@@ -1070,7 +1136,7 @@ int main_rowop(int argc, char *argv[]) {
       cdata_t cout = {0}; statacc_t st = {0}; uint64_t n = 0;
       if (rowop_parallel(fname, kind, &config, &cout, &st, &n)) {
         double t_out = rowop_now();
-        if (kind == ROWOP_STAT) { stat_emit(&st, n, fname_out); statacc_free(&st); }
+        if (kind == ROWOP_STAT) { stat_emit(&st, n, fname_out, config.decimals); statacc_free(&st); }
         else { cdata_write(fname_out, &cout, "wb", config.verbose); free(cout.s); }
         /* The write is single-threaded whatever -t says: for a CX result it is
          * a BGZF deflate of the whole accumulator. When this is a large share
