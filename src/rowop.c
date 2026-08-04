@@ -505,6 +505,79 @@ static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec) {
   if (fname_out) fclose(out);   /* the accumulator belongs to the caller */
 }
 
+/**
+ * Write one sample's column of the bit planes from its decompressed record.
+ *
+ * The planes are laid out per group of 8 samples -- sample k lives in plane
+ * k>>3 at bit k&7, and each plane is n bytes, one per row.
+ */
+static void binstring_fill(uint8_t *bs, uint8_t *amb, uint64_t k,
+                           uint64_t n, cdata_t *c2, config_rowop_t *cfg) {
+  for (uint64_t i = 0; i < c2->n; ++i) {
+    uint64_t mu = f3_get_mu(c2, i);
+    if (!mu || MU2cov(mu) < cfg->mincov) {            // no / low depth
+      amb[(k>>3)*n+i] |= (1<<(k&0x7));
+    } else {
+      double beta = MU2beta(mu);
+      if (beta > cfg->beta_threshold) {               // confident methylated
+        bs[(k>>3)*n+i] |= (1<<(k&0x7));
+      } else if (beta == cfg->beta_threshold) {       // M==U tie
+        amb[(k>>3)*n+i] |= (1<<(k&0x7));
+      }                                               // else confident 0
+    }
+  }
+}
+
+/**
+ * Emit one line per row: the per-row majority, then a character per sample.
+ *
+ * Split out from the fill because the two phases cost very differently -- the
+ * fill is about 30% of a binstring run and this is the rest. That is why
+ * threading the fill alone is pointless (measured 0.99 s serial against
+ * 1.01 s on 8 threads), and why anyone returning to speed binstring up should
+ * start here. Both costs scale as rows x samples, so the ratio does not
+ * improve with a bigger input.
+ */
+static void binstring_emit(uint8_t *bs, uint8_t *amb, uint64_t ncells,
+                           uint64_t n, config_rowop_t *cfg, char *fname_out) {
+  FILE *out;
+  if (fname_out) { out = fopen(fname_out, "w"); }
+  else { out = stdout; }
+
+  for (uint64_t i=0; i<n; ++i) {
+    // Per-CpG majority over confidently-called cells; ambiguous cells filled with it.
+    uint64_t n1 = 0, namb = 0;
+    for (uint64_t kk=0; kk<ncells; ++kk) {
+      int is_amb = (amb[(kk>>3)*n+i] >> (kk&0x7)) & 0x1;
+      if (is_amb) { namb++; }
+      else if ((bs[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) { n1++; }
+    }
+    uint64_t n0 = ncells - n1 - namb;
+    char fill = (n1 > n0) ? '1' : '0';  // exact tie -> 0
+
+    // Only trust the majority fill when it is "sweeping" (larger side >= fold x smaller;
+    // unanimous counts as sweeping). Filling from a near-even split fabricates calls.
+    uint64_t hi = (n1 > n0) ? n1 : n0;
+    uint64_t lo = (n1 > n0) ? n0 : n1;
+    int sweeping = (hi > 0) && (lo == 0 || (double)hi >= cfg->min_major_fold * (double)lo);
+
+    if ((ncells && (double)namb > cfg->max_ambig_frac * (double)ncells) ||
+        (namb > 0 && !sweeping)) {
+      for (uint64_t kk=0; kk<ncells; ++kk) fputc('2', out);  // filtered sentinel
+    } else {
+      for (uint64_t kk=0; kk<ncells; ++kk) {
+        if ((amb[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) {
+          fputc(fill, out);
+        } else {
+          fputc('0'+((bs[(kk>>3)*n+i] >> (kk&0x7))&0x1), out);
+        }
+      }
+    }
+    fputc('\n', out);
+  }
+  if (fname_out) fclose(out);
+}
+
 static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return;    // nothing in cfile
@@ -527,22 +600,9 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     }
 
     switch (c.fmt) {
-    case '3': {
-      for (uint64_t i=0; i<c2.n; ++i) {
-        uint64_t mu = f3_get_mu(&c2, i);
-        if (!mu || MU2cov(mu) < cfg->mincov) {          // no / low depth
-          ambig[(k>>3)*n+i] |= (1<<(k&0x7));
-        } else {
-          double beta = MU2beta(mu);
-          if (beta > cfg->beta_threshold) {             // confident methylated
-            binstring[(k>>3)*n+i] |= (1<<(k&0x7));
-          } else if (beta == cfg->beta_threshold) {     // M==U tie
-            ambig[(k>>3)*n+i] |= (1<<(k&0x7));
-          }                                             // else confident unmethylated (0)
-        }
-      }
+    case '3':
+      binstring_fill(binstring, ambig, k, n, &c2, cfg);
       break;
-    }
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -553,43 +613,9 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   }
 
   uint64_t ncells = k;
-  FILE *out;
-  if (fname_out) { out = fopen(fname_out, "w");
-  } else { out = stdout; }
-  for (uint64_t i=0; i<n; ++i) {
-    // Per-CpG majority over confidently-called cells; ambiguous cells filled with it.
-    uint64_t n1 = 0, namb = 0;
-    for (uint64_t kk=0; kk<ncells; ++kk) {
-      int is_amb = (ambig[(kk>>3)*n+i] >> (kk&0x7)) & 0x1;
-      if (is_amb) { namb++; }
-      else if ((binstring[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) { n1++; }
-    }
-    uint64_t n0 = ncells - n1 - namb;
-    char fill = (n1 > n0) ? '1' : '0';  // exact tie -> 0
-
-    // Only trust the majority fill when it is "sweeping" (larger side >= fold x smaller;
-    // unanimous counts as sweeping). Filling from a near-even split fabricates calls.
-    uint64_t hi = (n1 > n0) ? n1 : n0;
-    uint64_t lo = (n1 > n0) ? n0 : n1;
-    int sweeping = (hi > 0) && (lo == 0 || (double)hi >= cfg->min_major_fold * (double)lo);
-
-    if ((ncells && (double)namb > cfg->max_ambig_frac * (double)ncells) ||
-        (namb > 0 && !sweeping)) {
-      for (uint64_t kk=0; kk<ncells; ++kk) fputc('2', out);  // filtered sentinel
-    } else {
-      for (uint64_t kk=0; kk<ncells; ++kk) {
-        if ((ambig[(kk>>3)*n+i] >> (kk&0x7)) & 0x1) {
-          fputc(fill, out);
-        } else {
-          fputc('0'+((binstring[(kk>>3)*n+i] >> (kk&0x7))&0x1), out);
-        }
-      }
-    }
-    fputc('\n', out);
-  }
+  binstring_emit(binstring, ambig, ncells, n, cfg, fname_out);
   free(binstring);
   free(ambig);
-  if (fname_out) fclose(out);
 }
 
 void rowop_cometh(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
