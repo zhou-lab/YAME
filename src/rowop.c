@@ -155,7 +155,12 @@ static int usage(void) {
   yame_usage_text("stat         Per-row summary statistics across samples.");
   yame_usage_cont("Input: fmt3 only.");
   yame_usage_cont("Output columns:");
-  yame_usage_cont(" count  mean_beta  sd_beta  delta_beta  min_n  delta_mean");
+  yame_usage_cont(" count  mean_beta  sd_beta  delta_beta  min_n  delta_mean  q95_0  q05_1  delta_q");
+  yame_usage_cont("q95_0 = 95th pct of beta<0.5; q05_1 = 5th pct of beta>0.5.");
+  yame_usage_cont("delta_q = q05_1 - q95_0: delta_beta's worst-case idea, but tolerant of");
+  yame_usage_cont("an outlier per side. Both quantiles are reported, not just the gap,");
+  yame_usage_cont("because a filter usually constrains ONE side -- \"no expected-0 sample");
+  yame_usage_cont("creeps toward 0.5\" is q95_0, which the difference cannot express.");
   yame_usage_cont("delta_beta = min(beta>0.5) - max(beta<0.5)   (worst-case margin).");
   yame_usage_cont("min_n      = min(#beta<0.5, #beta>0.5).");
   yame_usage_cont("delta_mean = mean(beta>0.5) - mean(beta<0.5) (group-center separation).");
@@ -183,8 +188,9 @@ static int usage(void) {
   yame_usage_cont("unindexed file is read once and dispatched to the threads, which");
   yame_usage_cont("still parallelises everything after the inflate. Each thread");
   yame_usage_cont("holds its own accumulator, so memory is N x (8 bytes/row) for");
-  yame_usage_cont("binasum/musum and N x (52 bytes/row) for stat -- at hg38 scale,");
-  yame_usage_cont("235 MB and 1.5 GB per thread. Output is byte-identical at every");
+  yame_usage_cont("binasum/musum and N x (84 bytes/row) for stat -- at hg38 scale,");
+  yame_usage_cont("235 MB and 2.2 GB per thread (stat also carries a 16-bin beta");
+  yame_usage_cont("histogram per row for delta_q). Output is byte-identical at every");
   yame_usage_cont("N for all three ops.");
   yame_usage_text("binasum (fmt3 input) thresholds:");
   yame_usage_opt("-p <beta0>", "Call unmethylated if beta < beta0 (default: 0.4).");
@@ -360,9 +366,19 @@ typedef struct {
   int64_t *sum, *sum_sq, *b0sum, *b1sum;   /* fixed point, scale 2^31 */
   uint32_t *b0max, *b1min;                 /* fixed point, scale 2^31 */
   int *b0n, *b1n;
+  uint16_t *hist;                          /* n * STAT_NBINS beta histogram */
 } statacc_t;
 
+/* Order statistics need more than running sums, so carry a small per-row
+ * histogram of beta. 16 bins put the boundary exactly at 0.5 (bins 0-7 below,
+ * 8-15 above), matching the group split, and 0.0625 resolution is finer than
+ * the data: a pooled single-cell reference has beta = M/(M+U) over ~11 cells,
+ * so its true granularity is ~1/11. Counts add, so this merges across threads
+ * exactly like the sums and preserves the byte-identical guarantee. */
+#define STAT_NBINS 16
+
 static void statacc_alloc(statacc_t *a, uint64_t n) {
+  a->hist   = calloc(n * STAT_NBINS, sizeof(uint16_t));
   a->cnts   = calloc(n, sizeof(uint32_t));
   a->sum    = calloc(n, sizeof(int64_t));
   a->sum_sq = calloc(n, sizeof(int64_t));
@@ -378,6 +394,7 @@ static void statacc_alloc(statacc_t *a, uint64_t n) {
 static void statacc_free(statacc_t *a) {
   free(a->cnts); free(a->sum); free(a->sum_sq); free(a->b0max);
   free(a->b1min); free(a->b0sum); free(a->b1sum); free(a->b0n); free(a->b1n);
+  free(a->hist);
 }
 
 
@@ -401,6 +418,12 @@ static void collect_stat_fmt3(statacc_t *a, cdata_t *c, config_rowop_t *cfg) {
       a->sum[i] += xf;
       a->sum_sq[i] += xf2;
       a->cnts[i]++;
+      if (x != 0.5) {                      /* exactly 0.5 joins neither group */
+        int bin = (int)(x * STAT_NBINS);
+        if (bin >= STAT_NBINS) bin = STAT_NBINS - 1;
+        uint16_t *h = a->hist + i * STAT_NBINS;
+        if (h[bin] < UINT16_MAX) h[bin]++;  /* saturate rather than wrap */
+      }
       if (x < 0.5) {
         a->b0n[i]++;
         a->b0sum[i] += xf;
@@ -463,10 +486,11 @@ static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec) {
     out = stdout;
   }
 
-  fputs("count\tmean_beta\tsd_beta\tdelta_beta\tmin_n\tdelta_mean\n", out);
+  fputs("count\tmean_beta\tsd_beta\tdelta_beta\tmin_n\tdelta_mean"
+        "\tq95_0\tq05_1\tdelta_q\n", out);
   for (uint64_t i = 0; i < n; ++i) {
     if (cnts[i] == 0) {
-      fputs("0\tNA\tNA\tNA\t0\tNA\n", out);
+      fputs("0\tNA\tNA\tNA\t0\tNA\tNA\tNA\tNA\n", out);
       continue;
     }
 
@@ -499,8 +523,45 @@ static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec) {
       fprintf(out, "%u\t%1.*f\t%1.*f\t%1.*f\t%u\t",
               cnts[i], dec, mean, dec, sd, dec, delta_beta, min_n);
     }
-    if (both) fprintf(out, "%1.*f\n", dec, delta_mean);
-    else      fputs("NA\n", out);
+    if (both) fprintf(out, "%1.*f\t", dec, delta_mean);
+    else      fputs("NA\t", out);
+
+    /* delta_q = q05(beta > 0.5) - q95(beta < 0.5): the same worst-case idea as
+     * delta_beta but tolerant of a few outliers on each side. delta_beta uses
+     * min and max, so ONE class sitting near the middle collapses it; delta_mean
+     * uses group centres and cannot see a straggler at all. The quantile gap
+     * sits between them, which is where a useful separation filter belongs.
+     * Read off the histogram, so the reported value is a bin edge (0.0625
+     * granularity) -- finer than a pooled single-cell reference resolves. */
+    if (both) {
+      const uint16_t *h = a->hist + i * STAT_NBINS;
+      uint32_t lo_n = 0, hi_n = 0;
+      for (int b = 0; b < STAT_NBINS/2; ++b) lo_n += h[b];
+      for (int b = STAT_NBINS/2; b < STAT_NBINS; ++b) hi_n += h[b];
+      if (!lo_n || !hi_n) { fputs("NA\tNA\tNA\n", out); continue; }
+      /* q95 of the low group: first bin whose cumulative count reaches 95% */
+      double need = 0.95 * lo_n; uint32_t c = 0; int qb = STAT_NBINS/2 - 1;
+      for (int b = 0; b < STAT_NBINS/2; ++b) {
+        c += h[b];
+        if ((double)c >= need) { qb = b; break; }
+      }
+      /* q05 of the high group: same from the bottom of the upper half */
+      double need1 = 0.05 * hi_n; uint32_t c1 = 0; int qb1 = STAT_NBINS/2;
+      for (int b = STAT_NBINS/2; b < STAT_NBINS; ++b) {
+        c1 += h[b];
+        if ((double)c1 >= need1) { qb1 = b; break; }
+      }
+      /* upper edge of the low bin against the lower edge of the high bin, so
+       * the gap is never optimistic about how close the two groups came */
+      double q95_lo = (double)(qb + 1) / STAT_NBINS;
+      double q05_hi = (double)qb1 / STAT_NBINS;
+      /* Both quantiles are reported, not only their gap: a filter usually wants
+       * to constrain ONE side -- "no expected-0 class creeps toward 0.5" is
+       * q95_0, and says something the difference cannot, since a large gap can
+       * hide a high q95_0 sitting under an even higher q05_1. */
+      fprintf(out, "%1.*f\t%1.*f\t%1.*f\n", dec, q95_lo, dec, q05_hi,
+              dec, q05_hi - q95_lo);
+    } else fputs("NA\tNA\tNA\n", out);
   }
   if (fname_out) fclose(out);   /* the accumulator belongs to the caller */
 }
@@ -840,6 +901,10 @@ static void *rowop_merge_rows(void *arg) {
         d->b1n[i]    += s->b1n[i];
         if (s->b0max[i] > d->b0max[i]) d->b0max[i] = s->b0max[i];
         if (s->b1min[i] < d->b1min[i]) d->b1min[i] = s->b1min[i];
+        { uint16_t *dh = d->hist + i*STAT_NBINS, *sh = s->hist + i*STAT_NBINS;
+          for (int b = 0; b < STAT_NBINS; ++b) {
+            unsigned v = (unsigned)dh[b] + sh[b];
+            dh[b] = v > UINT16_MAX ? UINT16_MAX : (uint16_t)v; } }
       }
     } else {
       cdata_t *d = &m->w[0].acc, *s = &m->w[t].acc;
