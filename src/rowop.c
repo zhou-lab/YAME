@@ -24,6 +24,7 @@
 #include <time.h>
 #include <pthread.h>
 #include "cfile.h"
+#include "rowstat.h"
 #include "snames.h"
 
 /**
@@ -357,91 +358,7 @@ static cdata_t rowop_musum(cfile_t cf) {
  *
  * Every field combines -- sums add, the extremes take min/max -- which is what
  * lets the record list be split at all. */
-#define STAT_FX_BITS 31
-#define STAT_FX_ONE  (1u << STAT_FX_BITS)          /* 1.0 in fixed point */
-#define STAT_FX_SCALE ((double) STAT_FX_ONE)
-
-typedef struct {
-  uint32_t *cnts;
-  int64_t *sum, *sum_sq, *b0sum, *b1sum;   /* fixed point, scale 2^31 */
-  uint32_t *b0max, *b1min;                 /* fixed point, scale 2^31 */
-  int *b0n, *b1n;
-  uint16_t *hist;                          /* n * STAT_NBINS beta histogram */
-} statacc_t;
-
-/* Order statistics need more than running sums, so carry a small per-row
- * histogram of beta. 16 bins put the boundary exactly at 0.5 (bins 0-7 below,
- * 8-15 above), matching the group split, and 0.0625 resolution is finer than
- * the data: a pooled single-cell reference has beta = M/(M+U) over ~11 cells,
- * so its true granularity is ~1/11. Counts add, so this merges across threads
- * exactly like the sums and preserves the byte-identical guarantee. */
-#define STAT_NBINS 16
-
-static void statacc_alloc(statacc_t *a, uint64_t n) {
-  a->hist   = calloc(n * STAT_NBINS, sizeof(uint16_t));
-  a->cnts   = calloc(n, sizeof(uint32_t));
-  a->sum    = calloc(n, sizeof(int64_t));
-  a->sum_sq = calloc(n, sizeof(int64_t));
-  a->b0max  = calloc(n, sizeof(uint32_t));
-  a->b1min  = calloc(n, sizeof(uint32_t));
-  a->b0sum  = calloc(n, sizeof(int64_t));
-  a->b1sum  = calloc(n, sizeof(int64_t));
-  a->b0n    = calloc(n, sizeof(int));
-  a->b1n    = calloc(n, sizeof(int));
-  for (uint64_t i = 0; i < n; ++i) a->b1min[i] = STAT_FX_ONE;
-}
-
-static void statacc_free(statacc_t *a) {
-  free(a->cnts); free(a->sum); free(a->sum_sq); free(a->b0max);
-  free(a->b1min); free(a->b0sum); free(a->b1sum); free(a->b0n); free(a->b1n);
-  free(a->hist);
-}
-
-
-/* The <0.5 / >0.5 split still tests the double, so which side a beta lands on
- * is decided exactly as before; only the accumulation moved to fixed point. */
-static void collect_stat_fmt3(statacc_t *a, cdata_t *c, config_rowop_t *cfg) {
-  for (uint64_t i=0; i<c->n; ++i) {
-    uint64_t mu0 = f3_get_mu(c, i);
-    if (!mu0) continue; // 0-0 is skipped
-    if (((mu0>>32) + (mu0<<32>>32)) < cfg->mincov) continue;
-    uint64_t M = mu0>>32;
-    uint64_t U = (mu0<<32>>32);
-    if (M+U >= cfg->mincov) {
-      double x = (double) M / (M+U);
-      uint32_t xf = (uint32_t) llround(x * STAT_FX_SCALE);
-      /* round the square back down rather than truncate: truncation biases
-       * sum_sq low, which drives the variance below zero on rows where every
-       * sample agrees and turns sd into NaN */
-      uint64_t sq = (uint64_t) xf * xf;
-      int64_t xf2 = (int64_t)((sq + (1ull << (STAT_FX_BITS-1))) >> STAT_FX_BITS);
-      a->sum[i] += xf;
-      a->sum_sq[i] += xf2;
-      a->cnts[i]++;
-      if (x != 0.5) {                      /* exactly 0.5 joins neither group */
-        int bin = (int)(x * STAT_NBINS);
-        if (bin >= STAT_NBINS) bin = STAT_NBINS - 1;
-        uint16_t *h = a->hist + i * STAT_NBINS;
-        if (h[bin] < UINT16_MAX) h[bin]++;  /* saturate rather than wrap */
-      }
-      if (x < 0.5) {
-        a->b0n[i]++;
-        a->b0sum[i] += xf;
-        if (xf > a->b0max[i])
-          a->b0max[i] = xf;
-      }
-      if (x > 0.5) {
-        a->b1n[i]++;
-        a->b1sum[i] += xf;
-        if (xf < a->b1min[i])
-          a->b1min[i] = xf;
-      }
-    }
-  }
-}
-
-
-static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec);
+static void stat_emit(yame_rowstat_t *a, uint64_t n, char *fname_out, int dec);
 
 // the following standard deviation doesn't work for large numbers but should be ok for meth levels
 // see https://www.strchr.com/standard_deviation_in_one_pass
@@ -450,7 +367,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   cdata_t c = read_cdata1(&cf);
   if (c.n == 0) return; // nothing in cfile, output nothing
   uint64_t n = cdata_n(&c);
-  statacc_t a; statacc_alloc(&a, n);
+  yame_rowstat_t a; yame_rowstat_init(&a, n);
 
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -458,7 +375,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     cdata_t c2 = decompress(c);
 
     switch (c.fmt) {
-    case '3': collect_stat_fmt3(&a, &c2, cfg); break;
+    case '3': yame_rowstat_add_fmt3(&a, &c2, cfg->mincov); break;
     default: {
       fprintf(stderr, "[%s:%d] File format: %c unsupported.\n", __func__, __LINE__, c.fmt);
       fflush(stderr);
@@ -469,99 +386,41 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   }
 
   stat_emit(&a, n, fname_out, cfg->decimals);
-  statacc_free(&a);
+  yame_rowstat_free(&a);
 }
 
-static void stat_emit(statacc_t *a, uint64_t n, char *fname_out, int dec) {
+static void stat_emit(yame_rowstat_t *a, uint64_t n, char *fname_out, int dec) {
 
-  uint32_t *cnts = a->cnts;
-  int64_t *sum = a->sum, *sum_sq = a->sum_sq, *b0sum = a->b0sum, *b1sum = a->b1sum;
-  uint32_t *b0max = a->b0max, *b1min = a->b1min;
-  int *b0n = a->b0n, *b1n = a->b1n;
-
-  FILE *out;
-  if (fname_out) {
-    out = fopen(fname_out, "w");
-  } else {
-    out = stdout;
-  }
+  /* Pure formatter. Every number comes from yame_rowstat_get(), so the printed
+   * table and the in-process CpG filter methscope applies over the same struct
+   * cannot drift apart. NA is emitted for exactly the fields the accumulator
+   * reports as undefined: delta_beta / delta_mean when every observed sample
+   * fell on one side of 0.5, and the quantiles additionally when a side holds
+   * no histogram counts. */
+  FILE *out = fname_out ? fopen(fname_out, "w") : stdout;
 
   fputs("count\tmean_beta\tsd_beta\tdelta_beta\tmin_n\tdelta_mean"
         "\tq95_0\tq05_1\tdelta_q\n", out);
   for (uint64_t i = 0; i < n; ++i) {
-    if (cnts[i] == 0) {
+    yame_rowstat_row_t r;
+    if (!yame_rowstat_get(a, i, &r)) {
       fputs("0\tNA\tNA\tNA\t0\tNA\tNA\tNA\tNA\n", out);
       continue;
     }
-
-    /* fixed point back to a fraction only here, once per row, after all the
-     * combining is done -- so the arithmetic that had to be exact was */
-    double mean = (double) sum[i] / STAT_FX_SCALE / cnts[i];
-    /* a true variance of zero (one sample, or every sample equal) can come out
-     * a hair negative from the rounding; clamp rather than emit NaN */
-    double var  = ((double) sum_sq[i] / STAT_FX_SCALE / cnts[i]) - mean * mean;
-    double sd   = sqrt(var > 0 ? var : 0.0);
-
-    /* delta_beta = b1min - b0max, but only meaningful if both sides exist */
-    double delta_beta = (b0n[i] > 0 && b1n[i] > 0)
-      ? ((double) b1min[i] - (double) b0max[i]) / STAT_FX_SCALE : -1.0;
-
-    /* delta_mean = mean(beta>0.5) - mean(beta<0.5); robust group separation,
-       only defined when both sides exist */
-    int both = (b0n[i] > 0 && b1n[i] > 0);
-    double delta_mean = both
-      ? ((double) b1sum[i] / b1n[i] - (double) b0sum[i] / b0n[i]) / STAT_FX_SCALE
-      : -1.0;
-
-    /* min_n = min(#beta<0.5, #beta>0.5) */
-    uint32_t min_n = (b1n[i] < b0n[i]) ? b1n[i] : b0n[i];
-
-    if (delta_beta < 0) {
+    if (!r.has_groups)
       fprintf(out, "%u\t%1.*f\t%1.*f\tNA\t%u\t",
-              cnts[i], dec, mean, dec, sd, min_n);
-    } else {
+              r.count, dec, r.mean, dec, r.sd, r.min_n);
+    else
       fprintf(out, "%u\t%1.*f\t%1.*f\t%1.*f\t%u\t",
-              cnts[i], dec, mean, dec, sd, dec, delta_beta, min_n);
-    }
-    if (both) fprintf(out, "%1.*f\t", dec, delta_mean);
-    else      fputs("NA\t", out);
+              r.count, dec, r.mean, dec, r.sd, dec, r.delta_beta, r.min_n);
 
-    /* delta_q = q05(beta > 0.5) - q95(beta < 0.5): the same worst-case idea as
-     * delta_beta but tolerant of a few outliers on each side. delta_beta uses
-     * min and max, so ONE class sitting near the middle collapses it; delta_mean
-     * uses group centres and cannot see a straggler at all. The quantile gap
-     * sits between them, which is where a useful separation filter belongs.
-     * Read off the histogram, so the reported value is a bin edge (0.0625
-     * granularity) -- finer than a pooled single-cell reference resolves. */
-    if (both) {
-      const uint16_t *h = a->hist + i * STAT_NBINS;
-      uint32_t lo_n = 0, hi_n = 0;
-      for (int b = 0; b < STAT_NBINS/2; ++b) lo_n += h[b];
-      for (int b = STAT_NBINS/2; b < STAT_NBINS; ++b) hi_n += h[b];
-      if (!lo_n || !hi_n) { fputs("NA\tNA\tNA\n", out); continue; }
-      /* q95 of the low group: first bin whose cumulative count reaches 95% */
-      double need = 0.95 * lo_n; uint32_t c = 0; int qb = STAT_NBINS/2 - 1;
-      for (int b = 0; b < STAT_NBINS/2; ++b) {
-        c += h[b];
-        if ((double)c >= need) { qb = b; break; }
-      }
-      /* q05 of the high group: same from the bottom of the upper half */
-      double need1 = 0.05 * hi_n; uint32_t c1 = 0; int qb1 = STAT_NBINS/2;
-      for (int b = STAT_NBINS/2; b < STAT_NBINS; ++b) {
-        c1 += h[b];
-        if ((double)c1 >= need1) { qb1 = b; break; }
-      }
-      /* upper edge of the low bin against the lower edge of the high bin, so
-       * the gap is never optimistic about how close the two groups came */
-      double q95_lo = (double)(qb + 1) / STAT_NBINS;
-      double q05_hi = (double)qb1 / STAT_NBINS;
-      /* Both quantiles are reported, not only their gap: a filter usually wants
-       * to constrain ONE side -- "no expected-0 class creeps toward 0.5" is
-       * q95_0, and says something the difference cannot, since a large gap can
-       * hide a high q95_0 sitting under an even higher q05_1. */
-      fprintf(out, "%1.*f\t%1.*f\t%1.*f\n", dec, q95_lo, dec, q05_hi,
-              dec, q05_hi - q95_lo);
-    } else fputs("NA\tNA\tNA\n", out);
+    if (r.has_groups) fprintf(out, "%1.*f\t", dec, r.delta_mean);
+    else              fputs("NA\t", out);
+
+    if (r.has_quantiles)
+      fprintf(out, "%1.*f\t%1.*f\t%1.*f\n", dec, r.q95_0, dec, r.q05_1,
+              dec, r.delta_q);
+    else fputs("NA\tNA\tNA\n", out);
   }
   if (fname_out) fclose(out);   /* the accumulator belongs to the caller */
 }
@@ -770,7 +629,7 @@ typedef struct {
   uint64_t n;                   /* rows */
   char fmt;                     /* format of record 0 */
   cdata_t acc;                  /* binasum/musum */
-  statacc_t st;                 /* stat */
+  yame_rowstat_t st;                 /* stat */
   struct recq_t *q;             /* non-NULL: take records from the queue
                                  * instead of seeking (stream input) */
   struct rowdisp_t *d;          /* shared cursor over the record list */
@@ -890,22 +749,8 @@ static void *rowop_merge_rows(void *arg) {
   rowop_merger_t *m = (rowop_merger_t*) arg;
   for (int t = 1; t < m->nt; ++t) {
     if (m->kind == ROWOP_STAT) {
-      statacc_t *d = &m->w[0].st, *s = &m->w[t].st;
-      for (uint64_t i = m->beg; i < m->end; ++i) {
-        d->cnts[i]   += s->cnts[i];
-        d->sum[i]    += s->sum[i];
-        d->sum_sq[i] += s->sum_sq[i];
-        d->b0sum[i]  += s->b0sum[i];
-        d->b1sum[i]  += s->b1sum[i];
-        d->b0n[i]    += s->b0n[i];
-        d->b1n[i]    += s->b1n[i];
-        if (s->b0max[i] > d->b0max[i]) d->b0max[i] = s->b0max[i];
-        if (s->b1min[i] < d->b1min[i]) d->b1min[i] = s->b1min[i];
-        { uint16_t *dh = d->hist + i*STAT_NBINS, *sh = s->hist + i*STAT_NBINS;
-          for (int b = 0; b < STAT_NBINS; ++b) {
-            unsigned v = (unsigned)dh[b] + sh[b];
-            dh[b] = v > UINT16_MAX ? UINT16_MAX : (uint16_t)v; } }
-      }
+      yame_rowstat_t *d = &m->w[0].st, *s = &m->w[t].st;
+      yame_rowstat_merge(d, s, m->beg, m->end);
     } else {
       cdata_t *d = &m->w[0].acc, *s = &m->w[t].acc;
       for (uint64_t i = m->beg; i < m->end; ++i) {
@@ -953,7 +798,7 @@ static void rowop_absorb(rowop_worker_t *w, cdata_t c) {
       break;
     case ROWOP_STAT:
       if (w->fmt == '3')
-        collect_stat_fmt3(&w->st, &c2, w->cfg);
+        yame_rowstat_add_fmt3(&w->st, &c2, w->cfg->mincov);
       else {
         w->err = 1;
         snprintf(w->errmsg, sizeof(w->errmsg), "format %c unsupported", w->fmt);
@@ -1036,7 +881,7 @@ static int64_t *rowop_record_offsets(char *fname, int *n_rec) {
  * (stat), which the caller emits exactly as the serial path does.
  */
 static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
-                          cdata_t *out, statacc_t *stout, uint64_t *n_out) {
+                          cdata_t *out, yame_rowstat_t *stout, uint64_t *n_out) {
 
   int n_rec = 0;
   int64_t *off = rowop_record_offsets(fname, &n_rec);
@@ -1068,7 +913,7 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
     w[t].n = n; w[t].fmt = fmt;
     w[t].q = streaming ? &q : NULL;
     w[t].d = streaming ? NULL : &disp;
-    if (kind == ROWOP_STAT) statacc_alloc(&w[t].st, n);
+    if (kind == ROWOP_STAT) yame_rowstat_init(&w[t].st, n);
     else {
       w[t].acc.n = n; w[t].acc.compressed = 0;
       w[t].acc.fmt = '3'; w[t].acc.unit = 8;
@@ -1122,7 +967,7 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
     for (int t = 0; t < nt; ++t) pthread_join(tid[t], NULL);
     free(m);
     for (int t = 1; t < nt; ++t) {
-      if (kind == ROWOP_STAT) statacc_free(&w[t].st);
+      if (kind == ROWOP_STAT) yame_rowstat_free(&w[t].st);
       else free(w[t].acc.s);
     }
   }
@@ -1224,10 +1069,10 @@ int main_rowop(int argc, char *argv[]) {
       fprintf(stderr, "[rowop] -t applies to binasum, musum and stat; %s runs "
               "single-threaded.\n", op);
     } else {
-      cdata_t cout = {0}; statacc_t st = {0}; uint64_t n = 0;
+      cdata_t cout = {0}; yame_rowstat_t st = {0}; uint64_t n = 0;
       if (rowop_parallel(fname, kind, &config, &cout, &st, &n)) {
         double t_out = rowop_now();
-        if (kind == ROWOP_STAT) { stat_emit(&st, n, fname_out, config.decimals); statacc_free(&st); }
+        if (kind == ROWOP_STAT) { stat_emit(&st, n, fname_out, config.decimals); yame_rowstat_free(&st); }
         else { cdata_write(fname_out, &cout, "wb", config.verbose); free(cout.s); }
         /* The write is single-threaded whatever -t says: for a CX result it is
          * a BGZF deflate of the whole accumulator. When this is a large share
