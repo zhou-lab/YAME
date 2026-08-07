@@ -291,14 +291,16 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
   if (fname_out) {
     /* The records asked for are all in the bytes by construction, so counting
      * what was written proves nothing. What can go wrong is that a reader
-     * cannot walk to them -- that is how an earlier version of this path lost
-     * records silently -- so check reachability before claiming success. */
-    int64_t bad = -1, nmem = cx_walk_members(fname_out, &bad);
-    if (bad >= 0)
-      wzfatal("[%s:%d] %s: member %"PRId64" of %"PRId64" is empty and not "
-              "last, so a reader stops there and the records after it are "
-              "unreachable. Refusing to leave a short file.\n",
-              __func__, __LINE__, fname_out, bad, nmem);
+     * cannot walk to them -- that is how this path lost records silently --
+     * so check each record boundary before claiming success. */
+    for (int i = 0; i < snames.n; ++i) {
+      int64_t o = getIndex(idx2, snames.s[i]) >> 16;
+      if (cx_empty_member_at(fname_out, o))
+        wzfatal("[%s:%d] %s: %s starts on an empty block at byte %"PRId64", "
+                "so a reader stops there and every record after it is "
+                "unreachable. Refusing to leave a short file.\n",
+                __func__, __LINE__, fname_out, snames.s[i], o);
+    }
 
     char *fname_index2 = get_fname_index(fname_out);
     FILE *fidx = fopen(fname_index2, "w");

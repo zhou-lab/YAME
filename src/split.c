@@ -125,12 +125,11 @@ static int split_raw(char *fname_in, char *prefix, char **snames, int snames_n,
     if (fwrite(CX_BGZF_EOF, 1, sizeof(CX_BGZF_EOF), out) != sizeof(CX_BGZF_EOF))
       wzfatal("Short write to %s.\n", tmp);
     fclose(out);
-    /* same reachability check as subset: an empty member before the end would
-     * make the record present in the bytes but invisible to a reader */
-    int64_t bad = -1, nmem = cx_walk_members(tmp, &bad);
-    if (bad >= 0)
-      wzfatal("%s: member %"PRId64" of %"PRId64" is empty and not last; a "
-              "reader would stop there.\n", tmp, bad, nmem);
+    /* same reachability check as subset: each file holds one record, so its
+     * only boundary is byte 0 */
+    if (cx_empty_member_at(tmp, 0))
+      wzfatal("%s: the record starts on an empty block; a reader would stop "
+              "there.\n", tmp);
     if (verbose) fprintf(stderr, "%s\n", tmp);
     free(tmp);
   }

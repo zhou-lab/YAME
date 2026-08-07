@@ -86,49 +86,34 @@ void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end) {
 }
 
 /**
- * Count how many records a sequential reader can actually reach in a finished
- * raw-copied file, without inflating any payload.
+ * Is there an empty BGZF member sitting at this offset?
  *
  * A count of what was *written* cannot catch the failure this guards against:
  * the raw path always emits one record per requested name, and the records
  * that went missing were present in the bytes -- a reader just could not walk
- * to them, because an empty BGZF member pair stopped it early. So the check
- * has to be about reachability, not about how many were sent.
+ * to them, because two adjacent empty members stopped it early. So the check
+ * has to be about reachability.
  *
- * Walking members is header-only: read 18 bytes, take BSIZE, take ISIZE from
- * the last 4 bytes of the member, skip to the next. An empty member anywhere
- * but the final position is the signature of the problem, since a writer only
- * emits one and only at the end.
- *
- * Returns the number of members, and sets *bad_empty to the position of the
- * first empty member that is not last, or -1 if there is none.
+ * It only has to look at record boundaries, though. An empty member never
+ * occurs inside a record's own blocks -- a writer emits one exactly once, at
+ * the end of a file -- so the only place a stray one can land is where two
+ * copied extents meet, and those offsets are already known: they are the ones
+ * being recorded for the output index. That makes the check O(records) rather
+ * than O(blocks), which is the reason to prefer it; on NFS the two were not
+ * far enough apart to separate by timing, so the argument is the cost model,
+ * not a measurement.
  */
-int64_t cx_walk_members(const char *fname, int64_t *bad_empty) {
-  *bad_empty = -1;
+int cx_empty_member_at(const char *fname, int64_t off) {
   FILE *f = fopen(fname, "rb");
-  if (!f) return -1;
-  int64_t off = 0, nmem = 0, first_empty = -1;
-  for (;;) {
-    uint8_t h[18];
-    if (fseeko(f, off, SEEK_SET) != 0) break;
-    if (fread(h, 1, sizeof(h), f) != sizeof(h)) break;
-    if (h[0] != 0x1f || h[1] != 0x8b) break;          /* not a gzip member */
-    int64_t bsize = (int64_t)(h[16] | (h[17] << 8)) + 1;
-    if (bsize < 28) break;
-    uint8_t sz[4];
-    if (fseeko(f, off + bsize - 4, SEEK_SET) != 0) break;
-    if (fread(sz, 1, sizeof(sz), f) != sizeof(sz)) break;
-    uint32_t isize = (uint32_t)sz[0] | ((uint32_t)sz[1]<<8)
-                   | ((uint32_t)sz[2]<<16) | ((uint32_t)sz[3]<<24);
-    if (isize == 0 && first_empty < 0) first_empty = nmem;
-    nmem++; off += bsize;
-  }
+  if (!f) return 0;
+  uint8_t m[sizeof(CX_BGZF_EOF)];
+  int hit = 0;
+  if (fseeko(f, off, SEEK_SET) == 0 &&
+      fread(m, 1, sizeof(m), f) == sizeof(m) &&
+      memcmp(m, CX_BGZF_EOF, sizeof(m)) == 0)
+    hit = 1;
   fclose(f);
-  /* the FIRST empty member is the one that matters: the last member is
-   * legitimately the file's own end marker, so testing the last empty would
-   * always find that one and never the stray earlier it is meant to catch */
-  if (first_empty >= 0 && first_empty != nmem - 1) *bad_empty = first_empty;
-  return nmem;
+  return hit;
 }
 
 int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out) {
