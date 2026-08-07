@@ -65,6 +65,11 @@ extern const uint8_t CX_BGZF_EOF[28];
  *  raw copy, which otherwise moves bytes without ever looking at them. */
 int cx_record_at(BGZF *fh, int64_t voffset);
 
+/** Narrow [*beg,*end) to the record's own blocks, dropping the empty BGZF
+ *  members a concatenated store leaves at either end. Copying those through
+ *  can make a reader stop early -- see the note on the definition. */
+void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end);
+
 /** Copy [beg,end) of `in` to `out`. Both are plain handles; beg and end are
  *  byte offsets, which for an aligned record are block boundaries. */
 int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out);

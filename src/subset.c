@@ -270,6 +270,10 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
      * ever appended, so the in-block part of the virtual offset stays 0 */
     if (idx2) insert_index(idx2, snames.s[i], written << 16);
 
+    /* drop the concatenation's empty members, or two can end up adjacent in
+     * the output and a reader stops there */
+    cx_trim_empty_members(in, &beg, &end);
+
     if (!cx_copy_bytes(in, beg, end, out))
       wzfatal("Failed copying %s out of %s.\n", snames.s[i], fname_in);
     written += end - beg;

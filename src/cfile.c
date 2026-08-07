@@ -51,6 +51,40 @@ int cx_record_at(BGZF *fh, int64_t voffset) {
   return sig == CDSIG;
 }
 
+/**
+ * Pull [*beg,*end) in to the record's own blocks, dropping the empty BGZF
+ * members that sit at either end.
+ *
+ * A concatenated store is files joined end to end, and each file finishes with
+ * the 28-byte empty member every BGZF writer emits. `yame index` records a
+ * record's offset as wherever the reader stood after the previous record,
+ * which is that trailing empty member -- so a record's byte range normally
+ * OPENS with one, and the store's last record also CLOSES with the store's own.
+ *
+ * Copying those through looks harmless and is not. read_cdata2() tolerates a
+ * single leading empty member (its bgzf_read_block() pre-call is exactly that
+ * allowance), but two in a row exhaust it: bgzf_read() comes up short,
+ * read_cdata2() reports end of stream, and every record after that point is
+ * silently invisible. Two in a row is what you get by placing the store's last
+ * record anywhere but last in the output -- its trailing empty member meets
+ * the next record's leading one.
+ */
+void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end) {
+  uint8_t m[sizeof(CX_BGZF_EOF)];
+  while (*end - *beg >= (int64_t) sizeof(m)) {   /* leading */
+    if (fseeko(in, *beg, SEEK_SET) != 0) return;
+    if (fread(m, 1, sizeof(m), in) != sizeof(m)) return;
+    if (memcmp(m, CX_BGZF_EOF, sizeof(m)) != 0) break;
+    *beg += sizeof(m);
+  }
+  while (*end - *beg >= (int64_t) sizeof(m)) {   /* trailing */
+    if (fseeko(in, *end - (int64_t) sizeof(m), SEEK_SET) != 0) return;
+    if (fread(m, 1, sizeof(m), in) != sizeof(m)) return;
+    if (memcmp(m, CX_BGZF_EOF, sizeof(m)) != 0) break;
+    *end -= sizeof(m);
+  }
+}
+
 int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out) {
   if (fseeko(in, beg, SEEK_SET) != 0) return 0;
   size_t bufsz = 1<<20;
