@@ -74,6 +74,12 @@ void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end);
  *  byte offsets, which for an aligned record are block boundaries. */
 int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out);
 
+/** Header-only walk of a finished file's BGZF members. Returns the member
+ *  count and sets *bad_empty to the first empty member that is not the last
+ *  one (-1 if none) -- an empty member anywhere else stops a sequential
+ *  reader, so it means records are present but unreachable. */
+int64_t cx_walk_members(const char *fname, int64_t *bad_empty);
+
 /**
  * Reads cdata from a cfile_t instance.
  *

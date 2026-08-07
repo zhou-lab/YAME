@@ -289,6 +289,17 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
             written);
 
   if (fname_out) {
+    /* The records asked for are all in the bytes by construction, so counting
+     * what was written proves nothing. What can go wrong is that a reader
+     * cannot walk to them -- that is how an earlier version of this path lost
+     * records silently -- so check reachability before claiming success. */
+    int64_t bad = -1, nmem = cx_walk_members(fname_out, &bad);
+    if (bad >= 0)
+      wzfatal("[%s:%d] %s: member %"PRId64" of %"PRId64" is empty and not "
+              "last, so a reader stops there and the records after it are "
+              "unreachable. Refusing to leave a short file.\n",
+              __func__, __LINE__, fname_out, bad, nmem);
+
     char *fname_index2 = get_fname_index(fname_out);
     FILE *fidx = fopen(fname_index2, "w");
     writeIndex(fidx, idx2);
@@ -358,9 +369,13 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
   index_t *idx2 = fname_out ? kh_init(index) : NULL;
 
   cdata_t c = {0};              // output data
+  int emitted = 0;
   for (int i=0; i<snames.n; ++i) {
     int64_t index = getIndex(idx, snames.s[i]);
-    assert(index >= 0);
+    /* a name absent from the index used to abort here with a bare assertion */
+    if (index < 0)
+      wzfatal("[%s:%d] %s is not in the index of the input.\n",
+              __func__, __LINE__, snames.s[i]);
     assert(bgzf_seek(cf.fh, index, SEEK_SET) == 0);
     read_cdata2(&cf, &c);
     if (c.n <= 0) {
@@ -371,9 +386,14 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     bgzf_flush(fp);             /* start this record on a block boundary */
     if (idx2) insert_index(idx2, snames.s[i], bgzf_tell(fp));
     cdata_write1(fp, &c);
+    emitted++;
   }
   bgzf_close(fp);
   free(c.s);
+
+  if (emitted != snames.n)
+    wzfatal("[%s:%d] emitted %d records for %"PRId64" requested names.\n",
+            __func__, __LINE__, emitted, (int64_t) snames.n);
 
   if (fname_out) {              // output index
     char *fname_index2 = get_fname_index(fname_out);

@@ -85,6 +85,52 @@ void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end) {
   }
 }
 
+/**
+ * Count how many records a sequential reader can actually reach in a finished
+ * raw-copied file, without inflating any payload.
+ *
+ * A count of what was *written* cannot catch the failure this guards against:
+ * the raw path always emits one record per requested name, and the records
+ * that went missing were present in the bytes -- a reader just could not walk
+ * to them, because an empty BGZF member pair stopped it early. So the check
+ * has to be about reachability, not about how many were sent.
+ *
+ * Walking members is header-only: read 18 bytes, take BSIZE, take ISIZE from
+ * the last 4 bytes of the member, skip to the next. An empty member anywhere
+ * but the final position is the signature of the problem, since a writer only
+ * emits one and only at the end.
+ *
+ * Returns the number of members, and sets *bad_empty to the position of the
+ * first empty member that is not last, or -1 if there is none.
+ */
+int64_t cx_walk_members(const char *fname, int64_t *bad_empty) {
+  *bad_empty = -1;
+  FILE *f = fopen(fname, "rb");
+  if (!f) return -1;
+  int64_t off = 0, nmem = 0, first_empty = -1;
+  for (;;) {
+    uint8_t h[18];
+    if (fseeko(f, off, SEEK_SET) != 0) break;
+    if (fread(h, 1, sizeof(h), f) != sizeof(h)) break;
+    if (h[0] != 0x1f || h[1] != 0x8b) break;          /* not a gzip member */
+    int64_t bsize = (int64_t)(h[16] | (h[17] << 8)) + 1;
+    if (bsize < 28) break;
+    uint8_t sz[4];
+    if (fseeko(f, off + bsize - 4, SEEK_SET) != 0) break;
+    if (fread(sz, 1, sizeof(sz), f) != sizeof(sz)) break;
+    uint32_t isize = (uint32_t)sz[0] | ((uint32_t)sz[1]<<8)
+                   | ((uint32_t)sz[2]<<16) | ((uint32_t)sz[3]<<24);
+    if (isize == 0 && first_empty < 0) first_empty = nmem;
+    nmem++; off += bsize;
+  }
+  fclose(f);
+  /* the FIRST empty member is the one that matters: the last member is
+   * legitimately the file's own end marker, so testing the last empty would
+   * always find that one and never the stray earlier it is meant to catch */
+  if (first_empty >= 0 && first_empty != nmem - 1) *bad_empty = first_empty;
+  return nmem;
+}
+
 int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out) {
   if (fseeko(in, beg, SEEK_SET) != 0) return 0;
   size_t bufsz = 1<<20;
