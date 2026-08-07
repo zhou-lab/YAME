@@ -177,6 +177,15 @@ Compare and summarize
         -M preload masks, -H no header, -F full paths, -T always name states,
         -s <list> rename query samples, -q <name> names a stdin query,
         -6 deprecated alias for -V 2bit.
+        Name resolution for -m (and -R elsewhere) takes exactly three forms: a
+        real filesystem path, the row space's own name (`hg38` -> its .cr), or
+        a BARE filename searched in the directories that row space owns —
+        genome first, then its knowledgebase. It picks the newest match, so
+        `-m Win100k` finds Win100k.20220228.cm and the datestamp is never
+        needed. It does NOT take a browser path: `-m hg38/KYCG/Win100k` fails,
+        because the slashes make it look for a file of that literal name. Note
+        the asymmetry — `yame fetch` wants exactly that browser spelling, so
+        the same string fetches a set and fails to resolve it.
   pairwise [-o out] [-c cov] [-d delta] [-H 1|2|3] <MU1.cx> [MU2.cx]
         fmt3 x fmt3 -> one fmt6 record. Universe = both samples at coverage
         >= -c (default 1); set = direction (-H 1 hyper in sample 1, 2 hypo,
