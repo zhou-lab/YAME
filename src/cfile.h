@@ -67,8 +67,10 @@ int cx_record_at(BGZF *fh, int64_t voffset);
 
 /** Narrow [*beg,*end) to the record's own blocks, dropping the empty BGZF
  *  members a concatenated store leaves at either end. Copying those through
- *  can make a reader stop early -- see the note on the definition. */
-void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end);
+ *  can make a reader stop early -- see the note on the definition. Pass
+ *  at_eof non-zero only when *end is end of file, the one case where an extent
+ *  can close with an empty member. */
+void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end, int at_eof);
 
 /** Copy [beg,end) of `in` to `out`. Both are plain handles; beg and end are
  *  byte offsets, which for an aligned record are block boundaries. */

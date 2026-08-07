@@ -69,7 +69,7 @@ int cx_record_at(BGZF *fh, int64_t voffset) {
  * record anywhere but last in the output -- its trailing empty member meets
  * the next record's leading one.
  */
-void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end) {
+void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end, int at_eof) {
   uint8_t m[sizeof(CX_BGZF_EOF)];
   while (*end - *beg >= (int64_t) sizeof(m)) {   /* leading */
     if (fseeko(in, *beg, SEEK_SET) != 0) return;
@@ -77,6 +77,12 @@ void cx_trim_empty_members(FILE *in, int64_t *beg, int64_t *end) {
     if (memcmp(m, CX_BGZF_EOF, sizeof(m)) != 0) break;
     *beg += sizeof(m);
   }
+  /* Only the extent that runs to end of file can close with an empty member.
+   * Every other extent stops at the next record's offset, and that offset
+   * points AT the empty member, so it lies outside the range. Checking anyway
+   * would seek to the far end of a multi-megabyte record and back for nothing,
+   * throwing away the readahead the copy is about to use. */
+  if (!at_eof) return;
   while (*end - *beg >= (int64_t) sizeof(m)) {   /* trailing */
     if (fseeko(in, *end - (int64_t) sizeof(m), SEEK_SET) != 0) return;
     if (fread(m, 1, sizeof(m), in) != sizeof(m)) return;

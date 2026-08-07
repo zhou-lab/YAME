@@ -182,17 +182,36 @@ Compare and summarize
         >= -c (default 1); set = direction (-H 1 hyper in sample 1, 2 hypo,
         3 either) and |beta1-beta2| > -d (default 0). Without MU2.cx the
         second record of MU1.cx is used. The delta magnitude is not stored.
-  rowop -o <op> [-c mincov] <in.cx> [out]
+  rowop -o <op> [-c mincov] [-t N] [-d 0-9] <in.cx> [out]
         binasum  fmt0/1/3 -> fmt3 per-row sample counts (-p/-q beta cutoffs,
                  default 0.4/0.6; betas between them are ignored) — this is
                  how a pseudobulk is made
         musum    fmt3 -> one fmt3 record, counts summed
-        stat     fmt3 -> text: count mean_beta sd_beta delta_beta min_n
-                 delta_mean
+        stat     fmt3 -> text, NINE columns in this order:
+                 count mean_beta sd_beta delta_beta min_n delta_mean
+                 q95_0 q05_1 delta_q
+                 q95_0 = 95th pct of the beta<0.5 group, q05_1 = 5th pct of
+                 the beta>0.5 group, delta_q = q05_1 - q95_0. The quantiles
+                 come off a 16-bin histogram, so they are bin EDGES: a cutoff
+                 between edges acts as the nearer one, and `q95_0 <= 0.15`
+                 behaves as `<= 0.125`. They tolerate an outlier per side only
+                 once a group holds more than 20 samples; below that they
+                 collapse like delta_beta.
         binstring fmt3 -> text row-wise binary strings (-b threshold 0.5,
                  -m max ambiguous fraction, -M min majority fold)
         cometh   fmt3 -> text packed UU/UM/MU/MM per neighbor offset
                  (-w window 5, -v unpacked)
+        -t N     split the records over N threads for binasum, musum and stat;
+                 the other ops stay serial and say so. Output is byte-identical
+                 at every N (the accumulators are integer, so the merge is
+                 exact). An indexed input seeks per thread, a stream is read
+                 once and dispatched. Memory is N x 8 bytes/row for
+                 binasum/musum and N x 84 bytes/row for stat — at hg38 scale
+                 235 MB and 2.5 GB per thread, so `-t 8 -o stat` genome-wide
+                 wants ~20 GB.
+        -d 0-9   decimals for stat's fractions (default 6). It was 3 before
+                 v1.37, and 3 puts many values on a rounding boundary, since a
+                 beta is a ratio of small integers.
   binarize [-t 0.5] [-m Mmin] [-c cov] [-o out] <mu.cx>
         fmt3 -> fmt6. set = beta > -t, or M >= -m when -m > 0 (overrides -t);
         universe = coverage >= -c.
@@ -263,6 +282,10 @@ Reference data
   block boundary, which is what lets a later `subset`/`split` copy them without
   decoding. Files written before that change are still read normally, just not
   copied; one pass through `yame subset` realigns a store.
+- `rowop -o stat` emits **nine** columns since v1.37; it was six before q95_0,
+  q05_1 and delta_q were added. Anything indexing it positionally — especially
+  after a `paste` that puts other columns behind it — must be re-checked, and
+  is better off reading the header than counting.
 - `subset -l` and `unpack -l` emit records in **list order**, not store order.
   That is the useful behaviour, but `yame index -s names.txt` pairs names to
   records **positionally**, so a name list in store order applied to output in
@@ -280,5 +303,5 @@ Reference data
   ./tools/make_assetinfo.sh -o src/assetinfo.h
 
 `src/registry.h` and `src/assetinfo.h` are generated: edit catalog/source
-inputs, then regenerate. The org-mode journal is the canonical release and provenance
-record. Do not hand-edit generated headers.
+inputs, then regenerate. The org-mode journal is the canonical release and
+provenance record. Do not hand-edit generated headers.

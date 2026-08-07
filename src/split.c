@@ -117,7 +117,7 @@ static int split_raw(char *fname_in, char *prefix, char **snames, int snames_n,
   for (int i = 0; i < npairs; ++i) {
     int64_t beg = addr[i] >> 16;
     int64_t end = (i+1 < npairs) ? (addr[i+1] >> 16) : fsize;
-    cx_trim_empty_members(in, &beg, &end);
+    cx_trim_empty_members(in, &beg, &end, end == fsize);
     char *tmp = out_name(prefix, snames, snames_n, i);
     FILE *out = fopen(tmp, "wb");
     if (!out) wzfatal("Cannot write %s.\n", tmp);

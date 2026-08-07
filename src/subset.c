@@ -272,7 +272,7 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
 
     /* drop the concatenation's empty members, or two can end up adjacent in
      * the output and a reader stops there */
-    cx_trim_empty_members(in, &beg, &end);
+    cx_trim_empty_members(in, &beg, &end, end == fsize);
 
     if (!cx_copy_bytes(in, beg, end, out))
       wzfatal("Failed copying %s out of %s.\n", snames.s[i], fname_in);
@@ -371,7 +371,6 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
   index_t *idx2 = fname_out ? kh_init(index) : NULL;
 
   cdata_t c = {0};              // output data
-  int emitted = 0;
   for (int i=0; i<snames.n; ++i) {
     int64_t index = getIndex(idx, snames.s[i]);
     /* a name absent from the index used to abort here with a bare assertion */
@@ -388,14 +387,9 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     bgzf_flush(fp);             /* start this record on a block boundary */
     if (idx2) insert_index(idx2, snames.s[i], bgzf_tell(fp));
     cdata_write1(fp, &c);
-    emitted++;
   }
   bgzf_close(fp);
   free(c.s);
-
-  if (emitted != snames.n)
-    wzfatal("[%s:%d] emitted %d records for %"PRId64" requested names.\n",
-            __func__, __LINE__, emitted, (int64_t) snames.n);
 
   if (fname_out) {              // output index
     char *fname_index2 = get_fname_index(fname_out);
