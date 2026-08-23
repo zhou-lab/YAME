@@ -477,15 +477,15 @@ static const yame_asset_file_t YAME_FILES_methscope_hg38_data[] = {
 
 static const yame_asset_file_t YAME_FILES_methscope_models_hg38_models[] = {
     { "hg38_10k1.updecx", "8f7f2d6d42f64daaba5bf9cede5146fa52c0f62b5c76b3d5c6680c5c7554b1b7", 29075778, NULL },
-    { "hg38_65celltypes.refx", "ce16678dd410c83e3df1c6f1c9b912a796f69c77722b28fc83c5690df69a6c03", 28900711, NULL },
-    { "hg38_celltype.clfx", "00216ef333e3fede15b1bce1c820af23f2c0436b1c9d13b97132add311f17e05", 5738519, NULL },
+    { "hg38_33celltypes.msdref", "1e299d064423e4562e012b7ad92e9536e28010691cc37ec4a9ae4ed81f7c26ff", 0, NULL },
+    { "hg38_celltype.clfx", "16c4e9ccc7fd5997a4676f50926f0257fffecb97424c9c4efc393984ef7170c3", 5738519, NULL },
     { "hg38_sex.clfx", "3d1618f6ca24d9a9d5b0fe1806673540515e5f6e7d7950e7c8873a85bb5c742b", 30931, NULL },
     { "hg38_wg.updecx", "60c786aa383c27461e7a5de37d6b17d2e01b33c5f8a6553f3df7083035fac65a", 2835749302, NULL },
     { NULL, NULL, 0, NULL }
 };
 
 static const yame_asset_file_t YAME_FILES_methscope_models_mm10_models[] = {
-    { "mm10_celltype.ubjx", "3bbdfeabbc59c2e5810eee06c07d24c8fc9826926dd59ddd167ff46b4cb028de", 22498764, NULL },
+    { "mm10_celltype_brain.clfx", "c754eb20c03758678d7da861080b68461b636aded7be1544b38f23e0d6b04902", 0, NULL },
     { "mm10_wg.updecx", "f25cc5317a892105a121300fef009e29e96677f9a43fd02c3b47a59bf64cd482", 2057125237, NULL },
     { NULL, NULL, 0, NULL }
 };
@@ -496,6 +496,7 @@ static const yame_pin_prior_t YAME_PRIOR_methscope_models_hg38_models[] = {
     { "v3", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d" },
     { "v4", "d605a8265c107c5a5aa0d005eed32955b5ddeff54cfa55359fd952a52abb5dad" },
     { "v5", "3e1a6a51226e80c696c4149f620030a83d3cd6ac96bc74a74a95852b68180eb0" },
+    { "v6", "ad2cfa7d9d467d0900b81d27fc9d555c5863bb2b4ed16851f3ba23b8d4351180" },
 };
 
 static const yame_pin_prior_t YAME_PRIOR_methscope_models_mm10_models[] = {
@@ -504,6 +505,7 @@ static const yame_pin_prior_t YAME_PRIOR_methscope_models_mm10_models[] = {
     { "v3", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d" },
     { "v4", "d605a8265c107c5a5aa0d005eed32955b5ddeff54cfa55359fd952a52abb5dad" },
     { "v5", "3e1a6a51226e80c696c4149f620030a83d3cd6ac96bc74a74a95852b68180eb0" },
+    { "v6", "ad2cfa7d9d467d0900b81d27fc9d555c5863bb2b4ed16851f3ba23b8d4351180" },
 };
 
 static const yame_asset_reg_t YAME_ASSETS[] = {
@@ -528,8 +530,8 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10), NULL, 0 },
     { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39), NULL, 0 },
     { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v3", "test", "hg38/data", "150e6ae8b929e59e5b49cec241683abe6e20614bc2d29bc00f083ee01da7e19b", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data), NULL, 0 },
-    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v6", "", "hg38/models", "ad2cfa7d9d467d0900b81d27fc9d555c5863bb2b4ed16851f3ba23b8d4351180", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
-    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v6", "", "mm10/models", "ad2cfa7d9d467d0900b81d27fc9d555c5863bb2b4ed16851f3ba23b8d4351180", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
+    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v7", "", "hg38/models", "188fa1daac6b0068ae4a71b366b51a6c3c1c39129cdfb9b9cff9637105e347c9", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
+    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v7", "", "mm10/models", "188fa1daac6b0068ae4a71b366b51a6c3c1c39129cdfb9b9cff9637105e347c9", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0 }
 };
 
