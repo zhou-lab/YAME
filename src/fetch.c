@@ -112,9 +112,11 @@ static int usage(void) {
   yame_usage_opt("-n", "Say what would be fetched and stop, successfully. The same");
   yame_usage_cont("plan a fetch prints before asking, but it exits 0, so a");
   yame_usage_cont("script can check first. -l gives the same set as TSV.");
-  yame_usage_opt("-y", "Fetch a whole folder without asking. A name covering more");
-  yame_usage_cont("than one directory is confirmed first, since a short name");
-  yame_usage_cont("can reach a lot -- `hg38` is 3.5 GB.");
+  yame_usage_opt("-y", "Fetch a whole folder without asking. A folder is confirmed");
+  yame_usage_cont("first, since a short name can reach a lot -- `hg38` is 3.5");
+  yame_usage_cont("GB. A name that picks out ONE file needs no -y: naming the");
+  yame_usage_cont("file is the confirmation, so a documented fetch line runs");
+  yame_usage_cont("in a script as it stands.");
   yame_usage_opt("-q", "No progress output.");
   yame_usage_opt("-u <url>", "Single-file form: what to download.");
   yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
@@ -2620,10 +2622,27 @@ int main_fetch(int argc, char *argv[]) {
    * did not happen but wrong for a question that was answered. */
   if (dry_run) return 0;
 
-  /* Always ask. A fetch writes to a shared store and can be very large, and
-   * the size is only knowable from the plan just printed -- so the plan and
-   * the question belong together rather than the question being reserved for
-   * cases someone guessed would be big. */
+  /* An explicitly named file is its own confirmation.
+   *
+   * The guard exists so a short name cannot pull a directory silently --
+   * `hg38` reaches 3.5 GB -- but a name that resolved to ONE file is already
+   * the specific request the prompt would be asking for, and its size is in
+   * the plan above either way. Without this, a documented `yame fetch
+   * <file>` line is copy-pasteable only into an interactive terminal: it
+   * fails in a script, in CI and for an agent, which is how every fetch line
+   * in the methscope docs came to be unrunnable. Selecting a directory --
+   * with or without -g -- still asks. */
+  {
+    int all_named = (n_sel > 0);
+    for (size_t i = 0; i < n_sel; ++i)
+      if (!sel[i].only) { all_named = 0; break; }
+    if (all_named) assume_yes = 1;
+  }
+
+  /* Otherwise always ask. A fetch writes to a shared store and can be very
+   * large, and the size is only knowable from the plan just printed -- so the
+   * plan and the question belong together rather than the question being
+   * reserved for cases someone guessed would be big. */
   if (!assume_yes) {
     if (!isatty(STDIN_FILENO)) {
       fprintf(stderr,

@@ -57,7 +57,7 @@ Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
   yame fetch -n hg38/models             # dry-run plan, exits 0
   yame fetch -l -g methscope hg38       # the same set as TSV
   yame fetch -y hg38/data               # scripted/non-interactive
-  yame fetch -y -c hg38/data/human_hg38_test.cg  # into cwd, no manifest
+  yame fetch -c hg38/data/human_hg38_test.cg  # one named file, no -y needed
   yame fetch -u <url> -s <sha256> -o <dest>    # single-file form
 
 A name is a scope: `hg38` takes the unit and all beneath it, `hg38/data` one
@@ -66,9 +66,10 @@ by spaces or commas. Options may come before or after the names. Others:
 `-d <dir>` store root, `-t <tag>` upstream tag override (needs `-k` to accept
 an unpinned tag), `-q` no progress.
 
-Off a terminal a fetch will not proceed without `-y` — it prints the plan and
-exits with "Refusing to fetch ... Re-run with -y", so every scripted or agent
-fetch needs `-y` (or `-n` to plan only). `-l` prints ten columns: target,
+Off a terminal a fetch of a DIRECTORY will not proceed without `-y` — it prints
+the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or
+agent fetch of a folder needs `-y` (or `-n` to plan only). A name that picks out
+one file is its own confirmation and runs as it stands. `-l` prints ten columns: target,
 source, tag, store_path, file, bytes, sha256, dir_state, local, description.
 
 Downloads verify the pinned `SHA256SUMS` anchor and each file digest; `.part`
@@ -137,10 +138,11 @@ Inspect and index
         and its records are block-aligned; -v says which path ran.
   hprint [-r reg | -R ref] [-c] [-g] [-l W] [-t N] [-w N] <in.cx>
         -r chr16 or chr16:10000000-10100000, reference inferred from the row
-        count; -R gives the whole-genome window view; neither = legacy fmt6
-        dump. -c disables color, -g prints deciles, -w caps columns (wider
-        regions are window-averaged, not truncated). fmt6 blocks/shades,
-        fmt3/4 H/M/L, fmt0 1/0.
+        count; -R gives the whole-genome window view; neither = full-dataset
+        dump, one glyph per row with no windowing (fmt0/3/4/6, fmt6 keeping
+        its 1/0/2 alphabet). -c disables color, -g prints deciles, -w caps
+        columns (wider regions are window-averaged, not truncated). fmt6
+        blocks/shades, fmt3/4 H/M/L, fmt0 1/0.
 
 Subset
   subset [-o out.cx] [-l list] [-s] [-H N] [-T N] [-z 0-9] [-v]

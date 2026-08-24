@@ -58,7 +58,7 @@ static int usage(void) {
   yame_usage_cont("-R is OPTIONAL here: the file's row count identifies its");
   yame_usage_cont("reference, and the store is searched for it. So `-r chr16`");
   yame_usage_cont("alone is usually enough.");
-  yame_usage_text("(neither)         Legacy full-dataset dump (fmt6 only).");
+  yame_usage_text("(neither)         Full-dataset dump: every row, no windowing. fmt0/3/4/6.");
   yame_usage_sec("Options:");
   yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
@@ -338,6 +338,27 @@ static void stream_fmt3_region(const cdata_t *c,
   if (wpos > 0 && wemit < n_cols) {
     if (wvalid == 0) { if (color) fputs(ANSI_NA, stdout); fputc('.', stdout); if (color) fputs(ANSI_RESET, stdout); }
     else             print_beta(wsum / wvalid, color, granular);
+  }
+}
+
+/* Full-dataset fmt3 printer.
+ * The region and genome forms window against a reference; with no reference
+ * there is nothing to window by, so every row gets its own glyph -- the same
+ * ones print_beta emits everywhere else. Read straight off the compressed
+ * stream, like the two above. */
+static void stream_fmt3_full(const cdata_t *c, int color, int granular) {
+  uint64_t i = 0, M = 0, U = 0;
+  while (i < c->n) {
+    uint64_t run = fmt3_next(c->s, &i, &M, &U);
+    for (uint64_t k = 0; k < run; ++k) {
+      if (M + U == 0) {
+        if (color) fputs(ANSI_NA, stdout);
+        fputc('.', stdout);
+        if (color) fputs(ANSI_RESET, stdout);
+      } else {
+        print_beta((double)M / (double)(M + U), color, granular);
+      }
+    }
   }
 }
 
@@ -778,35 +799,57 @@ int main_hprint(int argc, char *argv[]) {
     return 0;
   }
 
-  /* ---- original full-dataset mode (fmt6 only) ---- */
+  /* ---- full-dataset mode: one glyph per row, one line per sample ----
+   *
+   * It used to take fmt6 alone, which put the whole-file comparison out of
+   * reach of exactly the files people want to compare: a reconstruction from
+   * `methscope upscale` is fmt4, and a plain sample is fmt3. The region form
+   * has rendered both for as long as it has existed, so the same beta glyphs
+   * come here -- H/M/L, 0-9 under -g, '.' where there is no coverage.
+   *
+   * fmt6 keeps its own 1/0/2 alphabet rather than the block characters the
+   * region form draws: this output is old enough to be parsed elsewhere. */
   cfile_t cf = open_cfile((char *)fname);
   for (;;) {
     cdata_t c2 = read_cdata1(&cf);
     if (c2.n == 0) { free_cdata(&c2); break; }
+
+    /* fmt3 is walked compressed, as in the region form -- inflating it costs
+     * a copy of the whole record for a single forward pass. */
+    if (c2.fmt == '3') {
+      stream_fmt3_full(&c2, color, granular);
+      fputc('\n', stdout);
+      free_cdata(&c2);
+      continue;
+    }
+
     decompress_in_situ(&c2);
 
-    if (c2.fmt != '6') {
-      fprintf(stderr, "[hprint] Only format 6 supported in full-dataset mode "
-              "(got '%c'). Use -r/-R for other formats.\n", c2.fmt);
+    if (c2.fmt == '6') {
+      for (uint64_t i = 0; i < c2.n; ++i) {
+        if (FMT6_IN_UNI(c2, i)) {
+          if (FMT6_IN_SET(c2, i)) {
+            if (color) fprintf(stdout, ANSI_METH   "1" ANSI_RESET);
+            else fputc('1', stdout);
+          } else {
+            if (color) fprintf(stdout, ANSI_UNMETH "0" ANSI_RESET);
+            else fputc('0', stdout);
+          }
+        } else {
+          if (color) fprintf(stdout, ANSI_NA "2" ANSI_RESET);
+          else fputc('2', stdout);
+        }
+      }
+    } else if (c2.fmt == '0' || c2.fmt == '4') {
+      print_region_sample(&c2, 0, c2.n, color, granular);
+    } else {
+      fprintf(stderr, "[hprint] format '%c' has no full-dataset view "
+              "(formats 0, 3, 4 and 6 do).\n", c2.fmt);
       free_cdata(&c2);
       bgzf_close(cf.fh);
       return 1;
     }
 
-    for (uint64_t i = 0; i < c2.n; ++i) {
-      if (FMT6_IN_UNI(c2, i)) {
-        if (FMT6_IN_SET(c2, i)) {
-          if (color) fprintf(stdout, ANSI_METH   "1" ANSI_RESET);
-          else fputc('1', stdout);
-        } else {
-          if (color) fprintf(stdout, ANSI_UNMETH "0" ANSI_RESET);
-          else fputc('0', stdout);
-        }
-      } else {
-        if (color) fprintf(stdout, ANSI_NA "2" ANSI_RESET);
-        else fputc('2', stdout);
-      }
-    }
     fputc('\n', stdout);
     free_cdata(&c2);
   }
