@@ -18,5 +18,5 @@
 InfiniumAnnotation    v8.1    https://github.com/zhou-lab/InfiniumAnnotation/raw
 genomes               v3      https://github.com/zhou-lab/genomes/raw
 KYCGKB                v2      https://github.com/zhou-lab
-methscope             v3      https://raw.githubusercontent.com/zhou-lab/methscope_data
-methscope_models      v7      https://huggingface.co/zhou-lab/methscope/resolve
+methscope             v4      https://raw.githubusercontent.com/zhou-lab/methscope_data
+methscope_models      v8      https://huggingface.co/zhou-lab/methscope/resolve
