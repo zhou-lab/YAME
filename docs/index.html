@@ -368,7 +368,11 @@ mm39       21,889,506   MSA           284,309
 EPICv2        937,690   Mammal40       38,607
 EPIC          866,553   HM27           27,722</pre>
   <p>Piped or redirected, <code class="inl">fetch</code> prints the catalogue
-  as TSV instead, so a script never blocks on a keystroke. Naming a target,
+  as TSV instead, so a script never blocks on a keystroke. A folder is
+  confirmed before it transfers &mdash; off a terminal that means
+  <code class="inl">-y</code>, since a short name can reach a lot &mdash; but
+  <b>a name that picks out one file is its own confirmation</b>, so every
+  fetch line on this page runs in a script as it stands. Naming a target,
   filtering it, dry runs and the rest:
   <code class="inl">yame fetch -h</code>.</p>
 </section>
@@ -413,7 +417,7 @@ Pancreas-Beta         <span style="color:#d99a20">█</span><span style="color:#
 Blood-NK              <span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#d99a20">█</span><span style="color:#d99a20">█</span><span style="color:#4b8fd6">░</span><span style="color:#d99a20">█</span><span style="color:#4b8fd6">░</span><span style="color:#d99a20">█</span>
 Blood-Monocytes       <span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#7d8b95">.</span><span style="color:#d99a20">█</span><span style="color:#d99a20">█</span><span style="color:#d99a20">█</span><span style="color:#7d8b95">.</span><span style="color:#4b8fd6">░</span><span style="color:#d99a20">█</span>
 </code></pre>
-  <p><code class='inl'>-w</code> caps the width — wider regions are window-averaged rather than truncated — and <code class='inl'>-R</code> alone gives the whole-genome view.</p>
+  <p><code class='inl'>-w</code> caps the width — wider regions are window-averaged rather than truncated — and <code class='inl'>-R</code> alone gives the whole-genome view. With neither, every row is dumped as one glyph, which is how a whole reconstruction is compared against a whole truth: M/U counts and fractions render as <code class='inl'>H/M/L</code> (<code class='inl'>-g</code> for deciles), binary calls as <code class='inl'>1/0/2</code>.</p>
 </section>
 <section class="card">
   <h2>Multi-sample indexing <span class="m">— many samples, one file</span></h2>

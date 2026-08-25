@@ -10,6 +10,6 @@
 #ifndef _YAME_VERSION_H
 #define _YAME_VERSION_H
 
-#define YAME_VERSION "v1.38"
+#define YAME_VERSION "v1.39"
 
 #endif /* _YAME_VERSION_H */
