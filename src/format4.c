@@ -43,7 +43,7 @@
  *
  * Bytes:
  *   s is a float array:
- *     index i -> ((float_t*)c->s)[i]
+ *     index i -> ((float*)c->s)[i]
  *
  * Value semantics:
  *   - any valid float >= 0 is interpreted as a numeric value
@@ -96,27 +96,33 @@
  *                           len = w & 0x7fffffff
  *                           append 'len' copies of -1.0 (NA)
  *       else            -> non-NA:
- *                           reinterpret w as float_t and append it
+ *                           reinterpret w as float and append it
  *
  *   The result is a flat float array (unit=4, compressed=0) matching
  *   the original uncompressed representation.
  */
+
+/* The on-disk unit is 4 bytes, so the C type has to be exactly that. This
+ * used to say float_t, which is not float: it is whatever FLT_EVAL_METHOD
+ * makes it, and on an x87 target the same compiler gives it 16 bytes. Every
+ * index here would then stride past three quarters of the data. */
+_Static_assert(sizeof(float) == 4, "format 4 stores 4-byte floats");
 
 cdata_t fmt4_decompress(const cdata_t c) {
   cdata_t expanded = {0};
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
   uint32_t *s0 = (uint32_t*) c.s;
-  float_t *s = calloc(m*sizeof(float_t), 1);
+  float *s = calloc(m*sizeof(float), 1);
 
   for(i=0; i< c.n>>2; ++i) {
     if (s0[i] >> 31) {
       l = s0[i]<<1>>1;
-      if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(float_t));}
+      if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(float));}
       for (j=0; j<l; ++j) s[n++] = -1.0;
     } else {
-      if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(float_t));}
-      memcpy(s+n, s0+i, sizeof(float_t));
+      if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(float));}
+      memcpy(s+n, s0+i, sizeof(float));
       n++;
     }
   }
@@ -187,7 +193,7 @@ void fmt4_compress(cdata_t *c) {
 
       if (!(s0[i] & (1ul<<31))) {
         if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
-        memcpy(s+n, s0+i, sizeof(float_t));
+        memcpy(s+n, s0+i, sizeof(float));
         n++;
         l = 0;
       }
@@ -211,7 +217,7 @@ stats_t* summarize1_queryfmt4(
   cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
   stats_t *st = NULL;
-  float_t *vals = (float_t*) c->s;
+  float *vals = (float*) c->s;
 
   if (c_mask->n == 0) {          // no mask
 

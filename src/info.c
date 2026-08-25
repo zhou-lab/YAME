@@ -27,6 +27,9 @@ static int usage() {
   yame_usage_sec("Options:");
   yame_usage_opt("-1", "Report one record per file.");
   yame_usage_opt("-h", "This help");
+  yame_usage_sec("Columns:");
+  yame_usage_text("File, Sample, NSample (samples in the FILE, from its .idx --");
+  yame_usage_text("NA without one), Nrow, Format, UnitBytes, Keys.");
   fprintf(stderr, "\n");
 
   return 1;
@@ -55,7 +58,12 @@ int main_info(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  fprintf(stdout, "File\tSample\tNcol\tNrow\tFormat\tUnitBytes\tKeys\n");
+  /* NSample, not Ncol: the value is how many sample names the .idx holds --
+   * the same number on every row of a file -- and a CX record is a flat row
+   * vector with no column count to report. NA when there is no index, since
+   * records cannot be skipped without one and counting them would mean a
+   * second pass over the whole file for a redundant number. */
+  fprintf(stdout, "File\tSample\tNSample\tNrow\tFormat\tUnitBytes\tKeys\n");
   for (int j = optind; j < argc; ++j) {
     char *fname_in = argv[j];
     cfile_t cf = open_cfile(fname_in);

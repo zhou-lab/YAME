@@ -38,8 +38,10 @@ static int usage() {
   yame_usage_cont("        0");
   yame_usage_cont("        1");
   yame_usage_cont("        1");
-  yame_usage_cont("(c) Character / small integer data (format 1).");
-  yame_usage_cont("    One byte per entry, typically 0–255.");
+  yame_usage_cont("(c) Character data (format 1).");
+  yame_usage_cont("    ONE character per line -- the byte is stored as typed,");
+  yame_usage_cont("    not parsed as a number, so a longer value is refused");
+  yame_usage_cont("    rather than truncated to its first character.");
   yame_usage_cont("    Example:");
   yame_usage_cont("        0");
   yame_usage_cont("        5");

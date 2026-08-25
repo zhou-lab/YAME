@@ -227,7 +227,11 @@ void fmt3_compress(cdata_t *c) {
   }
   if (l>0) {
     s = realloc(s, n+2);
-    *((uint16_t*) (s+n)) = (uint16_t) l<<2;
+    /* pack_value(), like every other zero-run written above. The cast form
+     * that used to be here wrote through an unaligned uint16_t*, and it
+     * truncated l to 16 bits BEFORE shifting -- harmless only because the
+     * loop caps a run at 2^14-2, which is not something the line said. */
+    pack_value(s+n, l<<2, 2);
     n += 2;
   }
   free(c->s);

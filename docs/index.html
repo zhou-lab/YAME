@@ -424,7 +424,7 @@ Blood-Monocytes       <span style="color:#7d8b95">.</span><span style="color:#7d
   <p>Records concatenate, so a cohort is one file. The <code class='inl'>.idx</code> beside it maps sample names to offsets, which is what makes them addressable by name.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_celltypes.cg
 yame <span class="sub">info</span> human_hg38_celltypes.cg | cut -f2-7</code></pre>
-  <pre class="res"><code>Sample           Ncol      Nrow  Format  UnitBytes  Keys
+  <pre class="res"><code>Sample        NSample      Nrow  Format  UnitBytes  Keys
 Oligodendrocyte     4  29401795       6          2    NA
 Pancreas-Beta       4  29401795       6          2    NA
 Blood-NK            4  29401795       6          2    NA

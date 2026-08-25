@@ -75,12 +75,12 @@
  *       decompressed item but does not apply to the raw bytes on disk.
  *
  *   aux :
- *       Optional auxiliary pointer, format-specific.  Set on-demand.
- *       Examples:
- *         • fmt2: f2_aux_t (keys[] and pointer to state data)
- *         • fmt3: counters for M/U decoding
- *         • fmt6: universe bitmask accessors
- *         • fmt7: row_reader_t for streamed BED iteration
+ *       Optional auxiliary pointer, format-specific.  Set on-demand, and by
+ *       exactly two formats -- the other two entries this list used to carry
+ *       (fmt3 M/U counters, fmt6 universe accessors) were never allocated by
+ *       anything, which made free_cdata() look incomplete when it is not:
+ *         • fmt2: f2_aux_t (keys[] and pointer to state data), fmt2_set_aux()
+ *         • fmt7: row_reader_t for streamed BED iteration, fmt7_next_bed()
  *
  *
  * Special notes:
@@ -110,10 +110,18 @@ static inline uint64_t cdata_nbytes(const cdata_t *c) {
   default: n = c->n;
   }
 
+  /* Decompressed, `n` counts ROWS, so a fixed-width format has to multiply by
+   * its unit. Naming only format 3 here left formats 1, 4 and 5 reporting a
+   * row count as a byte count -- a quarter of the truth for format 4, whose
+   * unit is 4 -- which is a buffer size everywhere this is used to allocate
+   * or copy. Formats 0 and 6 are bit-packed and already sized by the switch
+   * above; 2 and 7 are not flat row vectors and have no answer here. */
   if (!c->compressed) {
-    if(c->fmt == '3') {
-      n *= c->unit;
-    } // TODO: add other formats
+    switch (c->fmt) {
+    case '0': case '6': break;            /* bit-packed, sized above */
+    case '2': case '7': break;            /* not a flat n-by-unit array */
+    default: n *= c->unit ? c->unit : 1;  /* 1, 3, 4, 5 */
+    }
   }
   return n;
 }
@@ -124,6 +132,16 @@ typedef struct f2_aux_t {
   uint8_t *data;                // pointer to data, doesn't own memory
 } f2_aux_t;
 
+/**
+ * Release a record, and leave it safe to release again.
+ *
+ * The `if (c->s)` guard made this look idempotent, and for `s` it was. `aux`
+ * was freed and left pointed at, so a second call -- an error path added
+ * above an existing one, say -- double-freed a format 2 key table. Clearing
+ * the counts too means a freed record cannot go on claiming rows it no
+ * longer holds; nothing reads a field after freeing today, and now nothing
+ * can start to by accident.
+ */
 static inline void free_cdata(cdata_t *c) {
   if (c->s) free(c->s);
   if (c->fmt == '2' && c->aux) {
@@ -132,6 +150,9 @@ static inline void free_cdata(cdata_t *c) {
   }
   if (c->fmt == '7' && c->aux) free(c->aux);
   c->s = NULL;
+  c->aux = NULL;
+  c->n = 0;
+  c->compressed = 0;
 }
 
 /* Set bits per byte value. Built once at load rather than rebuilt on every
@@ -168,8 +189,10 @@ static inline uint64_t cdata_n(cdata_t *c) {
 }
 
 void convertToFmt0(cdata_t *c);
+/* Bit accessors. Every argument is parenthesized and `i` is evaluated more
+ * than once -- pass a plain variable, never `idx++` or a call. */
 #define FMT0_IN_SET(c, i) ((c).s[(i)>>3] & (1u<<((i)&0x7)))
-#define FMT0_SET(c, i) (c.s[(i)>>3] |= (1u<<((i)&0x7)))
+#define FMT0_SET(c, i) ((c).s[(i)>>3] |= (1u<<((i)&0x7)))
 
 #define _FMT0_IN_SET(s, i) ((s)[(i)>>3] & (1u<<((i)&0x7)))
 #define _FMT0_SET(s, i) ((s)[(i)>>3] |= (1u<<((i)&0x7)))
@@ -186,20 +209,37 @@ uint64_t f3_get_mu(cdata_t *c, uint64_t i);
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
 #define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 
-// fmt6 as a quaternary
-#define FMT6_2BIT(c, i) (((c).s[i>>2]>>((i&0x3)*2)) & 0x3)
-#define FMT6_IN_SET(c, i) ((c).s[i>>2] & (1u<<((i&0x3)*2)))
-#define FMT6_IN_UNI(c, i) ((c).s[i>>2] & (1u<<((i&0x3)*2+1)))
-#define FMT6_SET0(c, i) ((c).s[i>>2] = ((c).s[i>>2] & ~(3<<((i&0x3)*2))) | (2<<((i&0x3)*2))) // 10
-#define FMT6_SET1(c, i) ((c).s[i>>2] |= (3<<((i&0x3)*2))) // 11
-#define FMT6_SET_NA(c, i) ((c).s[i>>2] &= (~(3<<((i&0x3)*2)))) // 00
+/* fmt6 as a quaternary. Same rules as the fmt0 accessors above: `i` is
+ * parenthesized, and it is evaluated up to four times (FMT6_SET0), so it
+ * must be a plain variable. The bare `i` these used to carry meant
+ * FMT6_IN_SET(c, i+1) read c.s[i + (1>>2)] -- that is, c.s[i], the wrong
+ * byte, silently, because >> binds looser than +. */
+#define FMT6_2BIT(c, i) (((c).s[(i)>>2]>>(((i)&0x3)*2)) & 0x3)
+#define FMT6_IN_SET(c, i) ((c).s[(i)>>2] & (1u<<(((i)&0x3)*2)))
+#define FMT6_IN_UNI(c, i) ((c).s[(i)>>2] & (1u<<(((i)&0x3)*2+1)))
+#define FMT6_SET0(c, i) ((c).s[(i)>>2] = ((c).s[(i)>>2] & ~(3<<(((i)&0x3)*2))) | (2<<(((i)&0x3)*2))) // 10
+#define FMT6_SET1(c, i) ((c).s[(i)>>2] |= (3<<(((i)&0x3)*2))) // 11
+#define FMT6_SET_NA(c, i) ((c).s[(i)>>2] &= (~(3<<(((i)&0x3)*2)))) // 00
 
-/* this doesn't work for format 2, no copy of aux */
+/**
+ * Copy a record's bytes.
+ *
+ * Formats 2 and 7 are refused rather than half-copied. A format 2 record's
+ * aux holds pointers INTO the buffer being duplicated, so the copy came back
+ * sharing the original's key table -- fine until either one is freed. Format
+ * 7 has no flat row array to copy at all. This used to be a comment saying
+ * the first one does not work; a comment does not stop the call.
+ */
 static inline cdata_t cdata_duplicate(cdata_t c) {
+  if (c.fmt == '2' || c.fmt == '7')
+    wzfatal("[cdata_duplicate] format %c is not a flat row vector; copy it "
+            "with its own helper.\n", c.fmt);
   cdata_t cout = c;
-  cout.s = (uint8_t*) malloc(cdata_nbytes(&c));
+  cout.aux = NULL;              /* the copy owns no auxiliary structure */
+  uint64_t nb = cdata_nbytes(&c);
+  cout.s = (uint8_t*) malloc(nb ? nb : 1);
   if (cout.s==NULL) wzfatal("[cdata_duplicate] Cannot allocate memory.\n");
-  memcpy(cout.s, c.s, cdata_nbytes(&c));
+  memcpy(cout.s, c.s, nb);
   return cout;
 }
 

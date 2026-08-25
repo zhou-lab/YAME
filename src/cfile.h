@@ -34,6 +34,8 @@
 typedef struct cfile_t {
   BGZF *fh;
   int n;                        /* number of samples read */
+  const char *fname;            /* what open_cfile() was given, for messages;
+                                 * points at the caller's string, not owned */
 } cfile_t;
 
 /**

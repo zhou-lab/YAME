@@ -18,7 +18,9 @@
  * along with YAME.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <unistd.h>
 #include "cfile.h"
+#include "kstring.h"
 
 #include "yame_ui.h"
 /*
@@ -354,6 +356,34 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     fprintf(stderr, "[subset] re-encoding (records are not block-aligned, "
             "or -z was given).\n");
 
+  /* Resolve every name BEFORE creating the output.
+   *
+   * The check used to live in the write loop, so a bad name aborted with the
+   * output file already open -- leaving a zero-record .cg behind that reads
+   * as a perfectly valid empty store. A later step could not tell it from a
+   * real one. Report all the missing names at once while there is still
+   * nothing on disk to clean up. */
+  {
+    kstring_t missing = {0};
+    int n_missing = 0;
+    for (int i = 0; i < snames.n; ++i) {
+      if (getIndex(idx, snames.s[i]) >= 0) continue;
+      if (n_missing < 10) {
+        if (n_missing) kputs(", ", &missing);
+        kputs(snames.s[i], &missing);
+      }
+      ++n_missing;
+    }
+    if (n_missing) {
+      if (n_missing > 10) ksprintf(&missing, " and %d more", n_missing - 10);
+      fprintf(stderr, "[%s:%d] not in the index of %s: %s\n", __func__,
+              __LINE__, fname_in ? fname_in : "the input", missing.s);
+      free(missing.s);
+      exit(1);
+    }
+    free(missing.s);
+  }
+
   // output
   BGZF *fp;
   char wmode[8]; write_mode(wmode, sizeof(wmode), level);
@@ -382,6 +412,10 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     if (c.n <= 0) {
       fprintf(stderr, "[%s:%d] Error, cannot find %s.\n", __func__, __LINE__, snames.s[i]);
       fflush(stderr);
+      /* Half a subset is worse than none: what is on disk here is a valid
+       * .cg holding whichever records happened to be written first. */
+      bgzf_close(fp);
+      if (fname_out) unlink(fname_out);
       exit(1);
     }
     bgzf_flush(fp);             /* start this record on a block boundary */

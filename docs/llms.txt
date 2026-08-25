@@ -129,7 +129,7 @@ Text in and out
   chunkchar [-s size] [-v] <in.txt>      split text before packing
 
 Inspect and index
-  info [-1] <in.cx> ...   File Sample Ncol Nrow Format UnitBytes Keys, one row
+  info [-1] <in.cx> ...   File Sample NSample Nrow Format UnitBytes Keys, one row
                           per record; -1 reports only the first record of each
                           file — the cheap way to see what a directory holds
   index [-s list] [-1 name] [-c] <in.cx>    writes <in.cx>.idx; -c to console

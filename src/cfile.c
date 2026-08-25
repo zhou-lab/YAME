@@ -20,19 +20,72 @@
 
 #include "cfile.h"
 
+/**
+ * Read one record, distinguishing END OF STREAM from A BROKEN ONE.
+ *
+ * A short read used to return 0, the same answer as a clean end of file, so
+ * anything that was not a readable store -- a truncated .cg, a file that was
+ * never BGZF, an empty one -- came back as "no records" and every command
+ * exited 0 on it. `yame info` on 200 bytes of noise printed its header and
+ * stopped. The signature check below could never fire, because the read that
+ * would have produced the signature had already failed.
+ *
+ * Only a read of exactly zero bytes at a record boundary is the end. Anything
+ * else -- a negative return, or a partial one -- is a file that claims to
+ * hold a record it does not, and it says so.
+ */
 int read_cdata2(cfile_t *cf, cdata_t *c) {
+  /* Every field the next record owns, not just n. read_cdata() and
+   * read_cdata_from_head() walk a whole file through ONE cdata_t, so
+   * whatever was left here described the PREVIOUS record: a stale unit
+   * would be taken as this record's inflated width (fmt3_decompress
+   * prefers c.unit over the width it infers), and a stale aux would be
+   * read as this record's key table. Nothing sets either before a read
+   * today -- unpack's -u override is applied after -- so this is closing
+   * the door, not fixing a live bug. */
   c->n = 0;
+  c->unit = 0;
+  c->aux = NULL;
   uint64_t sig;
   int64_t size;
-  if (cf->fh->block_length == 0) bgzf_read_block(cf->fh); /* somehow this is needed for concat'ed bgzipped files */
+  /* Needed for concat'ed bgzipped files -- and its result matters. A failure
+   * here leaves block_length at 0, and the bgzf_read() below then re-reads
+   * from a position already at end of file, gets a clean 0, and reports the
+   * end of the stream. That is how a truncated .cg passed for an empty one. */
+  if (cf->fh->block_length == 0 && bgzf_read_block(cf->fh) < 0)
+    wzfatal("Cannot read %s: not a readable CX stream (bad or truncated "
+            "BGZF block).\n", cf->fname ? cf->fname : "input");
   size = bgzf_read(cf->fh, &sig, sizeof(uint64_t));
-  if(size != sizeof(uint64_t)) return 0;
+  if (size == 0) {                             /* the end -- if it really is */
+    if (cf->fh->errcode)
+      wzfatal("Truncated or corrupt BGZF stream in %s.\n",
+              cf->fname ? cf->fname : "input");
+    return 0;
+  }
+  if (size < 0)
+    wzfatal("Cannot read %s: not a readable CX stream.\n",
+            cf->fname ? cf->fname : "input");
+  if (size != (int64_t) sizeof(uint64_t))
+    wzfatal("Truncated record header in %s: wanted %zu bytes of signature, "
+            "got %"PRId64".\n", cf->fname ? cf->fname : "input",
+            sizeof(uint64_t), size);
   if (sig != CDSIG) wzfatal("Unmatched signature. File corrupted.\n");
-  bgzf_read(cf->fh, &(c->fmt), sizeof(char));
-  bgzf_read(cf->fh, &(c->n), sizeof(uint64_t));
+  if (bgzf_read(cf->fh, &(c->fmt), sizeof(char)) != (ssize_t) sizeof(char) ||
+      bgzf_read(cf->fh, &(c->n), sizeof(uint64_t)) != (ssize_t) sizeof(uint64_t))
+    wzfatal("Truncated record header in %s: the signature is there but the "
+            "format and row count are not.\n",
+            cf->fname ? cf->fname : "input");
   c->compressed = 1;
-  c->s = realloc(c->s, cdata_nbytes(c));
-  bgzf_read(cf->fh, c->s, cdata_nbytes(c));
+  uint64_t nb = cdata_nbytes(c);
+  uint8_t *s2 = realloc(c->s, nb ? nb : 1);
+  if (!s2)
+    wzfatal("Cannot allocate %"PRIu64" bytes for a record of %s.\n",
+            nb, cf->fname ? cf->fname : "input");
+  c->s = s2;
+  if (nb && bgzf_read(cf->fh, c->s, nb) != (ssize_t) nb)
+    wzfatal("Truncated record in %s: the header promises %"PRIu64" bytes of "
+            "format %c data that the file does not hold.\n",
+            cf->fname ? cf->fname : "input", nb, c->fmt);
   cf->n++;
   return 1;
 }
@@ -140,6 +193,7 @@ int cx_copy_bytes(FILE *in, int64_t beg, int64_t end, FILE *out) {
 
 cfile_t open_cfile(char *fname) { /* for read */
   cfile_t cf = {0};
+  cf.fname = fname;
   if (strcmp(fname, "-")==0) {
     cf.fh = bgzf_dopen(fileno(stdin), "r");
   } else {

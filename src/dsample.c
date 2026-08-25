@@ -122,8 +122,12 @@ cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
   // Randomly select N of them into the first N slots of indices[]
   fisher_yates_shuffle_select(indices, N_indices, N);
 
-  // Build bitset of which indices to keep
-  uint64_t nbytes = cout.n / 8 + 1;
+  /* Build bitset of which indices to keep.
+   *
+   * Ceiling, matching what main_dsample() allocated. `n/8 + 1` is one byte
+   * MORE than that whenever n is a multiple of 8, and the memset wrote it --
+   * a one-byte heap overflow on every input whose row count divides by 8. */
+  uint64_t nbytes = (cout.n + 7) / 8;
   memset(to_include, 0, nbytes * sizeof(uint8_t));
 
   for (uint64_t k = 0; k < N; ++k)
@@ -180,8 +184,8 @@ cdata_t dsample_fmt6(cdata_t *c, uint64_t N,
 
   fisher_yates_shuffle_select(indices, N_indices, N);
 
-  // bitset of which universe positions to keep
-  uint64_t nbytes = cout.n / 8 + 1;
+  /* Bitset of which universe positions to keep; ceiling, as above. */
+  uint64_t nbytes = (cout.n + 7) / 8;
   memset(to_include, 0, nbytes * sizeof(uint8_t));
   for (uint64_t k = 0; k < N; ++k)
     _FMT0_SET(to_include, indices[k]);
@@ -408,8 +412,8 @@ int main_dsample(int argc, char *argv[]) {
     free_cdata(&c_in);
   }
 
-  /* free(indices); */
-  /* free(to_include); */
+  free(indices);
+  free(to_include);
   bgzf_close(cf.fh);
   bgzf_close(fp_out);
 

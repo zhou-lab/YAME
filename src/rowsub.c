@@ -22,6 +22,7 @@
 #include "yame_ui.h"
 #include <sys/types.h>
 #include <string.h>
+#include <errno.h>
 #include "cfile.h"
 #include "assets.h"
 #include "cdata.h"
@@ -94,6 +95,27 @@ typedef struct config_t {
   int64_t index;
   int64_t isize;
 } config_t;
+
+/**
+ * Parse one row index from -B or -I.
+ *
+ * atoi() returned an int for values that are uint64_t everywhere else in
+ * YAME, and reported nothing. Past INT_MAX it went two ways: a value like
+ * 4000000000 came back negative and widened into a colossal beg that at
+ * least failed loudly, while 2^32+10 wrapped to 10 and the command returned
+ * rows 10-20 for a request it could not honour, rc 0, no message. atoi also
+ * reads "abc" as 0, so a typo silently meant row 0. An all-cytosine .cr is
+ * ~1.1 billion rows, close enough to the edge to matter.
+ */
+static uint64_t parse_row_index(const char *s, const char *what) {
+  char *end = NULL;
+  errno = 0;
+  unsigned long long v = strtoull(s, &end, 10);
+  if (end == s || (end && *end) || errno == ERANGE || s[0] == '-')
+    wzfatal("[rowsub] %s: '%s' is not a row index (a non-negative whole "
+            "number).\n", what, s);
+  return (uint64_t) v;
+}
 
 // rowsub supports multiple mutually-exclusive row selection modes.
 // Precedence in code is: -l/-L (explicit indices) > -m (mask) > -B/-I (block) > default block.
@@ -486,10 +508,14 @@ int main_rowsub(int argc, char *argv[]) {
   if (B_option) {               // [rowIndexBeg0]_(rowIndexEnd1)
     char *token = strtok(B_option, "_");
     if (token != NULL) {
-      config.beg = atoi(token);
+      config.beg = parse_row_index(token, "-B beg0");
       token = strtok(NULL, "_");
       if (token != NULL) {
-        config.end = atoi(token) - 1; // convert to 0-base
+        uint64_t end1 = parse_row_index(token, "-B end1");
+        if (end1 == 0)
+          wzfatal("[rowsub] -B end1 is 1-based and exclusive, so 0 selects "
+                  "nothing. Give at least 1.\n");
+        config.end = end1 - 1; // convert to 0-base
       } else {
         config.end = config.beg;
       }
@@ -499,14 +525,21 @@ int main_rowsub(int argc, char *argv[]) {
   if (I_option) {               // [blockIndex0]_(blockSize)
     char *token = strtok(I_option, "_");
     if (token != NULL) {
-      int64_t blockIndex0 = atoi(token);
-      int64_t blockSize = config.isize;
+      uint64_t blockIndex0 = parse_row_index(token, "-I blockIndex0");
+      uint64_t blockSize = (uint64_t) config.isize;
       token = strtok(NULL, "_");
       if (token != NULL) {
-        blockSize = atoi(token);
+        blockSize = parse_row_index(token, "-I blockSize");
+        if (blockSize == 0)
+          wzfatal("[rowsub] -I blockSize of 0 selects nothing.\n");
       }
+      /* beg = index * size has to be checked, not just computed: the product
+       * of two legal uint64_t values can wrap into a small in-range row. */
+      if (blockIndex0 && blockSize > UINT64_MAX / blockIndex0)
+        wzfatal("[rowsub] -I %"PRIu64"_%"PRIu64" overflows a row index.\n",
+                blockIndex0, blockSize);
       config.beg = blockIndex0 * blockSize;
-      config.end = (blockIndex0+1) * blockSize - 1;
+      config.end = config.beg + blockSize - 1;
     }
   }
   

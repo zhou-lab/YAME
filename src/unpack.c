@@ -187,10 +187,10 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
     break;
   }
   case '4': {
-    if (((float_t*) (c->s))[i]<0) {
+    if (((float*) (c->s))[i]<0) {
       fputs("NA", stdout);
     } else {
-      fprintf(stdout, "%1.3f", ((float_t*) (c->s))[i]);
+      fprintf(stdout, "%1.3f", ((float*) (c->s))[i]);
     }
     break;
   }
@@ -263,13 +263,24 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
   }
   
   uint64_t i,m, k, kn = cs->size;
-  cdata_t expanded = decompress(*ref_cdata_v(cs, 0));
-  uint64_t n = expanded.n;
+  cdata_t probe = decompress(*ref_cdata_v(cs, 0));
+  uint64_t n = probe.n;
+  free_cdata(&probe);
   cdata_t *sliced = calloc(kn, sizeof(cdata_t));
-  for (m=0; m <= n/s; ++m) {
+
+  /* Ceiling, not floor-plus-one -- the same correction chunk.c carries. With
+   * n an exact multiple of s the extra iteration began at row n, slice()
+   * clamped end below beg, and a run that had already printed every row died
+   * on "Slicing negative span". */
+  uint64_t n_chunks = s ? (n + s - 1) / s : 0;
+  for (m=0; m < n_chunks; ++m) {
     for (k=0; k<kn; ++k) {
-      expanded = decompress(*ref_cdata_v(cs, k));
+      /* Freed inside the loop, not after it. Holding one decompressed record
+       * per chunk per sample until the end leaks the whole file -- which is
+       * the opposite of what -c is for. */
+      cdata_t expanded = decompress(*ref_cdata_v(cs, k));
       slice(&expanded, m*s, (m+1)*s-1, &sliced[k]);
+      free_cdata(&expanded);
     }
     for (i=0; i<sliced[0].n; ++i) {
       for (k=0; k<kn; ++k) {
@@ -281,7 +292,7 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
   }
 
   for (k=0; k<kn; ++k) free(sliced[k].s);
-  free(expanded.s); free(sliced);
+  free(sliced);
 }
 
 static void print_cdata(cdata_v *cs, cdata_pfmt_t pfmt, char *fname_row) {
