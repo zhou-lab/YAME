@@ -550,7 +550,8 @@ void rowop_cometh(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
       cnts = calloc(c.n*cometh_window, sizeof(uint64_t));
       ncnts = c.n;
     }
-    assert(c.fmt == '3');
+    if (c.fmt != '3')           /* a user-input check, so not an assert() */
+      wzfatal("[rowop cometh] Only format 3 is supported (got '%c').\n", c.fmt);
     for (uint64_t i=0; i<ncnts-cometh_window; ++i) {
       for (uint64_t j=i+1; j<=min(ncnts-1, i+cometh_window); ++j) {
         uint64_t mu = f3_get_mu(&c, i);

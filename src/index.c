@@ -115,7 +115,14 @@ static index_t* append_index(index_t *idx, cfile_t *cf, char* sname_to_append) {
   if (kh_size(idx) == 0) {      /* first item in index */
     addr = bgzf_tell(cf->fh);
   } else {
-    assert(bgzf_seek(cf->fh, last_address(idx), SEEK_SET) == 0);
+    /* The seek used to be the argument of an assert(). conda-build compiles
+     * with -DNDEBUG, which removes the whole expression, so every conda
+     * package ever shipped never seeked: the reader stayed at the start of
+     * the file and gave block 2's address to every sample after the second.
+     * Keep side effects out of assert(). */
+    if (bgzf_seek(cf->fh, last_address(idx), SEEK_SET) != 0)
+      wzfatal("[%s] Cannot seek to the last indexed sample in %s.\n",
+              __func__, cf->fname ? cf->fname : "input");
     read_cdata2(cf, &c);         /* read past the last c data block */
     addr = bgzf_tell(cf->fh);
   }

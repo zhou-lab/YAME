@@ -407,7 +407,11 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     if (index < 0)
       wzfatal("[%s:%d] %s is not in the index of the input.\n",
               __func__, __LINE__, snames.s[i]);
-    assert(bgzf_seek(cf.fh, index, SEEK_SET) == 0);
+    /* Not an assert(): -DNDEBUG (every conda build) would drop the seek and
+     * hand back records in file order whatever names were asked for. */
+    if (bgzf_seek(cf.fh, index, SEEK_SET) != 0)
+      wzfatal("[%s:%d] Cannot seek to %s in %s.\n",
+              __func__, __LINE__, snames.s[i], fname_in);
     read_cdata2(&cf, &c);
     if (c.n <= 0) {
       fprintf(stderr, "[%s:%d] Error, cannot find %s.\n", __func__, __LINE__, snames.s[i]);
