@@ -49,6 +49,52 @@ typedef struct cfile_t {
 cfile_t open_cfile(char *fname);
 
 /**
+ * Outcome of one record-read attempt. The core reports; the caller sets
+ * policy. YAME's own commands treat everything past CX_READ_END as fatal
+ * (see read_cdata2 below); a reader whose CX data is a PREFIX of a larger
+ * file passes a limit instead and never sees the other statuses.
+ */
+typedef enum {
+  CX_READ_OK = 0,     /* a record was read                                  */
+  CX_READ_END,        /* clean end: a zero-length read at a record boundary,
+                       * or the caller's limit was reached                   */
+  CX_READ_NOT_CX,     /* the next bytes are not a BGZF block header          */
+  CX_READ_TRUNCATED,  /* a block or record ends short of what it promises    */
+  /* NOT_CX and TRUNCATED are best-effort labels taken from the BGZF error
+   * code, and the two cannot always be told apart: a truncation that leaves a
+   * stub shorter than a block header is indistinguishable from a foreign tail.
+   * Do not use NOT_CX as "my data ends here" -- pass a limit and read END. */
+  CX_READ_BADSIG,     /* a record header without CDSIG                       */
+  CX_READ_NOMEM       /* the record's bytes could not be allocated           */
+} cx_read_t;
+
+/* "read to the end of the stream", the value every YAME command passes */
+#define CX_NO_LIMIT ((int64_t)-1)
+/* enough for the longest message cx_read_record() formats */
+#define CX_ERRBUF 256
+
+/**
+ * Read one record and say what happened, without ever exiting.
+ *
+ * @param cf    the open file
+ * @param c     the record, overwritten
+ * @param limit raw file offset at which this reader's CX data ends; no block
+ *              starting at or after it is pulled, and the read reports
+ *              CX_READ_END instead. CX_NO_LIMIT reads to end of stream.
+ *              Meaningful only for a seekable input: stdin must pass
+ *              CX_NO_LIMIT.
+ * @param err   buffer for the message describing a failure status, or NULL
+ * @param errn  size of `err`
+ *
+ * A bundle whose CX portion is a prefix (a methscope MSBNDL1 file) passes the
+ * container offset as `limit`. Without it the reader walks into the container
+ * and reports CX_READ_NOT_CX, which is how a documented bundle read turned
+ * into a fatal in v1.40.
+ */
+cx_read_t cx_read_record(cfile_t *cf, cdata_t *c, int64_t limit,
+                         char *err, size_t errn);
+
+/**
  * Raw block passthrough helpers.
  *
  * A record that begins on a BGZF block boundary can be moved between files by

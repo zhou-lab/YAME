@@ -111,6 +111,7 @@ static BGZF *bgzf_read_init()
 	BGZF *fp;
 	fp = (BGZF*)calloc(1, sizeof(BGZF));
 	fp->is_write = 0;
+	fp->limit = -1;               /* calloc would otherwise mean "stop at 0" */
 	fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 #ifdef BGZF_CACHE
@@ -124,6 +125,7 @@ static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the d
 	BGZF *fp;
 	fp = (BGZF*)calloc(1, sizeof(BGZF));
 	fp->is_write = 1;
+	fp->limit = -1;
 	fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compress_level = compress_level < 0? Z_DEFAULT_COMPRESSION : compress_level; // Z_DEFAULT_COMPRESSION==-1
@@ -341,6 +343,16 @@ int bgzf_read_block(BGZF *fp)
 	int count, size = 0, block_length, remaining;
 	int64_t block_address;
 	block_address = _bgzf_tell((_bgzf_file_t)fp->fp);
+	/* The caller's stream ends here even though the file does not. This has to
+	 * precede the cache lookup below, or a cache hit hands back a block from
+	 * beyond the limit; YAME sets no cache size today, so that is latent
+	 * rather than live. A zero-length block reports a clean end of stream
+	 * through bgzf_read() with no error code, which is exactly what a reader
+	 * that reached the end of its own data should see. */
+	if (fp->limit >= 0 && block_address >= fp->limit) {
+		fp->block_length = 0;
+		return 0;
+	}
 	if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
 	count = _bgzf_read(fp->fp, header, sizeof(header));
 	if (count == 0) { // no data read
@@ -368,6 +380,11 @@ int bgzf_read_block(BGZF *fp)
 	fp->block_length = count;
 	cache_block(fp, size);
 	return 0;
+}
+
+void bgzf_set_limit(BGZF *fp, int64_t limit)
+{
+	fp->limit = limit;
 }
 
 ssize_t bgzf_read(BGZF *fp, void *data, size_t length)

@@ -49,6 +49,14 @@ typedef struct {
     void *uncompressed_block, *compressed_block;
 	void *cache; // a pointer to a hash table
 	void *fp; // actual file handler; FILE* on writing; FILE* or knetFile* on reading
+	/* Stop reading before any block that would START at or after this raw file
+	 * offset; <0 (the default) means no limit. Set it when the stream you want
+	 * is a PREFIX of the file -- a methscope MSBNDL1 bundle opens with a
+	 * complete BGZF stream and continues with raw container bytes, and without
+	 * a limit the reader walks into them and reports a broken file. Tested
+	 * against the offset the NEXT member starts at, which is not
+	 * fp->block_address: that names the member already read. */
+	int64_t limit;
 #ifdef BGZF_MT
 	void *mt; // only used for multi-threading
 #endif
@@ -197,6 +205,13 @@ extern "C" {
 	 * Read the next BGZF block.
 	 */
 	int bgzf_read_block(BGZF *fp);
+
+	/**
+	 * Stop the reader at `limit`, a raw file offset. A block starting at or
+	 * after it is not pulled and the stream reports a clean end instead.
+	 * Pass a negative value to remove the limit.
+	 */
+	void bgzf_set_limit(BGZF *fp, int64_t limit);
 
 #ifdef BGZF_MT
 	/**

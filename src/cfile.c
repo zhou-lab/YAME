@@ -18,10 +18,12 @@
  * along with YAME.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <stdarg.h>
 #include "cfile.h"
 
 /**
- * Read one record, distinguishing END OF STREAM from A BROKEN ONE.
+ * Read one record, distinguishing END OF STREAM from A BROKEN ONE -- and from
+ * a stream that ended because the CALLER said where it ends.
  *
  * A short read used to return 0, the same answer as a clean end of file, so
  * anything that was not a readable store -- a truncated .cg, a file that was
@@ -33,8 +35,42 @@
  * Only a read of exactly zero bytes at a record boundary is the end. Anything
  * else -- a negative return, or a partial one -- is a file that claims to
  * hold a record it does not, and it says so.
+ *
+ * That left one case with nowhere to go: a file whose CX data is a complete
+ * PREFIX and whose tail belongs to someone else. A methscope MSBNDL1 bundle
+ * is exactly this, and reading it walked off the end of the BGZF stream into
+ * raw container bytes and died. The caller knows where its data ends, so it
+ * passes that offset as `limit` and gets CX_READ_END there. Nothing is
+ * inferred from the shape of a failure, and a caller that passes no limit is
+ * as strict as it ever was.
  */
-int read_cdata2(cfile_t *cf, cdata_t *c) {
+/* Which kind of failure the BGZF layer just had. The error code only LABELS a
+ * status here; it never decides whether to stop. Letting it decide is exactly
+ * what v1.40 did, and it cannot tell a foreign tail from a stub shorter than a
+ * block header -- see the note on CX_READ_NOT_CX in cfile.h. A caller that has
+ * to know where its data ends passes a limit instead. */
+static cx_read_t cx_bgzf_status(BGZF *fh) {
+  if (fh->errcode & (BGZF_ERR_IO | BGZF_ERR_ZLIB)) return CX_READ_TRUNCATED;
+  if (fh->errcode & BGZF_ERR_HEADER) return CX_READ_NOT_CX;
+  return CX_READ_TRUNCATED;
+}
+
+static cx_read_t cx_fail(char *err, size_t errn, cx_read_t st,
+                         const char *fmt, ...) {
+  if (err && errn) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(err, errn, fmt, ap);
+    va_end(ap);
+  }
+  return st;
+}
+
+cx_read_t cx_read_record(cfile_t *cf, cdata_t *c, int64_t limit,
+                         char *err, size_t errn) {
+  if (err && errn) err[0] = '\0';
+  const char *fn = cf->fname ? cf->fname : "input";
+
   /* Every field the next record owns, not just n. read_cdata() and
    * read_cdata_from_head() walk a whole file through ONE cdata_t, so
    * whatever was left here described the PREVIOUS record: a stale unit
@@ -46,6 +82,11 @@ int read_cdata2(cfile_t *cf, cdata_t *c) {
   c->n = 0;
   c->unit = 0;
   c->aux = NULL;
+
+  /* Re-armed on every call, so a caller that stops passing a limit is not
+   * held to the one it passed last time. */
+  bgzf_set_limit(cf->fh, limit);
+
   uint64_t sig;
   int64_t size;
   /* Needed for concat'ed bgzipped files -- and its result matters. A failure
@@ -53,41 +94,61 @@ int read_cdata2(cfile_t *cf, cdata_t *c) {
    * from a position already at end of file, gets a clean 0, and reports the
    * end of the stream. That is how a truncated .cg passed for an empty one. */
   if (cf->fh->block_length == 0 && bgzf_read_block(cf->fh) < 0)
-    wzfatal("Cannot read %s: not a readable CX stream (bad or truncated "
-            "BGZF block).\n", cf->fname ? cf->fname : "input");
+    return cx_fail(err, errn, cx_bgzf_status(cf->fh),
+                   "Cannot read %s: not a readable CX stream (bad or truncated "
+                   "BGZF block).\n", fn);
   size = bgzf_read(cf->fh, &sig, sizeof(uint64_t));
   if (size == 0) {                             /* the end -- if it really is */
     if (cf->fh->errcode)
-      wzfatal("Truncated or corrupt BGZF stream in %s.\n",
-              cf->fname ? cf->fname : "input");
-    return 0;
+      return cx_fail(err, errn, CX_READ_TRUNCATED,
+                     "Truncated or corrupt BGZF stream in %s.\n", fn);
+    return CX_READ_END;
   }
   if (size < 0)
-    wzfatal("Cannot read %s: not a readable CX stream.\n",
-            cf->fname ? cf->fname : "input");
+    return cx_fail(err, errn, cx_bgzf_status(cf->fh),
+                   "Cannot read %s: not a readable CX stream.\n", fn);
   if (size != (int64_t) sizeof(uint64_t))
-    wzfatal("Truncated record header in %s: wanted %zu bytes of signature, "
-            "got %"PRId64".\n", cf->fname ? cf->fname : "input",
-            sizeof(uint64_t), size);
-  if (sig != CDSIG) wzfatal("Unmatched signature. File corrupted.\n");
+    return cx_fail(err, errn, CX_READ_TRUNCATED,
+                   "Truncated record header in %s: wanted %zu bytes of "
+                   "signature, got %"PRId64".\n", fn, sizeof(uint64_t), size);
+  if (sig != CDSIG)
+    return cx_fail(err, errn, CX_READ_BADSIG,
+                   "Unmatched signature. File corrupted.\n");
   if (bgzf_read(cf->fh, &(c->fmt), sizeof(char)) != (ssize_t) sizeof(char) ||
       bgzf_read(cf->fh, &(c->n), sizeof(uint64_t)) != (ssize_t) sizeof(uint64_t))
-    wzfatal("Truncated record header in %s: the signature is there but the "
-            "format and row count are not.\n",
-            cf->fname ? cf->fname : "input");
+    return cx_fail(err, errn, CX_READ_TRUNCATED,
+                   "Truncated record header in %s: the signature is there but "
+                   "the format and row count are not.\n", fn);
   c->compressed = 1;
   uint64_t nb = cdata_nbytes(c);
   uint8_t *s2 = realloc(c->s, nb ? nb : 1);
   if (!s2)
-    wzfatal("Cannot allocate %"PRIu64" bytes for a record of %s.\n",
-            nb, cf->fname ? cf->fname : "input");
+    return cx_fail(err, errn, CX_READ_NOMEM,
+                   "Cannot allocate %"PRIu64" bytes for a record of %s.\n",
+                   nb, fn);
   c->s = s2;
   if (nb && bgzf_read(cf->fh, c->s, nb) != (ssize_t) nb)
-    wzfatal("Truncated record in %s: the header promises %"PRIu64" bytes of "
-            "format %c data that the file does not hold.\n",
-            cf->fname ? cf->fname : "input", nb, c->fmt);
+    return cx_fail(err, errn, CX_READ_TRUNCATED,
+                   "Truncated record in %s: the header promises %"PRIu64" "
+                   "bytes of format %c data that the file does not hold.\n",
+                   fn, nb, c->fmt);
   cf->n++;
-  return 1;
+  return CX_READ_OK;
+}
+
+/**
+ * The strict policy every YAME command reads under: a record, a clean end, or
+ * exit. Same signature, same messages and same exit codes as before the core
+ * was split out, so none of its call sites changed.
+ */
+int read_cdata2(cfile_t *cf, cdata_t *c) {
+  char err[CX_ERRBUF];
+  switch (cx_read_record(cf, c, CX_NO_LIMIT, err, sizeof err)) {
+  case CX_READ_OK:  return 1;
+  case CX_READ_END: return 0;
+  default: wzfatal("%s", err);
+  }
+  return 0;                     /* not reached: wzfatal() exits */
 }
 
 const uint8_t CX_BGZF_EOF[28] =
