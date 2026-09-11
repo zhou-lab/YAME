@@ -120,6 +120,7 @@ static void t_accessors(const char *path) {
 #include "assets.h"
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <stdio.h>
 
 /* SHA-256 against the published vectors: the whole download path trusts
  * this one function, and a wrong digest either rejects every file or accepts
@@ -249,6 +250,48 @@ static void t_refstore(const char *store) {
   st = yame_ref_resolve("NoSuchMask", 29401795, store, NULL, path, sizeof path, &name, &fetch);
   CHECK(st == YAME_REF_NO_NAME || st == YAME_REF_MISSING,
         "an unknown name returned %d, want NO_NAME", st);
+
+  /* resolve_multi: one name can stand for SEVERAL files -- a knowledgebase
+   * directory's worth -- and the caller frees the array. */
+  char **paths = NULL; size_t np = 0;
+  st = yame_ref_resolve_multi("hg38", 29401795, store, "genome", &paths, &np, &name, &fetch);
+  if (st == YAME_REF_OK) {
+    CHECK(np >= 1, "resolve_multi returned OK with %zu paths", np);
+    CHECK(paths != NULL, "resolve_multi returned OK with a NULL array");
+    for (size_t i = 0; i < np; ++i)
+      CHECK(paths[i] && paths[i][0] == '/', "path %zu is not absolute: %s",
+            i, paths[i] ? paths[i] : "(null)");
+    yame_ref_paths_free(paths, np);
+  } else {
+    CHECK(np == 0, "resolve_multi failed but reported %zu paths", np);
+    yame_ref_paths_free(paths, np);      /* must tolerate the empty case */
+  }
+  paths = NULL; np = 0;
+  st = yame_ref_resolve_multi("NoSuchName", 29401795, store, NULL, &paths, &np, &name, &fetch);
+  CHECK(st != YAME_REF_OK, "resolve_multi accepted a name nothing carries");
+  yame_ref_paths_free(paths, np);
+
+  /* The explain functions write the message a command prints when a reference
+   * is missing. They must say something for every status, and name the flag
+   * the caller was using. */
+  FILE *devnull = fopen("/dev/null", "w");
+  if (devnull) {
+    int codes[] = { YAME_REF_OK, YAME_REF_MISSING, YAME_REF_WRONG_KIND,
+                    YAME_REF_NO_NAME, YAME_REF_UNKNOWN };
+    for (size_t i = 0; i < sizeof codes / sizeof *codes; ++i) {
+      yame_ref_explain(devnull, 29401795, codes[i], "hg38", "hg38/cpg_nocontig.cr", "-R");
+      yame_ref_explain_name(devnull, "ChromHMM", 29401795, codes[i], "hg38",
+                            "hg38/KYCG", "-m");
+    }
+    fclose(devnull);
+  }
+  /* and a real message goes somewhere a test can read */
+  char msg[4096]; FILE *mf = fmemopen(msg, sizeof msg, "w");
+  if (mf) {
+    yame_ref_explain(mf, 12345, YAME_REF_UNKNOWN, NULL, NULL, "-R");
+    fclose(mf);
+    CHECK(msg[0] != '\0', "explain printed nothing for an unknown row count");
+  }
 
   /* the row count of a real file */
   unlink(own); unlink(cr);

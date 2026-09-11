@@ -198,7 +198,25 @@ subprocess.run(f"awk 'BEGIN{{for(i=0;i<8;i++) print (i%2)}}' | {YAME} pack -f b 
                shell=True, check=True)
 drive(["summary", "-b", cg], [b"j", b"q"], "summary -b over a real query", want_exit=1)
 
-# 14. off a terminal the browser must refuse cleanly rather than hang or crash
+# 14. the help screen, reached with h and listing the key groups it documents
+code, out = drive(["fetch"], [b"h", ESC, b"q"], "help screen")
+for section in ("MOVING", "CHOOSING"):
+    frame_has(out, section, f"help screen lists {section}")
+drive(["fetch"], [b"h", b"h", ESC, b"q"], "help twice")
+
+# 15. the info pane: enter opens it, i closes it (the status bar says "i close")
+drive(["fetch"], [ENTER, b"i", ENTER, b"i", b"q"], "info pane open and close")
+
+# 16. the remaining keys the help screen documents: l/left to open and close,
+#     x to select, r for the recommended selection
+RIGHT, LEFT = b"\x1b[C", b"\x1b[D"
+drive(["fetch"], [b"l", DOWN, RIGHT, LEFT, LEFT, b"x", b"r", b"a", b"a", b"q"],
+      "open, close, select, recommend")
+
+# 17. f with nothing selected must not start a fetch
+code, out = drive(["fetch"], [b"f", b"q"], "fetch with an empty selection")
+
+# 18. off a terminal the browser must refuse cleanly rather than hang or crash
 import subprocess
 p = subprocess.run([YAME, "fetch"], stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
 if p.returncode < 0:
