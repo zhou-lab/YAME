@@ -276,6 +276,18 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
     fflush(stderr);
     exit(1);
   }
+  /* Every index is read straight into the row array below, so one past the
+   * end reads past the record -- and for a format whose rows are bits or
+   * 2-bit codes it lands inside a byte that exists, which is why this came
+   * back as a plausible-looking uncovered site with exit 0 rather than as a
+   * crash. An index the file cannot answer is a question about a different
+   * file; say so instead of inventing a row. */
+  for (int64_t i = 0; i < n; ++i) {
+    if (row_indices[i] < 1 || (uint64_t) row_indices[i] > c->n)
+      wzfatal("[%s] Row %"PRId64" is out of range: the record has %"PRIu64
+              " rows (indices are 1-based).\n",
+              __func__, row_indices[i], c->n);
+  }
   cdata_t c2 = {0};
   c2.unit = c->unit;
   c2.fmt = c->fmt;

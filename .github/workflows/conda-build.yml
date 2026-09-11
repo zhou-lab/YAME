@@ -56,6 +56,51 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The public library surface is everything reachable from src/cdata.h and
+  # src/cfile.h -- downstream tools (methscope) include those two DIRECTLY,
+  # and so see every header they pull in. Diffing only the two named files
+  # was tried first and missed a real break on its first dry run: a macro
+  # added to wzmisc.h (reached through cdata.h) clobbered a same-named
+  # function in methscope. So the set is computed transitively, and any
+  # change fails unless a commit since the last tag names the header. A
+  # deliberate change passes by saying so; an accidental one is caught
+  # before it ships. This is the check methscope's RELEASE.md step 1 did by
+  # hand.
+  api-surface:
+    name: public headers vs last tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Diff the public header surface against the last tag
+        run: |
+          last=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          [ -n "$last" ] || { echo "no prior tag; nothing to compare"; exit 0; }
+          ## the transitive closure of #include "..." from the two entry headers
+          surface=$(python3 - <<'PY'
+          import re, os
+          seen, todo = [], ["src/cdata.h", "src/cfile.h"]
+          while todo:
+              h = todo.pop(0)
+              if h in seen or not os.path.exists(h): continue
+              seen.append(h)
+              todo += ["src/" + i for i in re.findall(r'#include "([^"]+)"', open(h).read())]
+          print(" ".join(sorted(seen)))
+          PY
+          )
+          echo "public surface: $surface"
+          changed=$(git diff --name-only "$last" HEAD -- $surface)
+          [ -n "$changed" ] || { echo "public headers unchanged since $last"; exit 0; }
+          echo "changed since $last:"; echo "$changed" | sed 's/^/  /'
+          git diff "$last" HEAD -- $surface
+          msg=$(git log --format=%B "$last..HEAD")
+          for h in $changed; do
+            b=$(basename "$h")
+            echo "$msg" | grep -q "$b" ||
+              { echo "::error::$b changed since $last but no commit since then names it"; exit 1; }
+          done
+          echo "every changed header is named in a commit message"
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
