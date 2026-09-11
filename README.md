@@ -8,6 +8,7 @@
 
 [![Install from zhou-lab](https://img.shields.io/badge/install-zhou--lab-brightgreen.svg)](https://anaconda.org/zhou-lab/yame)
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
+[![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fzhou-lab.github.io%2FYAME%2Fcoverage.json)](https://github.com/zhou-lab/YAME/blob/main/test/run.sh)
 
 A bit-packer for DNA methylation data — arrays and whole genomes, where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.
 

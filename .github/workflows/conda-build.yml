@@ -8,6 +8,54 @@ on:
     branches: [main]
 
 jobs:
+  # The suite, under the three builds that matter. conda-recipe/build.sh
+  # already runs it inside the package build; this job is what makes the
+  # OTHER two configurations exist, and they are where the bugs were:
+  #
+  #   -DNDEBUG   what every conda package is compiled with, and where three
+  #              seeks written as assert() arguments silently vanished --
+  #              `index -1` then gave 644 of 645 samples the same offset.
+  #   ASan       a heap overrun in dsample (one byte past a bitset whenever
+  #              the row count divided by 8) and an overread in fmt1 both sat
+  #              in shipped code that every other build ran without complaint.
+  test:
+    name: test (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {mode: release, cc: "cc -O3",                            env: ""}
+          - {mode: ndebug,  cc: "cc -O3 -DNDEBUG",                   env: ""}
+          - {mode: asan,    cc: "cc -O1 -g -fsanitize=address,undefined",
+             env: "ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make -B CC="${{ matrix.cc }}" LDFLAGS="${{ matrix.mode == 'asan' && '-fsanitize=address,undefined' || '' }}"
+      - name: Run the suite
+        run: env ${{ matrix.env }} make test
+
+  # The badge is committed (docs/coverage.json, served from Pages), so it is
+  # only as fresh as the last person who ran scripts/coverage.sh. This fails
+  # when the two have drifted by more than the tolerance, in EITHER direction:
+  # a suite that quietly lost coverage is as much a regression as a stale
+  # badge, and gating on the value alone would only reward testing error paths.
+  coverage:
+    name: coverage badge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs/coverage.json against the suite
+        run: |
+          scripts/coverage.sh --check 2>&1 | tee cov.txt
+          {
+            echo '### Line coverage of the test suite'
+            echo '```'
+            cat cov.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

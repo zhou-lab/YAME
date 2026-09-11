@@ -76,9 +76,16 @@ else ifneq ($(CURL),0)
   endif
 endif
 
-.PHONY: all build debug clean lib
+.PHONY: all build debug clean lib test
+
 
 all: build
+
+## Command-level tests against the built binary. Self-contained: every test
+## packs its own fixtures from inline text, so this needs no network and no
+## data store, and conda-recipe/build.sh runs it on every platform it builds.
+test: $(PROG)
+	bash test/run.sh
 
 build: exportcf $(PROG) yame-config
 

@@ -30,5 +30,12 @@ make -j"${CPU_COUNT:-1}" \
      LDFLAGS="${LDFLAGS:-}" \
      CURL="${PREFIX}/bin/curl-config"
 
+# The command-level tests, against the binary this build just produced with
+# this toolchain. Every test packs its own fixtures from inline text, so this
+# needs no network and no data store. Both matrix legs build natively, so the
+# binary runs here; a failing test fails the package for that platform, and
+# the publish job then holds the whole version back.
+bash test/run.sh
+
 install -d "${PREFIX}/bin"
 install -v -m 0755 yame "${PREFIX}/bin"
