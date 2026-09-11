@@ -185,7 +185,7 @@ static uint8_t* compressDataToRLE(cdata_t *c, uint64_t *rle_n) {
   uint8_t *rle = NULL; *rle_n = 0;
 
   // 1 byte: the number of bytes for each value into the RLE data
-  rle = xrealloc(rle, ((*rle_n)+1));
+  rle = wzrealloc(rle, ((*rle_n)+1));
   rle[(*rle_n)++] = value_bytes;
 
   // Encode the array into the RLE format
@@ -198,7 +198,7 @@ static uint8_t* compressDataToRLE(cdata_t *c, uint64_t *rle_n) {
     }
 
     // Write the value and count into the RLE data
-    rle = xrealloc(rle, ((*rle_n) + value_bytes + 2));
+    rle = wzrealloc(rle, ((*rle_n) + value_bytes + 2));
     memcpy(rle + *rle_n, &value, value_bytes);
     (*rle_n) += value_bytes;
     uint8_t count16[2];
@@ -217,17 +217,17 @@ static uint8_t* compressDataToRLE(cdata_t *c, uint64_t *rle_n) {
 cdata_t* fmt2_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
-  uint64_t *data = xcalloc(1<<10, sizeof(uint64_t));
+  uint64_t *data = wzcalloc(1<<10, sizeof(uint64_t));
   uint64_t data_n = 0, data_m = 1<<10;
   khash_t(str2int) *h = kh_init(str2int); // Initialize the hashmap
   khint_t k;
   uint64_t keys_count = 0;
-  char **keys = xcalloc(1<<10, sizeof(char*));
+  char **keys = wzcalloc(1<<10, sizeof(char*));
   uint64_t keys_n = 0, keys_m = 1<<10;
   while (gzFile_read_line(fh, &line) > 0) {
-    int ret; char *kc = xstrdup(line);
+    int ret; char *kc = wzstrdup(line);
     if (strlen(kc) == 0) { // use NA if the input is "". "" will confuse the separater inference and is prohibited.
-      kc = xrealloc(kc, 3);
+      kc = wzrealloc(kc, 3);
       strcpy(kc, "NA");
     }
     k = kh_put(str2int, h, kc, &ret);
@@ -235,13 +235,13 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
       kh_val(h, k) = keys_count++;
       if (keys_n + 1 > keys_m) {
         keys_m <<= 1;
-        keys = xrealloc(keys, keys_m * sizeof(char*));
+        keys = wzrealloc(keys, keys_m * sizeof(char*));
       }
       keys[keys_n++] = kc;
     } else free(kc);
     if (data_n+1>data_m) {
       data_m <<= 1;
-      data = xrealloc(data, data_m * sizeof(uint64_t));
+      data = wzrealloc(data, data_m * sizeof(uint64_t));
     }
     data[data_n++] = kh_val(h, k);
   }
@@ -254,18 +254,18 @@ cdata_t* fmt2_read_raw(char *fname, int verbose) {
     keys_n_bytes += strlen(keys[i]) + 1;
 
   // Create a new cdata_t structure
-  cdata_t *c = xcalloc(1, sizeof(cdata_t));
+  cdata_t *c = wzcalloc(1, sizeof(cdata_t));
   c->compressed = 0;
   c->fmt = '2';
-  c->aux = xcalloc(1, sizeof(f2_aux_t));
+  c->aux = wzcalloc(1, sizeof(f2_aux_t));
   c->n = data_n;  // when uncompressed, c->n is the data length not byte length
-  c->s = xcalloc(1, keys_n_bytes + data_n*sizeof(uint64_t) + 1);
+  c->s = wzcalloc(1, keys_n_bytes + data_n*sizeof(uint64_t) + 1);
 
   // Write the keys to the data
   f2_aux_t *aux = (f2_aux_t*) c->aux;
   aux->nk = keys_n;
   aux->data = c->s + keys_n_bytes + 1;
-  aux->keys = xcalloc(keys_n, sizeof(char*));
+  aux->keys = wzcalloc(keys_n, sizeof(char*));
   uint64_t pos = 0;
   for (uint64_t i = 0; i < keys_n; ++i) {
     size_t len = strlen(keys[i]);
@@ -388,7 +388,7 @@ void fmt2_compress(cdata_t *c) {
   uint64_t keys_nb = fmt2_get_keys_nbytes(c);
   uint64_t rle_n;
   uint8_t *rle_data = compressDataToRLE(c, &rle_n);
-  uint8_t *s_out = xcalloc(keys_nb + rle_n + 1, sizeof(uint8_t));
+  uint8_t *s_out = wzcalloc(keys_nb + rle_n + 1, sizeof(uint8_t));
   memcpy(s_out, c->s, keys_nb + 1);
   memcpy(s_out + keys_nb + 1, rle_data, rle_n);
   free(rle_data);
@@ -419,7 +419,7 @@ cdata_t fmt2_decompress(const cdata_t c) {
 
   // Allocate memory directly to inflated.s
   inflated.n = keys_nb + dec_data_n * inflated.unit + 1;
-  inflated.s = xmalloc(inflated.n);
+  inflated.s = wzmalloc(inflated.n);
   if (inflated.s == NULL) {
     fprintf(stderr, "Memory allocation failed. Exiting.\n");
     exit(1);
@@ -474,9 +474,9 @@ void fmt2_set_aux(cdata_t *c) {
     exit(1);
   }
   // Create a keys_t object and allocate memory for s
-  f2_aux_t *aux = xcalloc(1, sizeof(f2_aux_t));
+  f2_aux_t *aux = wzcalloc(1, sizeof(f2_aux_t));
   aux->nk = fmt2_get_keys_n(c);
-  aux->keys = (char **)xmalloc(aux->nk * sizeof(char *));
+  aux->keys = (char **)wzmalloc(aux->nk * sizeof(char *));
 
   char *key_start = (char *)c->s;
   char *key_end;
@@ -502,21 +502,21 @@ stats_t* summarize1_queryfmt2(
     if (!c->aux) fmt2_set_aux(c);
     f2_aux_t *aux = (f2_aux_t*) c->aux;
     *n_st = aux->nk;
-    uint64_t *cnts = xcalloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts = wzcalloc(aux->nk, sizeof(uint64_t));
     for (uint64_t i=0; i<c->n; ++i) cnts[f2_get_uint64(c, i)]++;
-    st = xcalloc(aux->nk, sizeof(stats_t));
+    st = wzcalloc(aux->nk, sizeof(stats_t));
     for (uint64_t k=0; k<aux->nk; ++k) {
       st[k].n_u = c->n;
       st[k].n_q = cnts[k];
       st[k].n_m = 0;
       st[k].n_o = 0;
-      st[k].sm = xstrdup(sm);
+      st[k].sm = wzstrdup(sm);
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
         st[k].sq = tmp.s;
       } else {
-        st[k].sq = xstrdup(aux->keys[k]);
+        st[k].sq = wzstrdup(aux->keys[k]);
       }
     }
     free(cnts);
@@ -526,8 +526,8 @@ stats_t* summarize1_queryfmt2(
     if (!c->aux) fmt2_set_aux(c);
     f2_aux_t *aux = (f2_aux_t*) c->aux;
     *n_st = aux->nk;
-    uint64_t *cnts = xcalloc(aux->nk, sizeof(uint64_t));
-    uint64_t *cnts_q = xcalloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts = wzcalloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = wzcalloc(aux->nk, sizeof(uint64_t));
     uint64_t n_m = 0;
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT0_IN_SET(*c_mask, i)) {
@@ -536,13 +536,13 @@ stats_t* summarize1_queryfmt2(
       }
       cnts_q[f2_get_uint64(c, i)]++;
     }
-    st = xcalloc(aux->nk, sizeof(stats_t));
+    st = wzcalloc(aux->nk, sizeof(stats_t));
     for (uint64_t k=0; k<aux->nk; ++k) {
       st[k].n_u = c->n;
       st[k].n_q = cnts_q[k];
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
-      st[k].sm = xstrdup(sm);
+      st[k].sm = wzstrdup(sm);
       kstring_t tmp = {0};
       ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
       st[k].sq = tmp.s;
@@ -555,8 +555,8 @@ stats_t* summarize1_queryfmt2(
     if (!c->aux) fmt2_set_aux(c);
     f2_aux_t *aux = (f2_aux_t*) c->aux;
     *n_st = aux->nk;
-    uint64_t *cnts = xcalloc(aux->nk, sizeof(uint64_t));
-    uint64_t *cnts_q = xcalloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts = wzcalloc(aux->nk, sizeof(uint64_t));
+    uint64_t *cnts_q = wzcalloc(aux->nk, sizeof(uint64_t));
     uint64_t n_m = 0;
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c_mask,i) && FMT6_IN_SET(*c_mask, i)) {
@@ -565,13 +565,13 @@ stats_t* summarize1_queryfmt2(
       }
       cnts_q[f2_get_uint64(c, i)]++;
     }
-    st = xcalloc(aux->nk, sizeof(stats_t));
+    st = wzcalloc(aux->nk, sizeof(stats_t));
     for (uint64_t k=0; k<aux->nk; ++k) {
       st[k].n_u = c->n;
       st[k].n_q = cnts_q[k];
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
-      st[k].sm = xstrdup(sm);
+      st[k].sm = wzstrdup(sm);
       kstring_t tmp = {0};
       ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
       st[k].sq = tmp.s;
@@ -594,9 +594,9 @@ stats_t* summarize1_queryfmt2(
     f2_aux_t *aux_q = (f2_aux_t*) c->aux;
 
     *n_st = aux_m->nk * aux_q->nk;
-    st = xcalloc((*n_st), sizeof(stats_t));
-    uint64_t *nq = xcalloc(aux_q->nk, sizeof(uint64_t));
-    uint64_t *nm = xcalloc(aux_m->nk, sizeof(uint64_t));
+    st = wzcalloc((*n_st), sizeof(stats_t));
+    uint64_t *nq = wzcalloc(aux_q->nk, sizeof(uint64_t));
+    uint64_t *nm = wzcalloc(aux_m->nk, sizeof(uint64_t));
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t im = f2_get_uint64(c_mask, i);
       uint64_t iq = f2_get_uint64(c, i);
@@ -617,14 +617,14 @@ stats_t* summarize1_queryfmt2(
           ksprintf(&tmp, "%s-%s", sm, aux_m->keys[im]);
           st1->sm = tmp.s;
         } else {
-          st1->sm = xstrdup(aux_m->keys[im]);
+          st1->sm = wzstrdup(aux_m->keys[im]);
         }
         if (config->section_name) {
           kstring_t tmp = {0};
           ksprintf(&tmp, "%s-%s", sq, aux_q->keys[iq]);
           st1->sq = tmp.s;
         } else {
-          st1->sq = xstrdup(aux_q->keys[iq]);
+          st1->sq = wzstrdup(aux_q->keys[iq]);
         }
       }
     }

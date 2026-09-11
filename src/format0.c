@@ -90,13 +90,13 @@ cdata_t* fmt0_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<22;
-  uint8_t *s = xcalloc(m, 1);
+  uint8_t *s = wzcalloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
     if (line[0] != '0') {
       s[n>>3] |= (1<<(n&0x7));
     }
     n++;
-    if (n+2>m) { m<<=1; s=xrealloc(s,m); }
+    if (n+2>m) { m<<=1; s=wzrealloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -104,7 +104,7 @@ cdata_t* fmt0_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = xcalloc(sizeof(cdata_t),1);
+  cdata_t *c = wzcalloc(sizeof(cdata_t),1);
   c->s = (uint8_t*) s;
   c->n = n;
   c->compressed = 0;
@@ -116,7 +116,7 @@ cdata_t* fmt0_read_raw(char *fname, int verbose) {
 /* just copy, nothing done */
 cdata_t fmt0_decompress(const cdata_t c) {
   cdata_t expanded = c;
-  expanded.s = xcalloc(cdata_nbytes(&c), 1);
+  expanded.s = wzcalloc(cdata_nbytes(&c), 1);
   memcpy(expanded.s, c.s, cdata_nbytes(&c));
   expanded.unit = 1;
   expanded.n = c.n;
@@ -144,7 +144,7 @@ void convertToFmt0(cdata_t *c) {
     for (i=0; i<c->n/3; ++i) {
       c_out.n += *((uint16_t*) (c->s+i*3+1));
     }
-    c_out.s = xcalloc((c_out.n>>3)+1, 1);
+    c_out.s = wzcalloc((c_out.n>>3)+1, 1);
     size_t sum; uint16_t l=0;
     for (i=0, sum=0; i<c->n/3; ++i, sum+=l) {
       l = *((uint16_t*) (c->s+i*3+1));
@@ -163,7 +163,7 @@ void convertToFmt0(cdata_t *c) {
     c_out.fmt = '0';
     c_out.compressed = 1;
     c_out.n = expanded.n;
-    c_out.s = xcalloc((c_out.n>>3)+1,1);
+    c_out.s = wzcalloc((c_out.n>>3)+1,1);
     for (uint64_t i=0; i<expanded.n; ++i) {
       uint64_t mu = f3_get_mu(&expanded, i);
       if (mu > 0) { /* equivalent to: 1 if M+U > 0 else 0 */
@@ -188,13 +188,13 @@ stats_t* summarize1_queryfmt0(
   if (c_mask->n == 0) {          // no mask
     
     *n_st = 1;
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
     st[0].n_m = c->n;
     st[0].n_q = bit_count(c[0]);
     st[0].n_o = st[0].n_q;
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
     
   } else if (c_mask->fmt <= '1') { // binary mask
 
@@ -205,18 +205,18 @@ stats_t* summarize1_queryfmt0(
     }
     
     *n_st = 1;
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
     st[0].n_q = bit_count(c[0]);
     st[0].n_m = bit_count(c_mask[0]);
     cdata_t tmp = {0};
-    tmp.s = xmalloc((c->n>>3)+1); tmp.n = c->n;
+    tmp.s = wzmalloc((c->n>>3)+1); tmp.n = c->n;
     memcpy(tmp.s, c->s, (c->n>>3)+1);
     for (uint64_t i=0; i<(tmp.n>>3)+1; ++i) tmp.s[i] &= c_mask->s[i];
     st[0].n_o = bit_count(tmp);
     free(tmp.s);
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
 
   } else if (c_mask->fmt == '2') { // state mask
 
@@ -228,7 +228,7 @@ stats_t* summarize1_queryfmt0(
     if (!c_mask->aux) fmt2_set_aux(c_mask);
     f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
     *n_st = aux->nk;
-    st = xcalloc((*n_st), sizeof(stats_t));
+    st = wzcalloc((*n_st), sizeof(stats_t));
     uint64_t nq=0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t index = f2_get_uint64(c_mask, i);
@@ -251,9 +251,9 @@ stats_t* summarize1_queryfmt0(
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
         st[k].sm = tmp.s;
       } else {
-        st[k].sm = xstrdup(aux->keys[k]);
+        st[k].sm = wzstrdup(aux->keys[k]);
       }
-      st[k].sq = xstrdup(sq);
+      st[k].sq = wzstrdup(sq);
     }
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
@@ -276,10 +276,10 @@ stats_t* summarize1_queryfmt0(
         if (in_q && in_m) st1.n_o++;
       }
     }
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     st[0] = st1;
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
 
   } else {                      // other masks
     fprintf(stderr, "[%s:%d] Mask format %c unsupported.\n", __func__, __LINE__, c_mask->fmt);

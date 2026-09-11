@@ -15,16 +15,16 @@
 
 void yame_rowstat_init(yame_rowstat_t *a, uint64_t n) {
   a->n      = n;
-  a->hist   = xcalloc(n * NB, sizeof(uint16_t));
-  a->cnts   = xcalloc(n, sizeof(uint32_t));
-  a->sum    = xcalloc(n, sizeof(int64_t));
-  a->sum_sq = xcalloc(n, sizeof(int64_t));
-  a->b0max  = xcalloc(n, sizeof(uint32_t));
-  a->b1min  = xcalloc(n, sizeof(uint32_t));
-  a->b0sum  = xcalloc(n, sizeof(int64_t));
-  a->b1sum  = xcalloc(n, sizeof(int64_t));
-  a->b0n    = xcalloc(n, sizeof(int));
-  a->b1n    = xcalloc(n, sizeof(int));
+  a->hist   = wzcalloc(n * NB, sizeof(uint16_t));
+  a->cnts   = wzcalloc(n, sizeof(uint32_t));
+  a->sum    = wzcalloc(n, sizeof(int64_t));
+  a->sum_sq = wzcalloc(n, sizeof(int64_t));
+  a->b0max  = wzcalloc(n, sizeof(uint32_t));
+  a->b1min  = wzcalloc(n, sizeof(uint32_t));
+  a->b0sum  = wzcalloc(n, sizeof(int64_t));
+  a->b1sum  = wzcalloc(n, sizeof(int64_t));
+  a->b0n    = wzcalloc(n, sizeof(int));
+  a->b1n    = wzcalloc(n, sizeof(int));
   for (uint64_t i = 0; i < n; ++i) a->b1min[i] = STAT_FX_ONE;
 }
 

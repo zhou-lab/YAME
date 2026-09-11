@@ -55,9 +55,9 @@ int main_chunk(int argc, char *argv[]) {
   char *fname = argv[optind];
   char *outdir;
   if (argc >= optind + 2)
-    outdir = xstrdup(argv[optind+1]);
+    outdir = wzstrdup(argv[optind+1]);
   else {
-    outdir = xmalloc(strlen(fname)+1000);
+    outdir = wzmalloc(strlen(fname)+1000);
     strcpy(outdir, fname);
     strcat(outdir, "_chunks");
   }
@@ -79,7 +79,7 @@ int main_chunk(int argc, char *argv[]) {
       c3.s = NULL;
       slice(&c2, i*chunk_size, (i+1)*chunk_size-1, &c3);
       cdata_compress(&c3);
-      char *tmp = xmalloc(strlen(outdir) + 1000);
+      char *tmp = wzmalloc(strlen(outdir) + 1000);
       sprintf(tmp, "%s/%"PRIu64".cx", outdir, i);
       if (verbose) fprintf(stdout, "%s\n", tmp);
       if (k) cdata_write(tmp, &c3, "a", verbose);

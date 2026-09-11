@@ -219,7 +219,7 @@ static int paths_add(paths_t *p, const char *s) {
     if (!v) return 0;
     p->v = v; p->cap = cap;
   }
-  return (p->v[p->n] = xstrdup(s)) != NULL ? (++p->n, 1) : 0;
+  return (p->v[p->n] = wzstrdup(s)) != NULL ? (++p->n, 1) : 0;
 }
 
 void yame_ref_paths_free(char **paths, size_t n) {

@@ -237,7 +237,7 @@ static inline cdata_t cdata_duplicate(cdata_t c) {
   cdata_t cout = c;
   cout.aux = NULL;              /* the copy owns no auxiliary structure */
   uint64_t nb = cdata_nbytes(&c);
-  cout.s = (uint8_t*) xmalloc(nb ? nb : 1);
+  cout.s = (uint8_t*) wzmalloc(nb ? nb : 1);
   if (cout.s==NULL) wzfatal("[cdata_duplicate] Cannot allocate memory.\n");
   memcpy(cout.s, c.s, nb);
   return cout;
@@ -285,7 +285,7 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
             __func__, __LINE__, c->fmt);
   } else if (c->fmt == '0') {            /* 1 bit per row */
     uint64_t nb = (n_out + 7) >> 3;
-    c_sliced->s = xrealloc(c_sliced->s, nb);
+    c_sliced->s = wzrealloc(c_sliced->s, nb);
     memset(c_sliced->s, 0, nb);
     for (uint64_t i = 0; i < n_out; ++i) {
       uint64_t si = beg + i;
@@ -294,7 +294,7 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
     }
   } else if (c->fmt == '6') {            /* 2 bits per row */
     uint64_t nb = (n_out + 3) >> 2;
-    c_sliced->s = xrealloc(c_sliced->s, nb);
+    c_sliced->s = wzrealloc(c_sliced->s, nb);
     memset(c_sliced->s, 0, nb);
     for (uint64_t i = 0; i < n_out; ++i) {
       uint64_t si = beg + i;
@@ -302,7 +302,7 @@ static inline void slice(cdata_t *c, uint64_t beg, uint64_t end, cdata_t *c_slic
       c_sliced->s[i >> 2] |= (uint8_t)(v << ((i & 0x3) * 2));
     }
   } else {
-    c_sliced->s = xrealloc(c_sliced->s, n_out * c->unit);
+    c_sliced->s = wzrealloc(c_sliced->s, n_out * c->unit);
     memcpy(c_sliced->s, c->s + beg * c->unit, n_out * c->unit);
   }
 }

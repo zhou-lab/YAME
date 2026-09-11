@@ -111,12 +111,12 @@
 cdata_t fmt5_decompress(const cdata_t c) {
   cdata_t expanded = {0};
   uint64_t i = 0, m = 1<<20, n = 0, j = 0;
-  uint8_t *s = xmalloc(m*sizeof(uint8_t));
+  uint8_t *s = wzmalloc(m*sizeof(uint8_t));
 
   for (i=0; i<c.n; ++i) {
     if (c.s[i] & (1<<7)) {
       int offset = 6;
-      if (n+2>m) {m<<=1; s = xrealloc(s, m*sizeof(uint8_t));}
+      if (n+2>m) {m<<=1; s = wzrealloc(s, m*sizeof(uint8_t));}
       for (offset = 6; offset >= 0; offset -= 2) {
         if ((c.s[i]>>offset) & 0x2) {
           s[n++] = ((c.s[i]>>offset) & 0x1);
@@ -125,7 +125,7 @@ cdata_t fmt5_decompress(const cdata_t c) {
         }
       }
     } else {
-      if (n+c.s[i]+10>m) {m=n+c.s[i]+10; m<<=1; s = xrealloc(s, m*sizeof(uint8_t));}
+      if (n+c.s[i]+10>m) {m=n+c.s[i]+10; m<<=1; s = wzrealloc(s, m*sizeof(uint8_t));}
       for (j=0; j < c.s[i]; ++j) s[n++] = 2;
     }
   }
@@ -144,11 +144,11 @@ cdata_t* fmt5_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<22;
-  uint8_t *s = xcalloc(m, 1);
+  uint8_t *s = wzcalloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
     if (line[0] == '0' || line[0] == '1') s[n++] = line[0]-'0';
     else s[n++] = 2;
-    if (n+2>m) { m<<=1; s=xrealloc(s,m); }
+    if (n+2>m) { m<<=1; s=wzrealloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -156,7 +156,7 @@ cdata_t* fmt5_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = xcalloc(sizeof(cdata_t),1);
+  cdata_t *c = wzcalloc(sizeof(cdata_t),1);
   c->s = (uint8_t*) s;
   c->n = n;
   c->compressed = 0;
@@ -179,12 +179,12 @@ void fmt5_compress(cdata_t *c) {
       offset -= 2;
       if (last <= 1) {            /* 0/1 > 0/1 */
         if (offset < 0) {
-          s = xrealloc(s, n+1);
+          s = wzrealloc(s, n+1);
           s[n++] = u;
           u = 0; offset = 6;
         }
       } else if (l > 0) {       /* 2 > 0/1 */
-        s = xrealloc(s, n+1);
+        s = wzrealloc(s, n+1);
         s[n++] = l;
         l = 0;
       }
@@ -192,13 +192,13 @@ void fmt5_compress(cdata_t *c) {
     } else {                    /* neither 0 nor 1, for missing value */
       if (last == 1 && u != 0) {               /* 0/1 > 2 */
         if (offset >= 0) u |= (0<<(offset+1)); /* add sentinel */
-        s = xrealloc(s, n+1);
+        s = wzrealloc(s, n+1);
         s[n++] = u;
         u = 0; offset = 6;
       }
       l++;
       if (l+2 >= 1<<7) {        /* too many NA start a new count */
-        s = xrealloc(s, n+1);
+        s = wzrealloc(s, n+1);
         s[n++] = l;
         l = 0;
       }
@@ -207,10 +207,10 @@ void fmt5_compress(cdata_t *c) {
   }
 
   if (last == 1 && u != 0) {
-    s = xrealloc(s, n+1);
+    s = wzrealloc(s, n+1);
     s[n++] = u;
   } else if (last == 2 && l > 0) {
-    s = xrealloc(s, n+1);
+    s = wzrealloc(s, n+1);
     s[n++] = l;
   }
 

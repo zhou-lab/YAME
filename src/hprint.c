@@ -165,8 +165,8 @@ static chrom_info_t *collect_genome_chroms(cdata_t *cr, int *n_out) {
 
   while (row_reader_next_loc(&rdr, cr)) {
     if (n == 0 || strcmp(rdr.chrm, ch[n - 1].chrm) != 0) {
-      ch = xrealloc(ch, (size_t)(n + 1) * sizeof(chrom_info_t));
-      ch[n].chrm      = xstrdup(rdr.chrm);
+      ch = wzrealloc(ch, (size_t)(n + 1) * sizeof(chrom_info_t));
+      ch[n].chrm      = wzstrdup(rdr.chrm);
       ch[n].first_row = rdr.index;
       ch[n].last_row  = rdr.index;
       ch[n].n_cpgs    = 1;
@@ -187,7 +187,7 @@ static chrom_info_t *collect_genome_chroms(cdata_t *cr, int *n_out) {
  */
 static void print_genome_ruler(chrom_info_t *ch, int n_chroms,
                                 uint64_t total_cols, int label_w) {
-  char *buf = xmalloc(total_cols + 1);
+  char *buf = wzmalloc(total_cols + 1);
   memset(buf, '.', total_cols);
   buf[total_cols] = '\0';
 
@@ -228,7 +228,7 @@ static void print_ruler(const char *chrm, uint64_t *pos, uint64_t n_cols,
     fputc(i % (uint64_t)tick_every == 0 ? '|' : '.', stdout);
   fputc('\n', stdout);
 
-  char *buf = xmalloc(n_cols + 1);
+  char *buf = wzmalloc(n_cols + 1);
   memset(buf, ' ', n_cols);
   buf[n_cols] = '\0';
   for (uint64_t i = 0; i < n_cols; i += (uint64_t)tick_every) {
@@ -556,7 +556,7 @@ static char *infer_ref(uint64_t rows) {
   if (st == YAME_REF_OK) {
     fprintf(stderr, "[hprint] %"PRIu64" rows -> %s, using %s\n",
             rows, name, path);
-    return xstrdup(path);
+    return wzstrdup(path);
   }
   yame_ref_explain(stderr, rows, st, name, fetch, "-R");
   return NULL;
@@ -571,8 +571,8 @@ int main_hprint(int argc, char *argv[]) {
     switch (c) {
     case 'c': color      = 0;              break;
     case 'g': granular   = 1;              break;
-    case 'R': fname_cr   = xstrdup(optarg); break;
-    case 'r': region     = xstrdup(optarg); break;
+    case 'R': fname_cr   = wzstrdup(optarg); break;
+    case 'r': region     = wzstrdup(optarg); break;
     case 'l': label_w    = atoi(optarg);   break;
     case 't': tick_every = atoi(optarg);   break;
     case 'w': max_cols   = atoi(optarg);   break;
@@ -658,7 +658,7 @@ int main_hprint(int argc, char *argv[]) {
     }
 
     /* Build per-column position anchors (first CpG of each window). */
-    uint64_t *win_pos = xmalloc(n_cols * sizeof(uint64_t));
+    uint64_t *win_pos = wzmalloc(n_cols * sizeof(uint64_t));
     get_win_pos(&cr, chrm, beg1, end1, win_size, n_cols, win_pos);
     free_cdata(&cr);
 
@@ -714,7 +714,7 @@ int main_hprint(int argc, char *argv[]) {
       return 1;
     }
     free(fname_cr);
-    fname_cr = xstrdup(resolved);
+    fname_cr = wzstrdup(resolved);
   }
 
   if (fname_cr) {

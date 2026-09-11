@@ -279,7 +279,7 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
   cdata_t probe = decompress(*ref_cdata_v(cs, 0));
   uint64_t n = probe.n;
   free_cdata(&probe);
-  cdata_t *sliced = xcalloc(kn, sizeof(cdata_t));
+  cdata_t *sliced = wzcalloc(kn, sizeof(cdata_t));
 
   /* Ceiling, not floor-plus-one -- the same correction chunk.c carries. With
    * n an exact multiple of s the extra iteration began at row n, slice()
@@ -310,12 +310,12 @@ static void print_cdata_chunk(cdata_v *cs, uint64_t s, cdata_pfmt_t pfmt) {
 
 static void print_cdata(cdata_v *cs, cdata_pfmt_t pfmt, char *fname_row) {
   uint64_t i, k, kn = cs->size;
-  cdata_t *inflated = xcalloc(kn, sizeof(cdata_t));
+  cdata_t *inflated = wzcalloc(kn, sizeof(cdata_t));
   for (k=0; k<kn; ++k) {
     cdata_t *c = ref_cdata_v(cs,k);
     if (c->fmt == '7') { // inflating format 7 is expensive
       memcpy(inflated+k, c, sizeof(cdata_t));
-      inflated[k].s = xmalloc(c->n);
+      inflated[k].s = wzmalloc(c->n);
       memcpy(inflated[k].s, c->s, c->n);
     } else {
       inflated[k] = decompress(*c);
@@ -360,12 +360,12 @@ int main_unpack(int argc, char *argv[]) {
     switch (c) {
     case 'c': chunk = 1; break;
     case 's': chunk_size = atoi(optarg); break;
-    case 'l': fname_snames = xstrdup(optarg); break;
+    case 'l': fname_snames = wzstrdup(optarg); break;
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
     case 'u': unit = atoi(optarg); break;
     case 'C': print_column_names = 1; break;
-    case 'R': fname_row = xstrdup(optarg); break;
+    case 'R': fname_row = wzstrdup(optarg); break;
     case 'r': pfmt.ref = atoi(optarg); break;
     case 'a': read_all = 1; break;
     case 'f': pfmt.data = atoi(optarg); break;
@@ -379,7 +379,7 @@ int main_unpack(int argc, char *argv[]) {
     wzfatal("Please supply input file.\n"); 
   }
 
-  char *fname_in = xstrdup(argv[optind]);
+  char *fname_in = wzstrdup(argv[optind]);
 
   /* -R may be a name rather than a path: the input's row count says which row
    * space to look in. Only a spec that is not already a file is looked up, so
@@ -395,7 +395,7 @@ int main_unpack(int argc, char *argv[]) {
       return 1;
     }
     free(fname_row);
-    fname_row = xstrdup(resolved);
+    fname_row = wzstrdup(resolved);
   }
 
   cfile_t cf = open_cfile(fname_in);
@@ -406,8 +406,8 @@ int main_unpack(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind + 1 < argc) {      // The requested sample names from command line
     for(int i = optind + 1; i < argc; ++i) {
-      snames.s = xrealloc(snames.s, (snames.n+1));
-      snames.s[snames.n++] = xstrdup(argv[i]);
+      snames.s = wzrealloc(snames.s, (snames.n+1));
+      snames.s[snames.n++] = wzstrdup(argv[i]);
     }
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);
@@ -453,18 +453,18 @@ int main_unpack(int argc, char *argv[]) {
         index_pair_t *idx_pairs = index_pairs(idx, &n0);
         if (read_all) {
           snames.n = n0;
-          snames.s = xcalloc(snames.n, sizeof(char*));
+          snames.s = wzcalloc(snames.n, sizeof(char*));
           for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
         } else if (head > 0) {
           snames.n = head;
-          snames.s = xcalloc(snames.n, sizeof(char*));
+          snames.s = wzcalloc(snames.n, sizeof(char*));
           for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
         } else if (tail > 0) {
           snames.n = tail;
-          snames.s = xcalloc(snames.n, sizeof(char*));
+          snames.s = wzcalloc(snames.n, sizeof(char*));
           for (int i=0; i<tail; ++i) snames.s[i] = idx_pairs[n0-tail+i].key;
         } else {
-          snames.n = 1; snames.s = xcalloc(1, sizeof(char*));
+          snames.n = 1; snames.s = wzcalloc(1, sizeof(char*));
           snames.s[0] = idx_pairs[0].key;
         }
         free(idx_pairs);          // ownership of keys are transfered to snames.s

@@ -142,7 +142,63 @@ frame_has(out, "target\tsource", "TERM=dumb table header")
 # 8. summary -b uses the same browser to choose masks
 code, out = drive(["summary", "-b", "/dev/null"], [b"q"], "summary -b opens", want_exit=1)
 
-# 9. off a terminal the browser must refuse cleanly rather than hang or crash
+# 9. deeper walks: open a subtree, mark several entries, search and clear,
+#    page through, then leave. The tree is built lazily, so descending is what
+#    reaches the flatten/reopen/refresh paths that a single frame never does.
+deep = [ENTER, DOWN, ENTER, DOWN, b" ", DOWN, b" ", PGDN, PGUP, ESC, ESC, b"q"]
+drive(["fetch"], deep, "descend, mark, back out")
+
+# 10. select-all and select-none inside a subtree
+drive(["fetch"], [ENTER, b"a", b"n", b"a", ESC, b"q"], "select all and none")
+
+# 11. a search that matches, then one that matches nothing, then clear
+code, out = drive(["fetch"], [b"/", b"h", b"g", b"3", b"8", ENTER, b"j", ENTER, ESC,
+                              b"/", b"q", b"q", b"z", b"z", b"z", ESC, b"q"], "search hits and misses")
+
+# 12. resize mid-session: the renderer reads COLUMNS/LINES, and SIGWINCH
+#     arrives while it is waiting for a key
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "120"; os.environ["LINES"] = "40"
+    os.execv(YAME, ["yame", "fetch"])
+time.sleep(0.6)
+try: os.read(fd, 65536)
+except OSError: pass
+import fcntl, termios, struct
+try:
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
+    os.kill(pid, signal.SIGWINCH)
+except Exception:
+    pass
+time.sleep(0.3)
+os.write(fd, b"j")
+time.sleep(0.2)
+try: os.read(fd, 65536)
+except OSError: pass
+os.write(fd, b"q")
+time.sleep(0.4)
+try: os.read(fd, 65536)
+except OSError: pass
+t0 = time.time(); st = None
+while time.time() - t0 < 5:
+    p, s_ = os.waitpid(pid, os.WNOHANG)
+    if p: st = s_; break
+    time.sleep(0.05)
+if st is None:
+    os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+    print("  FAIL resize: did not exit after q"); fails += 1
+elif os.WIFSIGNALED(st):
+    print(f"  FAIL resize: died on signal {os.WTERMSIG(st)}"); fails += 1
+
+# 13. the browser also drives mask selection for summary, over a real file
+import subprocess, tempfile
+tmpd = os.environ["YAME_DATA_HOME"]
+cg = os.path.join(tmpd, "q.cg")
+subprocess.run(f"awk 'BEGIN{{for(i=0;i<8;i++) print (i%2)}}' | {YAME} pack -f b - > {cg}",
+               shell=True, check=True)
+drive(["summary", "-b", cg], [b"j", b"q"], "summary -b over a real query", want_exit=1)
+
+# 14. off a terminal the browser must refuse cleanly rather than hang or crash
 import subprocess
 p = subprocess.run([YAME, "fetch"], stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
 if p.returncode < 0:

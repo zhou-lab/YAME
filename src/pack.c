@@ -123,7 +123,7 @@ int main_pack(int argc, char *argv[]) {
 
   char *fname_out = NULL;
   if (argc >= optind + 2)
-    fname_out = xstrdup(argv[optind+1]);
+    fname_out = wzstrdup(argv[optind+1]);
 
   cdata_t *c = NULL;
   switch (fmt) {

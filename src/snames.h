@@ -63,7 +63,7 @@ static inline snames_t loadSampleNames(char* fname_snames, int fatal) {
   while (gzFile_read_line(fp, &line) > 0) {
     char *sname;
     if (line_get_field(line, 0, "\t", &sname)) {
-      snames.s = xrealloc(snames.s, sizeof(*(snames.s)) * (snames.n + 1));
+      snames.s = wzrealloc(snames.s, sizeof(*(snames.s)) * (snames.n + 1));
       if (snames.s == NULL) {
         fprintf(stderr, "Failed to allocate memory\n");
         fflush(stderr);

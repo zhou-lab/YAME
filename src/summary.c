@@ -202,7 +202,7 @@ stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char 
   case '7': return summarize1_queryfmt7(c, c_mask, n_st, sm, sq, config);
   default: wzfatal("[%s:%d] Query format %c unsupported.\n", __func__, __LINE__, c->fmt);
   }
-  stats_t *st = xcalloc(1, sizeof(stats_t));
+  stats_t *st = wzcalloc(1, sizeof(stats_t));
   return st;
 }
 
@@ -340,7 +340,7 @@ int main_summary(int argc, char *argv[]) {
   while ((c = getopt(argc, argv, "bm:u:MHFTs:V:6q:h"))>=0) {
     switch (c) {
     case 'b': browse = 1; break;
-    case 'm': config.fname_mask = xstrdup(optarg); break;
+    case 'm': config.fname_mask = wzstrdup(optarg); break;
     case 'M': config.in_memory = 1; break;
     case 'V':
       if (strcmp(optarg, "set") == 0) config.f6_view = F6_VIEW_SET;
@@ -355,7 +355,7 @@ int main_summary(int argc, char *argv[]) {
     case 'H': config.no_header = 1; break;
     case 'F': config.full_name = 1; break;
     case 'T': config.section_name = 1; break;
-    case 's': config.fname_snames = xstrdup(optarg); break;
+    case 's': config.fname_snames = wzstrdup(optarg); break;
     case 'q': config.fname_qry_stdin = optarg; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
@@ -409,7 +409,7 @@ int main_summary(int argc, char *argv[]) {
     }
     fprintf(stderr, "[summary] -m %s -> %s\n", config.fname_mask, resolved);
     free(config.fname_mask);
-    config.fname_mask = xstrdup(resolved);
+    config.fname_mask = wzstrdup(resolved);
   }
 
   cfile_t cf_mask; int unseekable = 0;
@@ -422,13 +422,13 @@ int main_summary(int argc, char *argv[]) {
   }
   
   if (config.in_memory || unseekable) { /* load in-memory masks */
-    c_masks = xcalloc(1, sizeof(cdata_t));
+    c_masks = wzcalloc(1, sizeof(cdata_t));
     c_masks_n = 0;
     for (;;++c_masks_n) {
       cdata_t c_mask = read_cdata1(&cf_mask);
       if (c_mask.n == 0) break;
       prepare_mask(&c_mask);
-      c_masks = xrealloc(c_masks, (c_masks_n+1)*sizeof(cdata_t));
+      c_masks = wzrealloc(c_masks, (c_masks_n+1)*sizeof(cdata_t));
       c_masks[c_masks_n] = c_mask;
     }
   }

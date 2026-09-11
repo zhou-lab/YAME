@@ -85,7 +85,7 @@
 #include <sys/time.h>
 #include <sys/ioctl.h>
 
-#include "wzmisc.h"   /* xmalloc/xstrdup: allocation that cannot return NULL */
+#include "wzmisc.h"   /* wzmalloc/wzstrdup: allocation that cannot return NULL */
 /* ------------------------------------------------------- capability probes */
 
 static int cached_fancy = -1, cached_inter = -1, cached_uni = -1;
@@ -728,7 +728,7 @@ static char *read_line(void) {
   size_t len = strlen(p);
   while (len && isspace((unsigned char)p[len-1])) p[--len] = '\0';
 
-  return xstrdup(p);
+  return wzstrdup(p);
 }
 
 int yame_ui_confirm(const char *question, int default_yes) {
@@ -764,7 +764,7 @@ char *yame_ui_ask(const char *question, const char *def) {
 
   char *ans = read_line();
   if (!ans) return NULL;
-  if (!*ans && def) { free(ans); return xstrdup(def); }
+  if (!*ans && def) { free(ans); return wzstrdup(def); }
   return ans;
 }
 
@@ -1382,7 +1382,7 @@ static int tn_is_leaf(const tnode_t *n) {
 
 static char *tn_join(const char *parent_path, const char *key) {
   if (!key) key = "";
-  if (!parent_path || !*parent_path) return xstrdup(key);
+  if (!parent_path || !*parent_path) return wzstrdup(key);
   size_t n = strlen(parent_path) + strlen(key) + 2;
   char *p = malloc(n);
   if (p) snprintf(p, n, "%s/%s", parent_path, key);
@@ -1429,7 +1429,7 @@ static void tn_load(tnode_t *n, const yame_ui_tree_t *spec) {
   spec->expand(spec->ctx, n->path, &k);
 
   size_t taken = 0;
-  if (k.n && (n->kids = xcalloc(k.n, sizeof(tnode_t *))) != NULL) {
+  if (k.n && (n->kids = wzcalloc(k.n, sizeof(tnode_t *))) != NULL) {
     for (; taken < k.n; ++taken) {
       tnode_t *c = calloc(1, sizeof(tnode_t));
       c->shown = 1;   /* calloc zeroes it, which would hide the node */
@@ -1441,7 +1441,7 @@ static void tn_load(tnode_t *n, const yame_ui_tree_t *spec) {
       c->depth  = n->depth + 1;
       c->parent = n;
       c->path   = tn_join(n->path, c->key ? c->key : c->row);
-      if (!c->row) c->row = xstrdup("");
+      if (!c->row) c->row = wzstrdup("");
       n->kids[n->n_kids++] = c;
     }
   }
@@ -2086,7 +2086,7 @@ static void tn_refresh(tnode_t *forest, const yame_ui_tree_t *spec,
     /* A commit may rewrite a root in place to show what it just did. */
     free(r->row);
     free(r->path);
-    r->row = xstrdup(roots[i]);
+    r->row = wzstrdup(roots[i]);
     r->path = tn_root_path(roots[i]);
     r->style = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
   }
@@ -2153,14 +2153,14 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
   forest.depth = -1;
   forest.loaded = 1;
   forest.expanded = 1;
-  forest.kids = xcalloc(n_roots, sizeof(tnode_t *));
+  forest.kids = wzcalloc(n_roots, sizeof(tnode_t *));
   if (!forest.kids) { raw_leave(); return -1; }
 
   for (size_t i = 0; i < n_roots; ++i) {
     tnode_t *r = calloc(1, sizeof(tnode_t));
     r->shown = 1;   /* calloc zeroes it, which would hide the node */
     if (!r) break;
-    r->row    = xstrdup(roots[i]);
+    r->row    = wzstrdup(roots[i]);
     r->path   = tn_root_path(roots[i]);
     r->style  = root_styles ? root_styles[i] : (unsigned char)YAME_ROW_PLAIN;
     r->branch = !spec->expand ? 0

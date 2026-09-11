@@ -98,7 +98,193 @@ grep -qi 'refus\|-y' f6.log || { echo "directory refusal did not mention -y"; ca
 rm -rf cwd2 && mkdir cwd2 && ( cd cwd2 && "$YAME" fetch -c "$asset" </dev/null > ../f7.log 2>&1 ) ||
   { echo "a single named file needed -y"; cat f7.log; exit 1; }
 
-## ---- 8. a stale local manifest is a pin conflict, not silently overwritten --
+## ---- 8. the non-fetching option surface ------------------------------------
+## -n says what it would do and stops, successfully, downloading nothing.
+before=$(grep -c 'Blacklist.20220304.cm' server.log || true)
+rm -rf "$YAME_DATA_HOME"/*
+"$YAME" fetch -n "$scope" </dev/null > dry.log 2>&1 || { echo "fetch -n exited non-zero"; cat dry.log; exit 1; }
+[ -s dry.log ] || { echo "fetch -n said nothing"; exit 1; }
+[ -z "$(find "$YAME_DATA_HOME" -type f 2>/dev/null)" ] || { echo "fetch -n wrote files"; exit 1; }
+after=$(grep -c 'Blacklist.20220304.cm' server.log || true)
+[ "$after" -eq "$before" ] || { echo "fetch -n downloaded something"; exit 1; }
+
+## -l is a TSV dump: a header and one row per file, no network at all.
+"$YAME" fetch -l </dev/null > tsv.txt 2>&1
+head -1 tsv.txt | grep -q 'target' || { echo "fetch -l header is not the TSV header"; head -1 tsv.txt; exit 1; }
+[ "$(wc -l < tsv.txt)" -gt 100 ] || { echo "fetch -l listed only $(wc -l < tsv.txt) rows"; exit 1; }
+
+## -g filters that listing by term, and every term must match.
+"$YAME" fetch -l -g KYCG </dev/null > g1.txt 2>&1
+[ "$(wc -l < g1.txt)" -lt "$(wc -l < tsv.txt)" ] || { echo "-g KYCG did not narrow the listing"; exit 1; }
+tail -n +2 g1.txt | grep -qv 'KYCG' && { echo "-g KYCG returned a row without KYCG"; exit 1; }
+"$YAME" fetch -l -g KYCG,EPIC </dev/null > g2.txt 2>&1
+[ "$(wc -l < g2.txt)" -le "$(wc -l < g1.txt)" ] || { echo "a second -g term widened the listing"; exit 1; }
+## a term nothing matches
+"$YAME" fetch -l -g zzzznope </dev/null > g3.txt 2>&1 || true
+[ "$(tail -n +2 g3.txt | wc -l)" -eq 0 ] || { echo "-g zzzznope matched something"; exit 1; }
+
+## -d overrides the store root
+alt="$d/altstore"; mkdir -p "$alt"
+"$YAME" fetch -y -d "$alt" "$asset" </dev/null > alt.log 2>&1 ||
+  { echo "fetch -d failed"; cat alt.log; exit 1; }
+[ -f "$alt/$asset" ] || { echo "fetch -d did not use the given root"; find "$alt" -type f; exit 1; }
+
+## -q silences progress but still fetches
+rm -rf "$YAME_DATA_HOME"/*
+"$YAME" fetch -q -y "$asset" </dev/null > quiet.log 2>&1 ||
+  { echo "fetch -q failed"; cat quiet.log; exit 1; }
+[ -f "$YAME_DATA_HOME/$asset" ] || { echo "fetch -q did not fetch"; exit 1; }
+
+## -f re-downloads what is already present
+n_before=$(grep -c 'Blacklist.20220304.cm' server.log || true)
+"$YAME" fetch -f -y "$asset" </dev/null > force.log 2>&1 ||
+  { echo "fetch -f failed"; cat force.log; exit 1; }
+n_after=$(grep -c 'Blacklist.20220304.cm' server.log || true)
+[ "$n_after" -gt "$n_before" ] || { echo "fetch -f did not re-download"; exit 1; }
+
+## ---- 9. the single-file form: -u with -s and -o -----------------------------
+## A URL, the digest it must have, and where it goes. This path shares the
+## download and verify code but none of the registry.
+url="$YAME_ASSETS_MIRROR/zhou-lab/InfiniumAnnotation/raw/$tag/$scope/Blacklist.20220304.cm"
+want=$(sha256sum "$here/fixtures/Blacklist.20220304.cm" | cut -c1-64)
+"$YAME" fetch -u "$url" -s "$want" -o direct.cm </dev/null > u1.log 2>&1 ||
+  { echo "fetch -u failed"; cat u1.log; exit 1; }
+cmp -s direct.cm "$here/fixtures/Blacklist.20220304.cm" || { echo "fetch -u bytes differ"; exit 1; }
+## the wrong digest is refused and the file not kept
+rm -f bad.cm
+if "$YAME" fetch -u "$url" -s "${want%??}00" -o bad.cm </dev/null > u2.log 2>&1; then
+  echo "fetch -u accepted a wrong digest"; exit 1
+fi
+[ ! -s bad.cm ] || { echo "fetch -u left a file that failed its digest"; exit 1; }
+## a URL that is not there
+if "$YAME" fetch -u "$YAME_ASSETS_MIRROR/nope/missing.cm" -s "$want" -o gone.cm </dev/null > u3.log 2>&1; then
+  echo "fetch -u accepted a 404"; exit 1
+fi
+
+## ---- 10. -t and -k: an overriding tag has no compiled anchor ---------------
+## Without -k an unpinned tag must be refused rather than fetched blind.
+rm -rf "$YAME_DATA_HOME"/*
+if "$YAME" fetch -y -t v0.0 "$asset" </dev/null > t1.log 2>&1; then
+  echo "an unpinned -t tag was fetched without -k"; exit 1
+fi
+grep -qiE 'tag|anchor|pin|-k' t1.log || { echo "the -t refusal does not explain itself"; cat t1.log; exit 1; }
+
+## ---- 11. the browser's fetch confirmation ----------------------------------
+## The tree lists DIRECTORIES, not files, so f always proposes a whole unit.
+## Declining is the half that needs no bytes: f must show the plan and ask,
+## and n must return to the browser having downloaded nothing.
+rm -rf "$YAME_DATA_HOME"/*
+python3 - "$YAME" <<'PY' || { echo "the fetch confirmation did not behave"; exit 1; }
+import os, pty, sys, time, select, signal
+YAME = sys.argv[1]
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "110"; os.environ["LINES"] = "34"
+    os.execv(YAME, ["yame", "fetch"])
+out = b""
+def pump(t):
+    global out
+    end = time.time() + t
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try: out += os.read(fd, 65536)
+            except OSError: return
+pump(0.9)
+for k in [b"/"] + [bytes([c]) for c in b"Blacklist"] + [b"\r"]:
+    os.write(fd, k); pump(0.15)
+os.write(fd, b" "); pump(0.3)              # select the highlighted directory
+mark = len(out)
+os.write(fd, b"f"); pump(1.5)              # propose the fetch
+prompt = out[mark:].decode("utf8", "replace")
+if "Proceed" not in prompt:
+    sys.exit("f did not ask before fetching:\n" + prompt[-300:])
+if "Fetch" not in prompt:
+    sys.exit("the prompt does not say what it would fetch")
+os.write(fd, b"n"); pump(0.8)              # decline
+os.write(fd, b"q"); pump(0.8)
+st = None; t0 = time.time()
+while time.time() - t0 < 15:
+    p, s_ = os.waitpid(pid, os.WNOHANG)
+    if p: st = s_; break
+    pump(0.1)
+if st is None:
+    os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+    sys.exit("the browser did not exit after declining")
+if os.WIFSIGNALED(st):
+    sys.exit(f"the browser died on signal {os.WTERMSIG(st)}")
+PY
+[ -z "$(find "$YAME_DATA_HOME" -type f 2>/dev/null)" ] ||
+  { echo "declining the prompt still downloaded something"; exit 1; }
+
+## ---- 11b. and accepting it, when a real unit can be mirrored ---------------
+## The progress and settle rendering only runs during an actual download. The
+## smallest unit in the catalogue is Mammal40/KYCG at 0.3 MB, which can be
+## mirrored from the lab's shared store when it is present; where it is not
+## (CI), this half skips and the rest of the file still runs.
+SHARED=${YAME_SHARED_STORE:-/mnt/isilon/zhou_lab/projects/20191221_references/YAME}
+if [ -d "$SHARED/Mammal40/KYCG" ] && [ -f "$SHARED/Mammal40/KYCG/SHA256SUMS" ]; then
+  ## Selecting the unit takes its knowledgebase AND the platform directory
+  ## above it -- "the index at the top of the list is fetched with anything
+  ## else taken from this unit" -- so mirror both, or the run reports failures.
+  m2="mirror/zhou-lab/InfiniumAnnotation/raw/$tag/Mammal40"
+  mkdir -p "$m2/KYCG"
+  ## every regular file, not a glob: SHA256SUMS has no dot in its name, and
+  ## without the manifest the whole directory fails verification
+  find "$SHARED/Mammal40" -maxdepth 1 -type f -exec cp {} "$m2"/ \;
+  find "$SHARED/Mammal40/KYCG" -maxdepth 1 -type f -exec cp {} "$m2/KYCG"/ \;
+  rm -rf "$YAME_DATA_HOME"/*
+  python3 - "$YAME" <<'PY' || { echo "the browser fetch did not complete"; exit 1; }
+import os, pty, sys, time, select
+YAME = sys.argv[1]
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "110"; os.environ["LINES"] = "34"
+    os.execv(YAME, ["yame", "fetch"])
+out = b""
+def pump(t):
+    global out
+    end = time.time() + t
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try: out += os.read(fd, 65536)
+            except OSError: return
+pump(0.9)
+for k in [b"/"] + [bytes([c]) for c in b"Mammal40"] + [b"\r"]:
+    os.write(fd, k); pump(0.15)
+os.write(fd, b" "); pump(0.3)
+os.write(fd, b"f"); pump(1.5)
+mark = len(out)
+os.write(fd, b"y"); pump(10.0)             # accept, and let it run
+report = out[mark:].decode("utf8", "replace")
+if "fetched" not in report:
+    sys.exit("no completion line after the fetch:\n" + report[-400:])
+if "failed" in report:
+    sys.exit("the browser fetch reported failures:\n" + report[-400:])
+## It ends on "press any key to return to the catalogue", so the first key
+## goes to that screen and only the SECOND one reaches the browser.
+os.write(fd, b" "); pump(0.8)
+os.write(fd, b"q"); pump(1.0)
+st = None; t0 = time.time()
+while time.time() - t0 < 30:
+    p, s_ = os.waitpid(pid, os.WNOHANG)
+    if p: st = s_; break
+    pump(0.2)
+if st is None:
+    os.kill(pid, 9); os.waitpid(pid, 0); sys.exit("the browser hung during the fetch")
+if os.WIFSIGNALED(st): sys.exit(f"the browser died on signal {os.WTERMSIG(st)}")
+PY
+  [ -n "$(find "$YAME_DATA_HOME" -name '*.cm' 2>/dev/null | head -1)" ] ||
+    { echo "the browser fetch landed no files"; find "$YAME_DATA_HOME" -type f | head; exit 1; }
+  ## whatever it fetched must verify against the manifest it wrote
+  for f in $(find "$YAME_DATA_HOME" -name SHA256SUMS); do
+    ( cd "$(dirname "$f")" && sha256sum -c --quiet SHA256SUMS 2>/dev/null ) ||
+      { echo "a browser-fetched directory does not verify against its own manifest"; exit 1; }
+  done
+fi
+
+## ---- 12. a stale local manifest is a pin conflict, not silently overwritten --
 rm -rf "$YAME_DATA_HOME"/*
 mkdir -p "$YAME_DATA_HOME/$scope"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"

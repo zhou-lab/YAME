@@ -246,7 +246,7 @@ int main_pairwise(int argc, char *argv[]) {
     case '2': name2 = optarg; break;
     case 'S': summary = 1; break;
     case 't': thresh = atof(optarg); break;
-    case 'o': fname_out = xstrdup(optarg); break;
+    case 'o': fname_out = wzstrdup(optarg); break;
     case 'c': min_coverage = atoi(optarg); break;
     case 'd': min_effect = atof(optarg); break;
     case 'H': direc = atoi(optarg); break;
@@ -312,7 +312,7 @@ int main_pairwise(int argc, char *argv[]) {
       pstat_print(&st, label1, label2);
     } else {
       cdata_t c_out = {.fmt = '6', .n = c1.n };
-      c_out.s = xcalloc((c_out.n+3)/4, sizeof(uint8_t));
+      c_out.s = wzcalloc((c_out.n+3)/4, sizeof(uint8_t));
       walk(&c1, &c2, min_coverage, direc, min_effect, thresh, &c_out, NULL);
       cdata_compress(&c_out);
       BGZF *fp_out;

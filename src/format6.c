@@ -115,7 +115,7 @@ cdata_t* fmt6_read_raw(char *fname, int verbose) {
     line_get_fields(line, "\t", &fields, &nfields);
     if (nfields < 2) wzfatal("Number of fields < 2. Abort.");
     if (!is_int(fields[1])) wzfatal("The 2nd column must be integers.");
-    s = xrealloc(s, n/4 + 1);
+    s = wzrealloc(s, n/4 + 1);
     // Binarize fields[0] to the first bit and fields[1] to the second bit
     if (n%4 == 0) s[n/4] = 0; // initialize
     if (atoi(fields[1])) s[n/4] |= 1<<((n%4)*2 + 1); // universe
@@ -129,7 +129,7 @@ cdata_t* fmt6_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Data of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = xcalloc(sizeof(cdata_t),1);
+  cdata_t *c = wzcalloc(sizeof(cdata_t),1);
   c->s = s;
   c->n = n;
   c->compressed = 0;
@@ -146,7 +146,7 @@ void fmt6_compress(cdata_t *c) {
 // just copy, nothing else, one can just flip compressed bit if possible
 cdata_t fmt6_decompress(const cdata_t c) {
   cdata_t expanded = {0};
-  expanded.s = xmalloc(cdata_nbytes(&c));
+  expanded.s = wzmalloc(cdata_nbytes(&c));
   memcpy(expanded.s, c.s, cdata_nbytes(&c));
   expanded.n = c.n;
   expanded.compressed = 0;
@@ -163,7 +163,7 @@ static stats_t* summarize1_queryfmt6_SU(
   if (c_mask->n == 0) {          // no mask
     
     *n_st = 1;
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c,i)) {
         st[0].n_u++;
@@ -174,8 +174,8 @@ static stats_t* summarize1_queryfmt6_SU(
         }
       }
     }
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
     st[0].beta = (double) st[0].n_q / st[0].n_u;
     
   } else if (c_mask->fmt <= '1') { // binary mask
@@ -183,7 +183,7 @@ static stats_t* summarize1_queryfmt6_SU(
     if (c_mask->n != c->n) wzfatal("[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
     
     *n_st = 1;
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     for (size_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c,i)) {
         st[0].n_u++;
@@ -194,8 +194,8 @@ static stats_t* summarize1_queryfmt6_SU(
         if (in_q && in_m) st[0].n_o++;
       }
     }
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
     st[0].beta = (double) st[0].n_o / st[0].n_m;
 
   } else if (c_mask->fmt == '2') { // state mask
@@ -205,7 +205,7 @@ static stats_t* summarize1_queryfmt6_SU(
     if (!c_mask->aux) fmt2_set_aux(c_mask);
     f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
     *n_st = aux->nk;
-    st = xcalloc((*n_st), sizeof(stats_t));
+    st = wzcalloc((*n_st), sizeof(stats_t));
     uint64_t nq = 0, nu = 0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t index = f2_get_uint64(c_mask, i);
@@ -227,9 +227,9 @@ static stats_t* summarize1_queryfmt6_SU(
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
         st[k].sm = tmp.s;
       } else {
-        st[k].sm = xstrdup(aux->keys[k]);
+        st[k].sm = wzstrdup(aux->keys[k]);
       }
-      st[k].sq = xstrdup(sq);
+      st[k].sq = wzstrdup(sq);
       st[k].beta = (double) st[k].n_o / st[k].n_m;
     }
   } else if (c_mask->fmt == '6') { // binary mask with universe
@@ -237,7 +237,7 @@ static stats_t* summarize1_queryfmt6_SU(
     if (c_mask->n != c->n) wzfatal("[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
     
     *n_st = 1;
-    st = xcalloc(1, sizeof(stats_t));
+    st = wzcalloc(1, sizeof(stats_t));
     for (size_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c,i) && FMT6_IN_UNI(*c_mask, i)) {
         st[0].n_u++;
@@ -248,8 +248,8 @@ static stats_t* summarize1_queryfmt6_SU(
         if (in_q && in_m) st[0].n_o++;
       }
     }
-    st[0].sm = xstrdup(sm);
-    st[0].sq = xstrdup(sq);
+    st[0].sm = wzstrdup(sm);
+    st[0].sq = wzstrdup(sq);
     st[0].beta = (double) st[0].n_o / st[0].n_m;
     
   } else {                      // other masks
@@ -266,7 +266,7 @@ static stats_t* summarize1_queryfmt6_2bit(
   if (c_mask->n == 0) {          // no mask
     
     *n_st = 4;
-    st = xcalloc(4, sizeof(stats_t));
+    st = wzcalloc(4, sizeof(stats_t));
     for (uint64_t i=0; i<c->n; ++i) {
       st[FMT6_2BIT(*c,i)].n_q++;
     }
@@ -274,7 +274,7 @@ static stats_t* summarize1_queryfmt6_2bit(
       st[k].n_u = c->n;
       st[k].n_m = c->n;
       st[k].n_o = st[k].n_q;
-      st[k].sm = xstrdup(sm);
+      st[k].sm = wzstrdup(sm);
       kstring_t tmp = {0};
       ksprintf(&tmp, "%s|%u", sq, k);
       st[k].sq = tmp.s;
@@ -286,8 +286,8 @@ static stats_t* summarize1_queryfmt6_2bit(
     if (c_mask->n != c->n) wzfatal("[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
 
     *n_st = 4;
-    uint64_t *cnts = xcalloc(*n_st, sizeof(uint64_t));
-    uint64_t *cnts_q = xcalloc(*n_st, sizeof(uint64_t));
+    uint64_t *cnts = wzcalloc(*n_st, sizeof(uint64_t));
+    uint64_t *cnts_q = wzcalloc(*n_st, sizeof(uint64_t));
     uint64_t n_m = 0; // sum of 1s in mask
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT0_IN_SET(*c_mask, i)) {
@@ -296,7 +296,7 @@ static stats_t* summarize1_queryfmt6_2bit(
       }
       cnts_q[FMT6_2BIT(*c,i)]++;
     }
-    st = xcalloc(*n_st, sizeof(stats_t));
+    st = wzcalloc(*n_st, sizeof(stats_t));
     for (uint8_t k=0; k<*n_st; ++k) {
       // only report masked
       st[k].n_u = c->n;
@@ -320,7 +320,7 @@ static stats_t* summarize1_queryfmt6_2bit(
     if (!c_mask->aux) fmt2_set_aux(c_mask);
     f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
     *n_st = aux->nk * 4;
-    st = xcalloc((*n_st), sizeof(stats_t));
+    st = wzcalloc((*n_st), sizeof(stats_t));
     uint64_t nu = 0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t index = f2_get_uint64(c_mask, i);
@@ -339,7 +339,7 @@ static stats_t* summarize1_queryfmt6_2bit(
           ksprintf(&tmp, "%s-%s", sm, aux->keys[k1]);
           st[k].sm = tmp.s;
         } else {
-          st[k].sm = xstrdup(aux->keys[k1]);
+          st[k].sm = wzstrdup(aux->keys[k1]);
         }
         
         kstring_t tmp = {0};
@@ -354,8 +354,8 @@ static stats_t* summarize1_queryfmt6_2bit(
     if (c_mask->n != c->n) wzfatal("[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
 
     *n_st = 4;
-    uint64_t *cnts = xcalloc(*n_st, sizeof(uint64_t));
-    uint64_t *cnts_q = xcalloc(*n_st, sizeof(uint64_t));
+    uint64_t *cnts = wzcalloc(*n_st, sizeof(uint64_t));
+    uint64_t *cnts_q = wzcalloc(*n_st, sizeof(uint64_t));
     uint64_t n_m = 0; // sum of 1s in mask
     for (uint64_t i=0; i<c->n; ++i) {
       if (FMT6_IN_UNI(*c_mask, i) && FMT6_IN_SET(*c_mask, i)) {
@@ -364,7 +364,7 @@ static stats_t* summarize1_queryfmt6_2bit(
       }
       cnts_q[FMT6_2BIT(*c,i)]++;
     }
-    st = xcalloc(*n_st, sizeof(stats_t));
+    st = wzcalloc(*n_st, sizeof(stats_t));
     for (uint8_t k=0; k<*n_st; ++k) {
       // only report masked
       st[k].n_u = c->n;

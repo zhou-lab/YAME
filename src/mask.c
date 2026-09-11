@@ -70,7 +70,7 @@ void mask_fmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
 
 void fmt0ContextualizeFmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
   cdata_t c6 = {.fmt = '6', .n = c->n};
-  c6.s = xcalloc((c6.n+3)/4, sizeof(uint8_t));
+  c6.s = wzcalloc((c6.n+3)/4, sizeof(uint8_t));
   for (uint64_t i=0; i<c6.n; ++i) {
     if (FMT0_IN_SET(c_mask,i)) { // mask is used as universe, use -v to invert
       if (FMT0_IN_SET(*c, i)) FMT6_SET1(c6, i);
@@ -89,7 +89,7 @@ int main_mask(int argc, char *argv[]) {
   char *fname_out = NULL;
   while ((c = getopt(argc, argv, "o:cvh"))>=0) {
     switch (c) {
-    case 'o': fname_out = xstrdup(optarg); break;
+    case 'o': fname_out = wzstrdup(optarg); break;
     case 'c': contextualize_to_fmt6 = 1; break;
     case 'v': reverse = 1; break;
     case 'h': return usage(); break;

@@ -41,10 +41,10 @@
   static inline Vector*                                                 \
   init_##Vector(Size init_size){                                        \
     if (init_size == 0)	init_size = 2;                          \
-    Vector *vector = (Vector*) xmalloc(sizeof(Vector));                  \
+    Vector *vector = (Vector*) wzmalloc(sizeof(Vector));                  \
     vector->size = 0;                                                   \
     vector->cap  = init_size;                                           \
-    vector->buffer = (Element*) xmalloc(sizeof(Element) * vector->cap);	\
+    vector->buffer = (Element*) wzmalloc(sizeof(Element) * vector->cap);	\
                                                                         \
     return vector;                                                      \
   }                                                                     \
@@ -56,7 +56,7 @@
     if (init_size == 0) init_size = 2;                                  \
     vector->size = 0;                                                   \
     vector->cap  = init_size;                                           \
-    vector->buffer = (Element*) xmalloc(sizeof(Element) * vector->cap);	\
+    vector->buffer = (Element*) wzmalloc(sizeof(Element) * vector->cap);	\
   }                                                                     \
                                                                         \
   /* MyVector v; count_MyVector(&v); */                                 \
@@ -84,7 +84,7 @@
         vector->cap += inc_size;                                        \
       }                                                                 \
     }                                                                   \
-    vector->buffer = xrealloc(vector->buffer,                            \
+    vector->buffer = wzrealloc(vector->buffer,                            \
                              vector->cap * sizeof(Element));            \
   }                                                                     \
                                                                         \
@@ -131,8 +131,8 @@
                                                                         \
   static inline Vector*                                                 \
   dup_##Vector(Vector *vec) {                                           \
-    Vector *vec2 = xcalloc(1, sizeof(Vector));                           \
-    vec2->buffer = xmalloc(sizeof(Element) * (vec->size+1));             \
+    Vector *vec2 = wzcalloc(1, sizeof(Vector));                           \
+    vec2->buffer = wzmalloc(sizeof(Element) * (vec->size+1));             \
     vec2->cap = vec->size+1;                                            \
     vec2->size = vec->size;                                             \
     memcpy(vec2->buffer, vec->buffer, sizeof(Element)*vec->size);       \

@@ -323,7 +323,7 @@ cdata_v* read_cdata_from_tail(cfile_t *cf, index_t *idx, int64_t n) {
   int npairs = 0;
   index_pair_t *pairs = index_pairs(idx, &npairs);
   if (n > npairs) n = npairs;
-  int64_t *indices = xmalloc(n*sizeof(int64_t));
+  int64_t *indices = wzmalloc(n*sizeof(int64_t));
   for (int64_t i=npairs-n; i<npairs; ++i) {
     indices[i-npairs+n] = pairs[i].value;
   }
@@ -365,7 +365,7 @@ cdata_v* read_cdata_with_indices(cfile_t *cf, const int64_t* indices, int n) {
 
 cdata_v* read_cdata_with_snames(cfile_t *cf, index_t *idx, snames_t *snames) {
   // check if we have all sample names in index
-  int64_t* indices = xmalloc(snames->n * sizeof(int64_t));
+  int64_t* indices = wzmalloc(snames->n * sizeof(int64_t));
   for (int i = 0; i < snames->n; i++) {
     indices[i] = getIndex(idx, snames->s[i]);
     if (indices[i] == -1) {

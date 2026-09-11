@@ -52,7 +52,7 @@ typedef void (*parse_data_f)(bed1_t *b, char **fields, int nfields);
 typedef void (*free_data_f)(void *data);
 
 static inline bed1_t *init_bed1(init_data_f init_data, void *aux_data) {
-  bed1_t *b = xcalloc(1, sizeof(bed1_t));
+  bed1_t *b = wzcalloc(1, sizeof(bed1_t));
   if (init_data != NULL)
     init_data(b, aux_data);
   return b;
@@ -78,8 +78,8 @@ typedef struct bed_file_t {
 } bed_file_t;
 
 static inline bed_file_t *init_bed_file(char *file_path) {
-  bed_file_t *bed = xcalloc(1, sizeof(bed_file_t));
-  bed->file_path = xstrdup(file_path);
+  bed_file_t *bed = wzcalloc(1, sizeof(bed_file_t));
+  bed->file_path = wzstrdup(file_path);
   bed->fh = wzopen(bed->file_path, 1);
   bed->targets = 0;
   bed->line = NULL;
@@ -107,7 +107,7 @@ static inline int bed_read1(bed_file_t *bed, bed1_t *b, parse_data_f parse_data)
     wzfatal("[%s:%d] Bed file has fewer than 3 columns.\n", __func__, __LINE__);
 
   if (bed->seqname==NULL || strcmp(fields[0], bed->seqname) != 0) {
-    free(bed->seqname); bed->seqname = xstrdup(fields[0]);
+    free(bed->seqname); bed->seqname = wzstrdup(fields[0]);
   }
   b->seqname = bed->seqname;
   /* b->tid = get_tid(bed->targets, fields[0], 1); */

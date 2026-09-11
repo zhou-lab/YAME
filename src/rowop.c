@@ -261,7 +261,7 @@ static cdata_t rowop_binasum(cfile_t cf, config_rowop_t *cfg) {
   cout.compressed = 0;
   cout.fmt = '3';
   cout.unit = 8;                // max-size result
-  cout.s = xcalloc(cout.n, sizeof(uint64_t));
+  cout.s = wzcalloc(cout.n, sizeof(uint64_t));
   
   for (uint64_t k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -311,7 +311,7 @@ static cdata_t rowop_musum(cfile_t cf) {
   cout.compressed = 0;
   cout.fmt = '3';
   cout.unit = 8;                // max-size result
-  cout.s = xcalloc(cout.n, sizeof(uint64_t));
+  cout.s = wzcalloc(cout.n, sizeof(uint64_t));
   
   for (uint64_t k=0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -513,8 +513,8 @@ static void rowop_binstring(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
 
     if (binstring_bytes*8 <= k) {
       binstring_bytes++;
-      binstring = xrealloc(binstring, (binstring_bytes*n));
-      ambig = xrealloc(ambig, (binstring_bytes*n));
+      binstring = wzrealloc(binstring, (binstring_bytes*n));
+      ambig = wzrealloc(ambig, (binstring_bytes*n));
       memset(binstring + (binstring_bytes-1)*n, 0, n);
       memset(ambig + (binstring_bytes-1)*n, 0, n);
     }
@@ -547,7 +547,7 @@ void rowop_cometh(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
     if (c0.n == 0) break;
     cdata_t c = decompress(c0);
     if (!k) {                   /* first data, initialize */
-      cnts = xcalloc(c.n*cometh_window, sizeof(uint64_t));
+      cnts = wzcalloc(c.n*cometh_window, sizeof(uint64_t));
       ncnts = c.n;
     }
     if (c.fmt != '3')           /* a user-input check, so not an assert() */
@@ -689,7 +689,7 @@ typedef struct recq_t {
 } recq_t;
 
 static void recq_init(recq_t *q, int cap) {
-  q->slot = xcalloc(cap, sizeof(cdata_t));
+  q->slot = wzcalloc(cap, sizeof(cdata_t));
   q->cap = cap; q->head = q->tail = q->count = q->done = 0;
   pthread_mutex_init(&q->mu, NULL);
   pthread_cond_init(&q->not_empty, NULL);
@@ -861,7 +861,7 @@ static int64_t *rowop_record_offsets(char *fname, int *n_rec) {
   int npairs = 0;
   index_pair_t *pairs = index_pairs(idx, &npairs);
   if (npairs <= 0) { clean_index_pairs(pairs, npairs); cleanIndex(idx); return NULL; }
-  int64_t *off = xmalloc(npairs * sizeof(int64_t));
+  int64_t *off = wzmalloc(npairs * sizeof(int64_t));
   for (int i = 0; i < npairs; ++i) off[i] = pairs[i].value;
   clean_index_pairs(pairs, npairs);
   cleanIndex(idx);
@@ -907,8 +907,8 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
   rowdisp_t disp = { .next = 0, .n = n_rec };
   pthread_mutex_init(&disp.mu, NULL);
 
-  rowop_worker_t *w = xcalloc(nt, sizeof(rowop_worker_t));
-  pthread_t *tid = xcalloc(nt, sizeof(pthread_t));
+  rowop_worker_t *w = wzcalloc(nt, sizeof(rowop_worker_t));
+  pthread_t *tid = wzcalloc(nt, sizeof(pthread_t));
   for (int t = 0; t < nt; ++t) {
     w[t].fname = fname; w[t].off = off; w[t].kind = kind; w[t].cfg = cfg;
     w[t].n = n; w[t].fmt = fmt;
@@ -918,7 +918,7 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
     else {
       w[t].acc.n = n; w[t].acc.compressed = 0;
       w[t].acc.fmt = '3'; w[t].acc.unit = 8;
-      w[t].acc.s = xcalloc(n, sizeof(uint64_t));
+      w[t].acc.s = wzcalloc(n, sizeof(uint64_t));
     }
   }
   if (cfg->verbose) {
@@ -956,7 +956,7 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
   /* merge into worker 0, split by rows so the tail does not grow with -t */
   double t_merge = rowop_now();
   if (nt > 1) {
-    rowop_merger_t *m = xcalloc(nt, sizeof(rowop_merger_t));
+    rowop_merger_t *m = wzcalloc(nt, sizeof(rowop_merger_t));
     uint64_t rows_per = (n + nt - 1) / nt;
     for (int t = 0; t < nt; ++t) {
       m[t].w = w; m[t].nt = nt; m[t].kind = kind;
@@ -1021,7 +1021,7 @@ int main_rowop(int argc, char *argv[]) {
   char *op = NULL;
   while ((c = getopt(argc, argv, "vo:p:q:c:b:w:s:m:M:t:d:h"))>=0) {
     switch (c) {
-    case 'o': op = xstrdup(optarg); break;
+    case 'o': op = wzstrdup(optarg); break;
     case 't': config.threads = atoi(optarg); break;
     case 'd': {
       char *endp = NULL;
@@ -1053,7 +1053,7 @@ int main_rowop(int argc, char *argv[]) {
   char *fname = argv[optind];
   char *fname_out = NULL;
   if (argc >= optind + 2)
-    fname_out = xstrdup(argv[optind+1]);
+    fname_out = wzstrdup(argv[optind+1]);
 
   if (config.threads < 1) wzfatal("-t takes a thread count >= 1, given %d.\n",
                                   config.threads);
