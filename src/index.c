@@ -173,14 +173,14 @@ static int comparePairs(const void* a, const void* b) {
 /* return sorted key-value pairs */
 index_pair_t *index_pairs(index_t *idx, int *n) {
 
-  index_pair_t* pairs = (index_pair_t*)malloc(kh_size(idx) * sizeof(index_pair_t));
+  index_pair_t* pairs = (index_pair_t*)xmalloc(kh_size(idx) * sizeof(index_pair_t));
   *n = 0;
 
   // Iterate over key-value pairs and store them in the array
   char *key;
   int64_t value;
   kh_foreach(idx, key, value, {
-      pairs[*n].key = strdup(key);
+      pairs[*n].key = xstrdup(key);
       pairs[*n].value = value;
       (*n)++;
     });
@@ -217,7 +217,7 @@ snames_t loadSampleNamesFromIndex(char *fname) {
   if (!idx) return snames;
 
   index_pair_t *idx_pairs = index_pairs(idx, &(snames.n));
-  snames.s = calloc(snames.n, sizeof(char*));
+  snames.s = xcalloc(snames.n, sizeof(char*));
   for (int i=0; i<snames.n; ++i) snames.s[i] = idx_pairs[i].key;
   free(idx_pairs);          // ownership of keys are transfered to snames.s
   cleanIndex(idx);
@@ -259,8 +259,8 @@ int main_index(int argc, char *argv[]) {
   while ((c0 = getopt(argc, argv, "cs:1:h"))>=0) {
     switch (c0) {
     case 'c': console = 1; break;
-    case 's': fname_snames = strdup(optarg); break;
-    case '1': sname_to_append = strdup(optarg); break;
+    case 's': fname_snames = xstrdup(optarg); break;
+    case '1': sname_to_append = xstrdup(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c0);
     }
@@ -314,8 +314,8 @@ int main_index(int argc, char *argv[]) {
       for (n=0; ; ++n) {
         int64_t addr = bgzf_tell(cf.fh);
         if (!read_cdata2(&cf, &c)) break;
-        sname_v = realloc(sname_v, sizeof(kstring_t)*(n+1));
-        addr_v = realloc(addr_v, sizeof(int64_t)*(n+1));
+        sname_v = xrealloc(sname_v, sizeof(kstring_t)*(n+1));
+        addr_v = xrealloc(addr_v, sizeof(int64_t)*(n+1));
         memset(&sname_v[n], 0, sizeof(kstring_t));
         ksprintf(&sname_v[n], "Unnamed_%d", n+1);
         addr_v[n] = addr;

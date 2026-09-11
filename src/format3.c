@@ -167,7 +167,7 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
       wzfatal("Field 1 or 2 is not a nonnegative integer.");
     uint64_t M = atol(fields[0]);
     uint64_t U = atol(fields[1]);
-    s = realloc(s, (n+1)*unit);
+    s = xrealloc(s, (n+1)*unit);
     fitMU(&M, &U, unit*4);
     f3_pack_mu(s+n*unit, M, U, unit);
     n++;
@@ -179,7 +179,7 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = calloc(sizeof(cdata_t),1);
+  cdata_t *c = xcalloc(sizeof(cdata_t),1);
   c->s = s;
   c->n = n;
   c->compressed = 0;
@@ -199,7 +199,7 @@ void fmt3_compress(cdata_t *c) {
     uint64_t U = MU<<32>>32;
     if (M>0 || U>0 || l+2 >= (1ul<<14)) {
       if (l>0) {
-        s = realloc(s, n+2);
+        s = xrealloc(s, n+2);
         pack_value(s+n, l<<2, 2);
         n += 2;
         if (M>0 || U>0) l = 0;
@@ -207,16 +207,16 @@ void fmt3_compress(cdata_t *c) {
       }
       if (M>0 || U>0) {
         if (M<7 && U<7) {
-          s = realloc(s, n+1);
+          s = xrealloc(s, n+1);
           s[n] = (M<<5) | (U<<2) | 0x1;
           n++;
         } else if (M<127 && U<127) {
-          s = realloc(s, n+2);
+          s = xrealloc(s, n+2);
           pack_value(s+n, (M<<9) | (U<<2) | 0x2, 2);
           n += 2;
         } else {
           fitMU(&M, &U, 31);
-          s = realloc(s, n+8);
+          s = xrealloc(s, n+8);
           pack_value(s+n, (M<<33) | (U<<2) | 3ul, 8);
           n += 8;
         }
@@ -226,7 +226,7 @@ void fmt3_compress(cdata_t *c) {
     }
   }
   if (l>0) {
-    s = realloc(s, n+2);
+    s = xrealloc(s, n+2);
     /* pack_value(), like every other zero-run written above. The cast form
      * that used to be here wrote through an unaligned uint16_t*, and it
      * truncated l to 16 bits BEFORE shifting -- harmless only because the
@@ -279,7 +279,7 @@ cdata_t fmt3_decompress(const cdata_t c) {
   cdata_t inflated = {0};
   if (c.unit) inflated.unit = c.unit;
   else inflated.unit = unit; // use inferred max unit if unset
-  uint8_t *s = calloc(inflated.unit*n0, sizeof(uint8_t));
+  uint8_t *s = xcalloc(inflated.unit*n0, sizeof(uint8_t));
   uint64_t n = 0;
   for (uint64_t i=0; i < c.n; ) {
     if ((c.s[i] & 0x3) == 0) {
@@ -326,7 +326,7 @@ stats_t* summarize1_queryfmt3(
   if (c_mask->n == 0) {            // no mask
     
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
     double sum_beta = 0.0;
     for (uint64_t i=0; i<c->n; ++i) {
@@ -337,14 +337,14 @@ stats_t* summarize1_queryfmt3(
         st[0].n_o++;
         st[0].n_q++;
       }}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = sum_beta / st[0].n_o; // may have Inf
     
   } else if (c_mask->fmt <= '1') { // binary mask
     
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
     if (c_mask->n != c->n) {
       fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
@@ -361,14 +361,14 @@ stats_t* summarize1_queryfmt3(
           st[0].sum_beta += MU2beta(mu);
           st[0].n_o++;
         }}}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = st[0].sum_beta / st[0].n_o; // may have Inf when n_o == 0
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
     
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
     if (c_mask->n != c->n) {
       fprintf(stderr, "[%s:%d] mask (N=%"PRIu64") and query (N=%"PRIu64") are of different lengths.\n", __func__, __LINE__, c_mask->n, c->n);
@@ -386,8 +386,8 @@ stats_t* summarize1_queryfmt3(
           sum_beta += MU2beta(mu);
           st[0].n_o++;
         }}}
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = sum_beta / st[0].n_o; // may have Inf when n_o == 0
     
   } else if (c_mask->fmt == '2') { // state mask
@@ -400,7 +400,7 @@ stats_t* summarize1_queryfmt3(
     if (!c_mask->aux) fmt2_set_aux(c_mask);
     f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
     *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
+    st = xcalloc((*n_st), sizeof(stats_t));
     uint64_t nq=0;
     for (uint64_t i=0; i<c->n; ++i) {
       uint64_t index = f2_get_uint64(c_mask, i);
@@ -427,9 +427,9 @@ stats_t* summarize1_queryfmt3(
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
         st[k].sm = tmp.s;
       } else {
-        st[k].sm = strdup(aux->keys[k]);
+        st[k].sm = xstrdup(aux->keys[k]);
       }
-      st[k].sq = strdup(sq);
+      st[k].sq = xstrdup(sq);
     }
     
   } else {                      // other masks

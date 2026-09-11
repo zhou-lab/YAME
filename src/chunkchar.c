@@ -53,7 +53,7 @@ int main_chunkchar(int argc, char *argv[]) {
   }
 
   char *fname = argv[optind];
-  char *outdir = malloc(strlen(fname)+1000);
+  char *outdir = xmalloc(strlen(fname)+1000);
   strcpy(outdir, fname);
   strcat(outdir, "_chunks");
   mkdir(outdir, 0777);
@@ -62,15 +62,15 @@ int main_chunkchar(int argc, char *argv[]) {
   char **lines = NULL; uint64_t n = 0;
   char *line = NULL;
   while (gzFile_read_line(fh, &line) > 0) {
-    lines = realloc(lines, (n+1)*sizeof(char*));
-    lines[n++] = strdup(line);
+    lines = xrealloc(lines, (n+1)*sizeof(char*));
+    lines[n++] = xstrdup(line);
   }
   free(line);
   gzclose(fh);
 
   uint64_t u,i;
   for (u=0; u<=n/chunk_size; ++u) {
-    char *tmp = malloc(strlen(outdir) + 1000);
+    char *tmp = xmalloc(strlen(outdir) + 1000);
     sprintf(tmp, "%s/%"PRIu64".txt", outdir, u);
     if (verbose) fprintf(stdout, "%s\n", tmp);
     FILE *fh = fopen(tmp, "w");

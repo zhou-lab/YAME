@@ -286,7 +286,7 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
     // Format 0: 1 bit per position, packed 8 positions per byte. Without
     // this, the unit-wise branch below treats a bit index as a byte index.
     uint64_t out_nbytes = (n + 7) >> 3;  // ceiling(n / 8)
-    c2.s = calloc(1, out_nbytes);
+    c2.s = xcalloc(1, out_nbytes);
     for (int64_t i = 0; i < n; ++i) {
       uint64_t src_i = row_indices[i] - 1;  // convert to 0-based
       if (c->s[src_i >> 3] & (1u << (src_i & 0x7)))
@@ -295,14 +295,14 @@ static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
   } else if (c->fmt == '6') {
     // Format 6: 2 bits per position, packed 4 positions per byte
     uint64_t out_nbytes = (n + 3) >> 2;  // ceiling(n / 4)
-    c2.s = calloc(1, out_nbytes);
+    c2.s = xcalloc(1, out_nbytes);
     for (int64_t i = 0; i < n; ++i) {
       uint64_t src_i = row_indices[i] - 1;  // convert to 0-based
       uint8_t val = (c->s[src_i >> 2] >> ((src_i & 0x3) * 2)) & 0x3;
       c2.s[i >> 2] |= val << ((i & 0x3) * 2);
     }
   } else {
-    c2.s = realloc(c2.s, n*c2.unit);
+    c2.s = xrealloc(c2.s, n*c2.unit);
     for (int64_t i = 0; i < n; ++i) {
       memcpy(c2.s+c2.unit*i, c->s+c->unit*(row_indices[i]-1), c->unit);
     }
@@ -356,7 +356,7 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
   c_out.fmt = c->fmt;
   if (c_out.fmt == '2') {
     uint64_t keys_nb = fmt2_get_keys_nbytes(c);
-    c_out.s = calloc(1, (end-beg+1)*c_out.unit + keys_nb + 1);
+    c_out.s = xcalloc(1, (end-beg+1)*c_out.unit + keys_nb + 1);
     memcpy(c_out.s, c->s, keys_nb + 1);
     memcpy(c_out.s+keys_nb+1, c->s+keys_nb+1+c->unit*beg, c->unit*(end-beg+1));
     c_out.n = end-beg+1;
@@ -365,7 +365,7 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
     // Format 0: 1 bit per position, 8 per byte -- same reason as format 6
     // below, one bit wide instead of two.
     uint64_t n_out = end - beg + 1;
-    c_out.s = calloc(1, (n_out + 7) >> 3);
+    c_out.s = xcalloc(1, (n_out + 7) >> 3);
     for (uint64_t i = 0; i < n_out; ++i) {
       uint64_t src_i = beg + i;
       if (c->s[src_i >> 3] & (1u << (src_i & 0x7)))
@@ -377,7 +377,7 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
     // Need to extract bits from arbitrary positions and repack
     uint64_t n_out = end - beg + 1;
     uint64_t out_nbytes = (n_out + 3) >> 2;  // ceiling(n_out / 4)
-    c_out.s = calloc(1, out_nbytes);
+    c_out.s = xcalloc(1, out_nbytes);
     for (uint64_t i = 0; i < n_out; ++i) {
       uint64_t src_i = beg + i;
       uint8_t val = (c->s[src_i >> 2] >> ((src_i & 0x3) * 2)) & 0x3;
@@ -385,7 +385,7 @@ static cdata_t sliceToBlock(cdata_t *c, uint64_t beg, uint64_t end) {
     }
     c_out.n = n_out;
   } else {
-    c_out.s = realloc(c_out.s, (end-beg+1)*c_out.unit);
+    c_out.s = xrealloc(c_out.s, (end-beg+1)*c_out.unit);
     memcpy(c_out.s, c->s+c->unit*beg, c->unit*(end-beg+1));
     c_out.n = end-beg+1;
   }
@@ -435,7 +435,7 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
   if (c_out.fmt == '2') {
     /* layout: [keys...][\0][filtered data rows...] */
     uint64_t keys_nb = fmt2_get_keys_nbytes(c); // no trailing '\0'
-    c_out.s = calloc(1, keys_nb + 1 + n * c_out.unit);
+    c_out.s = xcalloc(1, keys_nb + 1 + n * c_out.unit);
     memcpy(c_out.s, c->s, keys_nb + 1); // copy key section + '\0'
     uint8_t *dst      = c_out.s + keys_nb + 1;
     uint8_t *src_data = fmt2_get_data(c);  /* start of original data section */
@@ -448,7 +448,7 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
   } else if (c_out.fmt == '0') {
     // Format 0: 1 bit per position, 8 per byte
     if (n > 0) {
-      c_out.s = calloc(1, (n + 7) >> 3);
+      c_out.s = xcalloc(1, (n + 7) >> 3);
       for (uint64_t i = 0, k = 0; i < c->n; ++i) {
         if (FMT0_IN_SET(*c_mask, i)) {
           if (c->s[i >> 3] & (1u << (i & 0x7)))
@@ -461,7 +461,7 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
     // Format 6: 2 bits per position, packed 4 positions per byte
     if (n > 0) {
       uint64_t out_nbytes = (n + 3) >> 2;  // ceiling(n / 4)
-      c_out.s = calloc(1, out_nbytes);
+      c_out.s = xcalloc(1, out_nbytes);
       for (uint64_t i = 0, k = 0; i < c->n; ++i) {
         if (FMT0_IN_SET(*c_mask, i)) {
           uint8_t val = (c->s[i >> 2] >> ((i & 0x3) * 2)) & 0x3;
@@ -472,7 +472,7 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
     }
   } else { // all other formats
     if (n > 0) {
-      c_out.s = malloc(n * c_out.unit);
+      c_out.s = xmalloc(n * c_out.unit);
       for (uint64_t i = 0, k = 0; i < c->n; ++i)
         if (FMT0_IN_SET(*c_mask, i))
           memcpy(c_out.s + (k++) * c->unit, c->s + i * c->unit, c->unit);
@@ -494,12 +494,12 @@ int main_rowsub(int argc, char *argv[]) {
   while ((c = getopt(argc, argv, "1R:m:l:L:B:I:h"))>=0) {
     switch (c) {
     case '1': add_row_coordinates = 1; break;
-    case 'R': fname_row = strdup(optarg); break;
-    case 'm': fname_mask = strdup(optarg); break;
-    case 'l': config.fname_rindex = strdup(optarg); break;
-    case 'L': fname_rnindex = strdup(optarg); break;
-    case 'B': B_option = strdup(optarg); break;
-    case 'I': I_option = strdup(optarg); break;
+    case 'R': fname_row = xstrdup(optarg); break;
+    case 'm': fname_mask = xstrdup(optarg); break;
+    case 'l': config.fname_rindex = xstrdup(optarg); break;
+    case 'L': fname_rnindex = xstrdup(optarg); break;
+    case 'B': B_option = xstrdup(optarg); break;
+    case 'I': I_option = xstrdup(optarg); break;
     case 'h': return usage(&config); break;
     default: usage(&config); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -590,7 +590,7 @@ int main_rowsub(int argc, char *argv[]) {
       return 1;
     }
     free(fname_row);
-    fname_row = strdup(resolved);
+    fname_row = xstrdup(resolved);
   }
 
   if ((fname_rnindex || add_row_coordinates) && !fname_row) {
@@ -605,7 +605,7 @@ int main_rowsub(int argc, char *argv[]) {
     }
     fprintf(stderr, "[rowsub] %"PRIu64" rows -> %s, using %s\n",
             rows, rname, path);
-    fname_row = strdup(path);
+    fname_row = xstrdup(path);
   }
 
   if (fname_row) {

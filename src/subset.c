@@ -141,7 +141,7 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out,
   if (!c.aux) fmt2_set_aux(&c);
   f2_aux_t *aux = (f2_aux_t*) c.aux;
   cdata_t c0 = {.n = c.n, .fmt = '0', .compressed=1}; // output data
-  c0.s = calloc(cdata_nbytes(&c0), 1);
+  c0.s = xcalloc(cdata_nbytes(&c0), 1);
   for (int64_t i = 0; i<snames.n; ++i) {
     uint64_t i_term = 0; int found = 0;
     for (uint64_t j = 0; j<aux->nk; ++j) {
@@ -218,7 +218,7 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
     }
 
   /* record boundaries, in file order */
-  int64_t *addr = malloc(npairs * sizeof(int64_t));
+  int64_t *addr = xmalloc(npairs * sizeof(int64_t));
   for (int i = 0; i < npairs; ++i) addr[i] = pairs[i].value >> 16;
   qsort(addr, npairs, sizeof(int64_t), cmp_int64);
 
@@ -332,15 +332,15 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
     if (tail > 0) {
       if (tail > npairs) tail = npairs;
       for (int i=0; i<tail; ++i) {
-        snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
-        snames.s[snames.n++] = strdup(pairs[npairs-tail+i].key);
+        snames.s = xrealloc(snames.s, (snames.n+1)*sizeof(const char*));
+        snames.s[snames.n++] = xstrdup(pairs[npairs-tail+i].key);
       }
     } else {
       if (head < 1) head = 1;   // default to head 1
       if (head > npairs) head = npairs;
       for (int i=0; i<head; ++i) {
-        snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
-        snames.s[snames.n++] = strdup(pairs[i].key);
+        snames.s = xrealloc(snames.s, (snames.n+1)*sizeof(const char*));
+        snames.s[snames.n++] = xstrdup(pairs[i].key);
       }
     }
     clean_index_pairs(pairs, npairs);
@@ -497,8 +497,8 @@ int main_subset(int argc, char *argv[]) {
   int verbose = 0;
   while ((c0 = getopt(argc, argv, "o:l:sH:T:z:vh"))>=0) {
     switch (c0) {
-    case 'o': fname_out = strdup(optarg); break;
-    case 'l': fname_snames = strdup(optarg); break;
+    case 'o': fname_out = xstrdup(optarg); break;
+    case 'l': fname_snames = xstrdup(optarg); break;
     case 's': filter_fmt2_states = 1; break;
     case 'H': head = atoi(optarg); break;
     case 'T': tail = atoi(optarg); break;
@@ -534,8 +534,8 @@ int main_subset(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind < argc) {          // sample names from command line
     for(int i = optind; i < argc; ++i) {
-      snames.s = realloc(snames.s, (snames.n+1)*sizeof(const char*));
-      snames.s[snames.n++] = strdup(argv[i]);
+      snames.s = xrealloc(snames.s, (snames.n+1)*sizeof(const char*));
+      snames.s[snames.n++] = xstrdup(argv[i]);
     }
   } else {                      // from a file list
     snames = loadSampleNames(fname_snames, 1);

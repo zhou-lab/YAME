@@ -68,7 +68,7 @@ int main_perturb(int argc, char *argv[]) {
     switch (c) {
     case 's': seed = (unsigned)strtoul(optarg, NULL, 10); break;
     case 'p': p = atof(optarg); break;
-    case 'o': fname_out = strdup(optarg); break;
+    case 'o': fname_out = xstrdup(optarg); break;
     case 'h': return usage();
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }

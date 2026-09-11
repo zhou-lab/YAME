@@ -64,7 +64,7 @@ static inline void vector_push(vector_t* vector, const char* element) {
     vector->data = new_data;
     vector->capacity = new_capacity;
   }
-  vector->data[vector->size] = strdup(element);
+  vector->data[vector->size] = xstrdup(element);
   vector->size++;
 }
 

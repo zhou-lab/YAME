@@ -95,7 +95,7 @@
 cdata_t fmt1_decompress(const cdata_t c) {
   cdata_t expanded = {0};
   uint64_t i=0, j=0, n=0, m=1<<20;
-  uint8_t *s = realloc(expanded.s, m);
+  uint8_t *s = xrealloc(expanded.s, m);
   /* i+3 <= c.n, not i < c.n: a record whose length is not a multiple of the
    * 3-byte RLE triple used to read its run length from one or two bytes
    * past the buffer. That only happens on a corrupt stream, which is
@@ -103,7 +103,7 @@ cdata_t fmt1_decompress(const cdata_t c) {
   for (i=0; i+3<=c.n; i+=3) {
     uint16_t l;
     memcpy(&l, c.s+i+1, sizeof(l));   /* the offset is odd, so never aligned */
-    if (n+l+2>m) {m=n+l+2; m<<=1; s = realloc(s, m);}
+    if (n+l+2>m) {m=n+l+2; m<<=1; s = xrealloc(s, m);}
     for (j=0; j<l; ++j) s[n++] = c.s[i];
   }
   if (i != c.n)
@@ -129,7 +129,7 @@ cdata_t* fmt1_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<22;
-  uint8_t *s = calloc(m, 1);
+  uint8_t *s = xcalloc(m, 1);
   while (gzFile_read_line(fh, &line) > 0) {
     /* One character per line, and say so rather than taking the first one.
      * This format stores a byte, not a number: "109" used to land as '1' and
@@ -144,7 +144,7 @@ cdata_t* fmt1_read_raw(char *fname, int verbose) {
               "that needs more than one character.\n",
               __func__, __LINE__, n+1, line, line[0]);
     s[n++] = line[0];
-    if (n+2>m) { m<<=1; s=realloc(s,m); }
+    if (n+2>m) { m<<=1; s=xrealloc(s,m); }
   }
   free(line);
   wzclose(fh);
@@ -152,7 +152,7 @@ cdata_t* fmt1_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = calloc(sizeof(cdata_t),1);
+  cdata_t *c = xcalloc(sizeof(cdata_t),1);
   c->s = (uint8_t*) s;
   c->n = n;
   c->compressed = 0;
@@ -171,7 +171,7 @@ void fmt1_compress(cdata_t *c) {
   for (i=0, l=0; i<c->n; ++i) {
     /* either not the same as before or reach block size max */
     if ((l != 0 && c->s[i] != u0) || l+2 >= 1<<15) {
-      s = realloc(s, n+3);
+      s = xrealloc(s, n+3);
       s[n] = u0;
       memcpy(s+n+1, &l, sizeof(l));   /* s+n+1 is odd; never write via a cast */
       n += 3;
@@ -182,7 +182,7 @@ void fmt1_compress(cdata_t *c) {
     u0 = c->s[i];
   }
   /* the last rle */
-  s = realloc(s, n+3);
+  s = xrealloc(s, n+3);
   s[n] = u0;
   memcpy(s+n+1, &l, sizeof(l));
   n += 3;

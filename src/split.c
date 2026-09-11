@@ -42,18 +42,18 @@ static char *out_name(char *prefix, char **snames, int snames_n, int i) {
   char *tmp;
   if (snames_n) {
     if (prefix) {
-      tmp = malloc(strlen(prefix)+strlen(snames[i])+1000);
+      tmp = xmalloc(strlen(prefix)+strlen(snames[i])+1000);
       sprintf(tmp, "%s%s.cx", prefix, snames[i]);
     } else {
-      tmp = malloc(strlen(snames[i])+1000);
+      tmp = xmalloc(strlen(snames[i])+1000);
       sprintf(tmp, "%s.cx", snames[i]);
     }
   } else {
     if (prefix) {
-      tmp = malloc(strlen(prefix) + 1000);
+      tmp = xmalloc(strlen(prefix) + 1000);
       sprintf(tmp, "%s_split_%i.cx", prefix, i+1);
     } else {
-      tmp = malloc(1000);
+      tmp = xmalloc(1000);
       sprintf(tmp, "split_%i.cx", i+1);
     }
   }
@@ -91,7 +91,7 @@ static int split_raw(char *fname_in, char *prefix, char **snames, int snames_n,
     clean_index_pairs(pairs, npairs); cleanIndex(idx); return 0;
   }
 
-  int64_t *addr = malloc(npairs * sizeof(int64_t));
+  int64_t *addr = xmalloc(npairs * sizeof(int64_t));
   for (int i = 0; i < npairs; ++i) addr[i] = pairs[i].value;
   qsort(addr, npairs, sizeof(int64_t), cmp_int64);   /* file order */
 
@@ -146,7 +146,7 @@ int main_split(int argc, char *argv[]) {
   while ((c = getopt(argc, argv, "s:vh"))>=0) {
     switch (c) {
     case 'v': verbose = 1; break;
-    case 's': fname_snames = strdup(optarg); break;
+    case 's': fname_snames = xstrdup(optarg); break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -171,8 +171,8 @@ int main_split(int argc, char *argv[]) {
     char **fields; int nfields;
     while (gzFile_read_line(fh, &line)>0) {
       line_get_fields(line, "\t", &fields, &nfields);
-      snames = realloc(snames, (snames_n+1)*sizeof(char*));
-      snames[snames_n] = strdup(fields[0]);
+      snames = xrealloc(snames, (snames_n+1)*sizeof(char*));
+      snames[snames_n] = xstrdup(fields[0]);
       ++snames_n;
       free_fields(fields, nfields);
     }

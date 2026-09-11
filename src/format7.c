@@ -247,7 +247,7 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
         fmt7c_append_end(&s, &n);
         free(chrm);
       }
-      chrm = strdup(fields[0]);
+      chrm = xstrdup(fields[0]);
       fmt7c_append_chrm(chrm, &s, &n);
       last = 0;
     }
@@ -261,7 +261,7 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
   }
   
   if (chrm) free(chrm);
-  cdata_t *c = calloc(sizeof(cdata_t),1);
+  cdata_t *c = xcalloc(sizeof(cdata_t),1);
   c->s = s;
   c->n = n;
   c->compressed = 1;
@@ -417,7 +417,7 @@ int row_reader_next_loc(row_reader_t *rdr, const cdata_t *c) {
 
 int fmt7_next_bed(cdata_t *c) {
   row_reader_t *rdr;
-  if (!c->aux) c->aux = calloc(1, sizeof(row_reader_t));
+  if (!c->aux) c->aux = xcalloc(1, sizeof(row_reader_t));
   rdr = (row_reader_t*) c->aux;
   return row_reader_next_loc(rdr, c);
 }
@@ -677,9 +677,9 @@ cdata_t fmt7_decompress(const cdata_t c) {
       }
       chrms = tmp;
 
-      chrms[nchrms] = strdup(chrm);  /* own a copy of the name */
+      chrms[nchrms] = xstrdup(chrm);  /* own a copy of the name */
       if (!chrms[nchrms]) {
-        fprintf(stderr, "[fmt7_decompress] Out of memory strdup(chrm)\n");
+        fprintf(stderr, "[fmt7_decompress] Out of memory xstrdup(chrm)\n");
         exit(1);
       }
       nchrms++;
@@ -712,7 +712,7 @@ cdata_t fmt7_decompress(const cdata_t c) {
 
   uint64_t total_bytes = names_bytes + n * 8;
 
-  out.s = malloc(total_bytes);
+  out.s = xmalloc(total_bytes);
   if (!out.s) {
     fprintf(stderr, "[fmt7_decompress] Out of memory allocating %"PRIu64" bytes\n", total_bytes);
     exit(1);
@@ -878,9 +878,9 @@ stats_t* summarize1_queryfmt7(
     fmt7_prep(*c, &locs_beg, &chrms, &nchrms);
 
     *n_st = (uint64_t) nchrms;
-    st = calloc(*n_st, sizeof(stats_t));
+    st = xcalloc(*n_st, sizeof(stats_t));
 
-    uint64_t* chrm_cnts = calloc(nchrms, sizeof(uint64_t));
+    uint64_t* chrm_cnts = xcalloc(nchrms, sizeof(uint64_t));
     for (uint64_t i=0; i<c->n; ++i) {
       uint16_t ichr = fmt7_get_chr(locs_beg, i);
       chrm_cnts[ichr]++;
@@ -894,13 +894,13 @@ stats_t* summarize1_queryfmt7(
       s->n_o   = 0;
       s->beta  = -1.0;                 /* force Beta to NA; sum_depth stays 0 */
 
-      s->sm = strdup(sm);
+      s->sm = xstrdup(sm);
       if (config->section_name) {
         kstring_t tmp = {0};
         ksprintf(&tmp, "%s-%s", sq, chrms[ichr] ? chrms[ichr] : "");
         s->sq = tmp.s;
       } else {
-        s->sq = strdup(chrms[ichr] ? chrms[ichr] : "");
+        s->sq = xstrdup(chrms[ichr] ? chrms[ichr] : "");
       }
     }
     

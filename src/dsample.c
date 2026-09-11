@@ -273,15 +273,15 @@ static void write_index_with_rep(char *fname,
       char *s = NULL;
       if (n_rep == 1) {
         int n = snprintf(NULL, 0, "%s", base);
-        s = (char *)malloc(n + 1);
+        s = (char *)xmalloc(n + 1);
         snprintf(s, n + 1, "%s", base);
       } else if (rep_prefix) {
         int n = snprintf(NULL, 0, "%s-%s-%d", base, rep_prefix, j);
-        s = (char *)malloc(n + 1);
+        s = (char *)xmalloc(n + 1);
         snprintf(s, n + 1, "%s-%s-%d", base, rep_prefix, j);
       } else {
         int n = snprintf(NULL, 0, "%s-%d", base, j);
-        s = (char *)malloc(n + 1);
+        s = (char *)xmalloc(n + 1);
         snprintf(s, n + 1, "%s-%d", base, j);
       }
 
@@ -325,10 +325,10 @@ int main_dsample(int argc, char *argv[]) {
   int f3_rand_binarize = 0;
   while ((c = getopt(argc, argv, "o:r:s:p:bN:h"))>=0) {
     switch (c) {
-    case 'o': fname_out = strdup(optarg); break;
+    case 'o': fname_out = xstrdup(optarg); break;
     case 'r': n_rep = atoi(optarg); break;
     case 's': seed = (unsigned) strtoul(optarg, NULL, 10); break;
-    case 'p': rep_prefix = strdup(optarg); break;
+    case 'p': rep_prefix = xstrdup(optarg); break;
     case 'b': f3_rand_binarize = 1; break;
     case 'N': N = strtoul(optarg, NULL, 10); break;
     case 'h': return usage(); break;

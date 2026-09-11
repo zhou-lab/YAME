@@ -40,7 +40,7 @@ row_finder_t init_finder(cdata_t *cr) {
           exit(1);
         }
         fdr.n++;
-        fdr.chrms = realloc(fdr.chrms, sizeof(chromosome_t)*fdr.n);
+        fdr.chrms = xrealloc(fdr.chrms, sizeof(chromosome_t)*fdr.n);
         chrmt = fdr.chrms + fdr.n - 1;
         memset(chrmt, 0, sizeof(chromosome_t));
       } else {
@@ -50,9 +50,9 @@ row_finder_t init_finder(cdata_t *cr) {
       }
     }
     while ((rdr.value>>17) >= chrmt->n) {
-      chrmt->locs = realloc(chrmt->locs, (chrmt->n+1)*sizeof(uint64_t));
-      chrmt->vals = realloc(chrmt->vals, (chrmt->n+1)*sizeof(uint64_t));
-      chrmt->inds = realloc(chrmt->inds, (chrmt->n+1)*sizeof(uint64_t));
+      chrmt->locs = xrealloc(chrmt->locs, (chrmt->n+1)*sizeof(uint64_t));
+      chrmt->vals = xrealloc(chrmt->vals, (chrmt->n+1)*sizeof(uint64_t));
+      chrmt->inds = xrealloc(chrmt->inds, (chrmt->n+1)*sizeof(uint64_t));
       chrmt->locs[chrmt->n] = rdr.loc;
       chrmt->vals[chrmt->n] = rdr.value;
       chrmt->inds[chrmt->n] = rdr.index;

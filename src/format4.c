@@ -113,15 +113,15 @@ cdata_t fmt4_decompress(const cdata_t c) {
 
   uint64_t i=0, m = 1<<20,n = 0, j=0, l=0;
   uint32_t *s0 = (uint32_t*) c.s;
-  float *s = calloc(m*sizeof(float), 1);
+  float *s = xcalloc(m*sizeof(float), 1);
 
   for(i=0; i< c.n>>2; ++i) {
     if (s0[i] >> 31) {
       l = s0[i]<<1>>1;
-      if (n+l+10>m) {m=n+l+10; m<<=1; s = realloc(s, m*sizeof(float));}
+      if (n+l+10>m) {m=n+l+10; m<<=1; s = xrealloc(s, m*sizeof(float));}
       for (j=0; j<l; ++j) s[n++] = -1.0;
     } else {
-      if (n+2>m) {m<<=1; s = realloc(s, m*sizeof(float));}
+      if (n+2>m) {m<<=1; s = xrealloc(s, m*sizeof(float));}
       memcpy(s+n, s0+i, sizeof(float));
       n++;
     }
@@ -149,14 +149,14 @@ cdata_t* fmt4_read_raw(char *fname, int verbose) {
   gzFile fh = wzopen(fname, 1);
   char *line = NULL;
   uint64_t n = 0, m=1<<22;
-  float *s = calloc(m, sizeof(float));
+  float *s = xcalloc(m, sizeof(float));
   while (gzFile_read_line(fh, &line) > 0) {
     if (is_float(line)) {
       s[n++] = atof(line);
     } else {
       s[n++] = -1.0;
     }
-    if (n+2>m) { m<<=1; s=realloc(s, m*sizeof(float)); }
+    if (n+2>m) { m<<=1; s=xrealloc(s, m*sizeof(float)); }
   }
   free(line);
   wzclose(fh);
@@ -164,7 +164,7 @@ cdata_t* fmt4_read_raw(char *fname, int verbose) {
     fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
     fflush(stderr);
   }
-  cdata_t *c = calloc(sizeof(cdata_t),1);
+  cdata_t *c = xcalloc(sizeof(cdata_t),1);
   c->s = (uint8_t*) s;
   c->n = n;
   c->compressed = 0;
@@ -179,20 +179,20 @@ cdata_t* fmt4_read_raw(char *fname, int verbose) {
 void fmt4_compress(cdata_t *c) {
 
   uint64_t n=0, m=1<<20;
-  uint32_t *s = calloc(sizeof(uint32_t), m);
+  uint32_t *s = xcalloc(sizeof(uint32_t), m);
   uint64_t i = 0; uint32_t l = 0;
   uint32_t *s0 = (uint32_t*) c->s;
   for (i=0, l=0; i<c->n; ++i) {
     /* either not the same as before or reach block size max */
     if (!(s0[i] & (1ul<<31)) || l+2 >= (1ul<<31)) {
       if (l > 0) {
-        if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+        if (n+2>m) { m<<=1; s = xrealloc(s, m*sizeof(uint32_t));}
         s[n++] = ((1<<31) | l);
         l = 0;
       }
 
       if (!(s0[i] & (1ul<<31))) {
-        if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+        if (n+2>m) { m<<=1; s = xrealloc(s, m*sizeof(uint32_t));}
         memcpy(s+n, s0+i, sizeof(float));
         n++;
         l = 0;
@@ -203,7 +203,7 @@ void fmt4_compress(cdata_t *c) {
   }
   /* the last rle */
   if (l > 0) {
-    if (n+2>m) { m<<=1; s = realloc(s, m*sizeof(uint32_t));}
+    if (n+2>m) { m<<=1; s = xrealloc(s, m*sizeof(uint32_t));}
     s[n++] = ((1<<31) | l);
   }
   
@@ -222,7 +222,7 @@ stats_t* summarize1_queryfmt4(
   if (c_mask->n == 0) {          // no mask
 
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
 
     for (uint64_t i = 0; i < c->n; ++i) {
@@ -234,8 +234,8 @@ stats_t* summarize1_queryfmt4(
       }
     }
 
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
 
   } else if (c_mask->fmt <= '1') { // binary mask
@@ -248,7 +248,7 @@ stats_t* summarize1_queryfmt4(
     }
 
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
 
     for (uint64_t i = 0; i < c->n; ++i) {
@@ -263,8 +263,8 @@ stats_t* summarize1_queryfmt4(
       }
     }
 
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
 
   } else if (c_mask->fmt == '6') { // binary mask with universe
@@ -277,7 +277,7 @@ stats_t* summarize1_queryfmt4(
     }
 
     *n_st = 1;
-    st = calloc(1, sizeof(stats_t));
+    st = xcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
 
     for (uint64_t i = 0; i < c->n; ++i) {
@@ -292,8 +292,8 @@ stats_t* summarize1_queryfmt4(
       }
     }
 
-    st[0].sm = strdup(sm);
-    st[0].sq = strdup(sq);
+    st[0].sm = xstrdup(sm);
+    st[0].sq = xstrdup(sq);
     st[0].beta = st[0].n_o ? (st[0].sum_beta / st[0].n_o) : NAN;
 
   } else if (c_mask->fmt == '2') { // state mask
@@ -308,7 +308,7 @@ stats_t* summarize1_queryfmt4(
     f2_aux_t *aux = (f2_aux_t*) c_mask->aux;
 
     *n_st = aux->nk;
-    st = calloc((*n_st), sizeof(stats_t));
+    st = xcalloc((*n_st), sizeof(stats_t));
     uint64_t nq = 0;
 
     for (uint64_t i = 0; i < c->n; ++i) {
@@ -336,9 +336,9 @@ stats_t* summarize1_queryfmt4(
         ksprintf(&tmp, "%s-%s", sm, aux->keys[k]);
         st[k].sm = tmp.s;
       } else {
-        st[k].sm = strdup(aux->keys[k]);
+        st[k].sm = xstrdup(aux->keys[k]);
       }
-      st[k].sq = strdup(sq);
+      st[k].sq = xstrdup(sq);
     }
 
   } else {                      // other masks

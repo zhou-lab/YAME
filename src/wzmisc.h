@@ -37,6 +37,52 @@ static inline void wzfatal(const char *msg, ...) {
   exit(EXIT_FAILURE);
 }
 
+/**
+ * Allocation that cannot return NULL.
+ *
+ * An out-of-memory malloc returns NULL and the caller writes through it. On a
+ * busy machine that is a segfault with nothing on stderr, and -- when the
+ * write happens to land somewhere survivable -- a TRUNCATED stream with exit
+ * 0, which downstream cannot tell from a genuinely short one. Both were seen
+ * on the same command: `yame unpack` on a 1 GB store under memory pressure
+ * segfaulted here and, on a login node with three of them running, emitted a
+ * short row that a `paste` pipeline then scored as real data.
+ *
+ * These say what they wanted and where, then exit non-zero. `x` for "exits",
+ * the usual spelling.
+ */
+static inline void *xmalloc_(size_t n, const char *fn, int line) {
+  void *p = malloc(n);
+  if (!p && n) wzfatal("[%s:%d] Out of memory: cannot allocate %zu bytes.\n", fn, line, n);
+  return p;
+}
+
+static inline void *xcalloc_(size_t k, size_t n, const char *fn, int line) {
+  void *p = calloc(k, n);
+  if (!p && k && n)
+    wzfatal("[%s:%d] Out of memory: cannot allocate %zu x %zu bytes.\n", fn, line, k, n);
+  return p;
+}
+
+/* realloc(p, 0) may legitimately return NULL -- that is a free, not a
+ * failure -- so only a non-zero size is required to succeed. */
+static inline void *xrealloc_(void *p, size_t n, const char *fn, int line) {
+  void *q = realloc(p, n);
+  if (!q && n) wzfatal("[%s:%d] Out of memory: cannot resize to %zu bytes.\n", fn, line, n);
+  return q;
+}
+
+static inline char *xstrdup_(const char *s, const char *fn, int line) {
+  char *p = strdup(s);
+  if (!p) wzfatal("[%s:%d] Out of memory: cannot copy %zu bytes.\n", fn, line, strlen(s) + 1);
+  return p;
+}
+
+#define xmalloc(n)       xmalloc_((n), __func__, __LINE__)
+#define xcalloc(k, n)    xcalloc_((k), (n), __func__, __LINE__)
+#define xrealloc(p, n)   xrealloc_((p), (n), __func__, __LINE__)
+#define xstrdup(s)       xstrdup_((s), __func__, __LINE__)
+
 static inline void wzfread(void *ptr, size_t size, size_t count, FILE *stream) {
   if (fread(ptr, size, count, stream) != count) {
     wzfatal("Reading error");

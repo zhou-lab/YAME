@@ -114,7 +114,7 @@ int main_binarize(int argc, char *argv[]) {
   char *fname_out = NULL;
   while ((c = getopt(argc, argv, "o:t:m:c:h"))>=0) {
     switch (c) {
-    case 'o': fname_out = strdup(optarg); break;
+    case 'o': fname_out = xstrdup(optarg); break;
     case 't': Tmin = atof(optarg); break;
     case 'm': Mmin = atoi(optarg); break;
     case 'c': min_cov = atoi(optarg); break;
@@ -150,7 +150,7 @@ int main_binarize(int argc, char *argv[]) {
     if (c.fmt != '3') wzfatal("[%s:%d] Only format 3 files are supported (given %c).\n", __func__, __LINE__, c.fmt);
 
     cdata_t c6 = {.fmt = '6', .n = c.n};
-    c6.s = calloc((c6.n+3)/4, sizeof(uint8_t));
+    c6.s = xcalloc((c6.n+3)/4, sizeof(uint8_t));
     for (uint64_t i=0; i<c6.n; ++i) {
       uint64_t mu = f3_get_mu(&c, i);
       if (MU2cov(mu) >= min_cov) {

@@ -82,7 +82,7 @@ static inline int gzFile_read_line(gzFile fh, char **s) {
   /* read until '\n' or EOF */
   while (1) {
     int c = gzgetc(fh);
-    if (l > m-2) { m <<= 1; *s = realloc(*s, m); }
+    if (l > m-2) { m <<= 1; *s = xrealloc(*s, m); }
     if (c == '\n') {(*s)[l] = '\0'; return 1;}
     if (c == EOF) {(*s)[l] = '\0'; return 0;}
     (*s)[l++] = c;
@@ -120,7 +120,7 @@ static inline int gzFile_count_lines(gzFile fh) {
  */
 static inline int line_get_field(const char *line, int field_index, const char *sep, char **field) {
 
-  char *working = calloc(strlen(line) + 1, sizeof(char));
+  char *working = xcalloc(strlen(line) + 1, sizeof(char));
   strcpy(working, line);
   char *tok;
 
@@ -182,13 +182,13 @@ static inline void line_get_fields(const char *line, const char *sep, char ***fi
   while ((s = strpbrk(s, sep)) != NULL) { (*nfields)++; s++; }
 
   *fields = calloc(*nfields, sizeof(char *));
-  char *working = calloc(strlen(line) + 1, sizeof(char));
+  char *working = xcalloc(strlen(line) + 1, sizeof(char));
   strcpy(working, line);
   char *tok; int i;
 
   tok = strtok(working, sep);
   for (i=0; tok != NULL; ++i) {
-    (*fields)[i] = strdup(tok);
+    (*fields)[i] = xstrdup(tok);
     tok = strtok(NULL, sep);
   }
   free(working);
@@ -247,7 +247,7 @@ static inline void line_get_fields2(
 
   tok = strtok(*aux, sep);
   for (i=0; tok != NULL; ++i) {
-    (*fields)[i] = realloc((*fields)[i], strlen(tok)+1);
+    (*fields)[i] = xrealloc((*fields)[i], strlen(tok)+1);
     strcpy((*fields)[i], tok);
     tok = strtok(NULL, sep);
   }

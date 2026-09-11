@@ -49,6 +49,7 @@
 #include "assetinfo.h"
 #include "yame_ui.h"
 
+#include "wzmisc.h"   /* xmalloc/xstrdup: allocation that cannot return NULL */
 static int usage(void) {
   char root[4096];
   yame_assets_root(NULL, NULL, root, sizeof(root));
@@ -1023,8 +1024,8 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
   snprintf(line, sizeof(line), "%s\t" TAIL_FMT, name, e->a->tag, sz);
   snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
 
-  out->rows[out->n]   = strdup(line);
-  out->keys[out->n]   = strdup(key);
+  out->rows[out->n]   = xstrdup(line);
+  out->keys[out->n]   = xstrdup(key);
   out->styles[out->n] = (unsigned char)(here ? YAME_ROW_HAVE
                                              : e->required ? YAME_ROW_REQUIRED
                                                            : YAME_ROW_MISSING);
@@ -1044,10 +1045,10 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   bpath_parse(path, &p);
 
   enum { CAP = 512 };
-  out->rows   = calloc(CAP, sizeof(char *));
-  out->keys   = calloc(CAP, sizeof(char *));
-  out->styles = calloc(CAP, 1);
-  out->branch = calloc(CAP, 1);
+  out->rows   = xcalloc(CAP, sizeof(char *));
+  out->keys   = xcalloc(CAP, sizeof(char *));
+  out->styles = xcalloc(CAP, 1);
+  out->branch = xcalloc(CAP, 1);
   if (!out->rows || !out->keys || !out->styles || !out->branch) return;
 
   static ent_t ents[CAP];
@@ -1071,8 +1072,8 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
       snprintf(line, sizeof(line), SUB_ROW_FMT "\t" TAIL_FMT, subs[i], "sets",
                path_tag(p.unit, subs[i]), note);
 
-      out->rows[out->n]   = strdup(line);
-      out->keys[out->n]   = strdup(subs[i]);
+      out->rows[out->n]   = xstrdup(line);
+      out->keys[out->n]   = xstrdup(subs[i]);
       out->styles[out->n] = count_style(total, have);
       out->branch[out->n] = 1;
       ++out->n;
@@ -1103,7 +1104,7 @@ typedef struct {
 
 static void lay_push(info_lay_t *L, const char *s) {
   if (L->n >= INFO_MAX_LINES) return;
-  L->line[L->n] = strdup(s ? s : "");
+  L->line[L->n] = xstrdup(s ? s : "");
   if (L->line[L->n]) ++L->n;
 }
 
@@ -1294,7 +1295,7 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
     lay_provenance(&L, a, f, paired);
   }
 
-  out->rows = malloc((size_t)(L.n ? L.n : 1) * sizeof(char *));
+  out->rows = xmalloc((size_t)(L.n ? L.n : 1) * sizeof(char *));
   if (!out->rows) { lay_free(&L); return; }
   for (int i = 0; i < L.n; ++i) out->rows[i] = L.line[i];
   out->n = (size_t)L.n;
@@ -1747,7 +1748,7 @@ static void root_row(browse_t *b, size_t i, const char *group,
   }
 
   free(b->roots[i]);
-  b->roots[i] = strdup(line);
+  b->roots[i] = xstrdup(line);
   b->styles[i] = count_style(total, have);
 }
 
@@ -1916,7 +1917,7 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
       continue;
     if (yame_assets_join(path, sizeof(path), dir, b.chosen_name[i]) != 0) continue;
     if (!yame_assets_is_file(path)) continue;   /* the fetch did not land it */
-    paths[n++] = strdup(path);
+    paths[n++] = xstrdup(path);
   }
   if (!n) { free(paths); return 0; }
   *out_paths = paths;
@@ -2520,7 +2521,7 @@ int main_fetch(int argc, char *argv[]) {
     fprintf(stderr, ", %s\n", hs);
 
     struct { const char *name; uint64_t size; } *v =
-        malloc(n_files * sizeof(*v));
+        xmalloc(n_files * sizeof(*v));
     if (v) {
       size_t k = 0;
       for (size_t i = 0; i < n_sel; ++i)
