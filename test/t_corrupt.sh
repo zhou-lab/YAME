@@ -142,6 +142,8 @@ if ( ulimit -v 20000 2>/dev/null ); then
     echo "a starved unpack exited 0 (wrote $(wc -l < oom.out) lines)"; exit 1
   fi
   [ "$rc" -lt 128 ] || { echo "a starved unpack died on signal $((rc - 128))"; exit 1; }
-  grep -qi 'out of memory' oom.err ||
+  ## which allocation fails first depends on the build (-O0 lays the heap out
+  ## differently), so accept the shared phrase from any of them
+  grep -qiE 'out of memory|cannot allocate' oom.err ||
     { echo "a starved unpack did not say it ran out of memory"; head -3 oom.err; exit 1; }
 fi

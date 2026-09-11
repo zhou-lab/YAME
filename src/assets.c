@@ -374,9 +374,35 @@ static size_t mem_write(void *data, size_t sz, size_t nm, void *ud) {
   return add;
 }
 
+/* YAME_ASSETS_MIRROR=<scheme://host[:port]> replaces the scheme and host of
+ * every download URL and keeps the path, so
+ *
+ *   https://github.com/zhou-lab/InfiniumAnnotation/raw/v8.1/EPIC/SHA256SUMS
+ *
+ * becomes <mirror>/zhou-lab/InfiniumAnnotation/raw/v8.1/EPIC/SHA256SUMS. For a
+ * site that mirrors the public repositories -- compute nodes that cannot
+ * reach GitHub are the usual case -- and for the test suite, which serves a
+ * loopback mirror. Verification is untouched: every byte is still checked
+ * against the compiled-in digests, so a mirror can fail to serve the right
+ * bytes but cannot pass wrong ones. */
+static const char *mirror_url(const char *url, char *buf, size_t n) {
+  const char *m = getenv("YAME_ASSETS_MIRROR");
+  if (!m || !*m) return url;
+  const char *p = strstr(url, "://");
+  if (!p) return url;
+  const char *path = strchr(p + 3, '/');
+  if (!path) return url;
+  size_t ml = strlen(m);
+  while (ml && m[ml - 1] == '/') ml--;          /* a trailing slash is fine */
+  int k = snprintf(buf, n, "%.*s%s", (int) ml, m, path);
+  return (k < 0 || (size_t) k >= n) ? url : buf;
+}
+
 static CURL *new_handle(const char *url) {
   CURL *h = curl_easy_init();
   if (!h) return NULL;
+  char mirrored[4096];                          /* libcurl copies the string */
+  url = mirror_url(url, mirrored, sizeof mirrored);
   curl_easy_setopt(h, CURLOPT_URL, url);
   curl_easy_setopt(h, CURLOPT_FAILONERROR, 1L);
   curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);

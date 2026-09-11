@@ -124,8 +124,8 @@ cx_read_t cx_read_record(cfile_t *cf, cdata_t *c, int64_t limit,
   uint8_t *s2 = realloc(c->s, nb ? nb : 1);
   if (!s2)
     return cx_fail(err, errn, CX_READ_NOMEM,
-                   "Cannot allocate %"PRIu64" bytes for a record of %s.\n",
-                   nb, fn);
+                   "Out of memory: cannot allocate %"PRIu64" bytes for a record "
+                   "of %s.\n", nb, fn);
   c->s = s2;
   if (nb && bgzf_read(cf->fh, c->s, nb) != (ssize_t) nb)
     return cx_fail(err, errn, CX_READ_TRUNCATED,

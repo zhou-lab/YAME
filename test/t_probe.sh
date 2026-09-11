@@ -28,6 +28,9 @@ cp one.cg bundle.bin
 limit=$(wc -c < bundle.bin)
 printf 'MSBNDL1\0\3\0\0\0mrmp' >> bundle.bin
 
-cc -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe "$here/probe.c" $("$cfg" --libs) 2>cc.err ||
+## ${CC:-cc}: the coverage run instruments libyame.a, and a probe compiled
+## without the same flags fails to link against it (no gcov runtime).
+${CC:-cc} -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe "$here/probe.c" $("$cfg" --libs) 2>cc.err ||
   { echo "probe did not build"; cat cc.err; exit 1; }
-./probe one.cg three.cg bundle.bin "$limit"
+mkdir -p pindir
+./probe one.cg three.cg bundle.bin "$limit" "$PWD/pindir"

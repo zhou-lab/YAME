@@ -28,21 +28,26 @@ command -v gcov >/dev/null || { echo "coverage: gcov not found (it ships with gc
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-cp -r src htslib test Makefile "$work/"
+cp -r src htslib test Makefile yame-config.in "$work/"
 [ -d tools ] && cp -r tools "$work/"
 
 # -O0 so line numbers map 1:1; optimisation merges and elides lines and the
 # annotation stops meaning anything. The flags ride on CC because the Makefile
 # ASSIGNS CFLAGS rather than appending to it -- a command-line CFLAGS would
 # drop the -I flags the build needs. conda-recipe/build.sh does the same.
-( cd "$work" && make -B CC="${CC:-cc} -O0 -g --coverage" LDFLAGS="--coverage" ) \
-    >"$work/build.log" 2>&1
+# `|| true`: under set -e a failing subshell would end the script here, before
+# the diagnostic below could show the log -- and the trap would delete it.
+# `lib` too: t_probe.sh links libyame.a, and without it that test skips and
+# the library-surface coverage silently drops out of the number.
+( cd "$work" && make -B CC="${CC:-cc} -O0 -g --coverage" LDFLAGS="--coverage" \
+             && make lib CC="${CC:-cc} -O0 -g --coverage" LDFLAGS="--coverage" ) \
+    >"$work/build.log" 2>&1 || true
 [ -x "$work/yame" ] || { tail -20 "$work/build.log" >&2; echo "coverage: build failed" >&2; exit 1; }
 
 # Counters accumulate across processes, so clear them and let ONLY the suite
 # run: a stray `yame -h` adds main.c's usage path and moves the total.
 rm -f "$work"/src/*.gcda
-YAME="$work/yame" sh "$work/test/run.sh" >"$work/suite.log" 2>&1 || {
+YAME="$work/yame" CC="${CC:-cc} -O0 -g --coverage" bash "$work/test/run.sh" >"$work/suite.log" 2>&1 || {
     tail -20 "$work/suite.log" >&2
     echo "coverage: the suite failed; coverage of a red suite is meaningless" >&2
     exit 1

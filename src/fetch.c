@@ -94,6 +94,11 @@ static int usage(void) {
   yame_usage_text("${XDG_DATA_HOME:-~/.local/share}/yame");
   fprintf(stderr, "  %sYAME_DATA_HOME: %s%s\n",
           yame_ui_green(), root, yame_ui_reset());
+  yame_usage_sec("Mirror:");
+  yame_usage_text("$YAME_ASSETS_MIRROR=<scheme://host[:port]> downloads from a site that");
+  yame_usage_text("mirrors the public repositories, keeping each URL's path: the file at");
+  yame_usage_text("https://github.com/zhou-lab/X/raw/v1/f is fetched from <mirror>/zhou-lab/X/raw/v1/f.");
+  yame_usage_text("Every byte is still checked against the compiled-in digest.");
 
   yame_usage_sec("Options:");
   yame_usage_opt("-d <dir>", "Store root, overriding the environment.");

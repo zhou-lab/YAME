@@ -12,6 +12,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include "cfile.h"
+#include <unistd.h>
 
 static int fails = 0;
 #define CHECK(cond, ...) do {                                   \
@@ -115,11 +116,153 @@ static void t_accessors(const char *path) {
   bgzf_close(cf.fh);
 }
 
+/* ---- the store layer: pure functions a fetch depends on ------------------- */
+#include "assets.h"
+#include <stdlib.h>
+#include <sys/stat.h>
+
+/* SHA-256 against the published vectors: the whole download path trusts
+ * this one function, and a wrong digest either rejects every file or accepts
+ * any. */
+static void t_sha256(void) {
+  char out[65];
+  yame_assets_sha256_buf("", 0, out);
+  CHECK(strcmp(out, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") == 0,
+        "sha256(\"\") is %s", out);
+  yame_assets_sha256_buf("abc", 3, out);
+  CHECK(strcmp(out, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+        "sha256(\"abc\") is %s", out);
+  /* a string that crosses one 64-byte block boundary */
+  const char *two = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+  yame_assets_sha256_buf(two, strlen(two), out);
+  CHECK(strcmp(out, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1") == 0,
+        "two-block sha256 is %s", out);
+  CHECK(yame_assets_digest_equal(out, "248D6A61D20638B8E5C026930C3E6039A33CE45964FF2167F6ECEDD419DB06C1"),
+        "digest_equal is case-sensitive");
+  CHECK(!yame_assets_digest_equal(out, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c2"),
+        "digest_equal accepted a one-nibble difference");
+}
+
+/* The manifest parser: what it keeps, what it drops, and that a path trying
+ * to escape the store directory is dropped rather than followed. */
+static void t_parse_sums(void) {
+  size_t n = 0;
+  const char *text =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.cm\n"
+    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  sub/b.cm\n"
+    "\n"
+    "# a comment line, or at least a line that is not an entry\n"
+    "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1  ../escape.cm\n"
+    "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1  /abs/olute.cm\n";
+  yame_sums_ent_t *e = yame_assets_parse_sums(text, &n);
+  CHECK(e != NULL, "parse_sums returned NULL");
+  CHECK(n == 2, "parse_sums kept %zu entries, want 2 (the two safe ones)", n);
+  if (e && n >= 2) {
+    CHECK(strcmp(e[0].name, "a.cm") == 0, "entry 0 name is %s", e[0].name);
+    CHECK(strcmp(e[1].name, "sub/b.cm") == 0, "entry 1 name is %s", e[1].name);
+    CHECK(strcmp(e[1].sha, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+          "entry 1 sha is %s", e[1].sha);
+  }
+  free(e);
+  n = 99;
+  e = yame_assets_parse_sums("", &n);
+  CHECK(n == 0, "an empty manifest parsed to %zu entries", n);
+  free(e);
+  CHECK(!yame_assets_safe_relpath("../x"), "safe_relpath accepted ../x");
+  CHECK(!yame_assets_safe_relpath("/x"), "safe_relpath accepted /x");
+  CHECK(yame_assets_safe_relpath("a/b.cm"), "safe_relpath rejected a/b.cm");
+  CHECK(!yame_assets_safe_name("a/b"), "safe_name accepted a slash");
+  CHECK(yame_assets_safe_name("EPIC.hg38.mask.cm"), "safe_name rejected a real name");
+}
+
+/* The pin: a stored manifest that hashes to the anchor is MATCH, a missing one
+ * is ABSENT, a stranger's is CONFLICT, and a known earlier tag's is ANCESTOR.
+ * The conflict is what stops two tools re-downloading over each other forever;
+ * the ancestor is what lets a build upgrade its own store without -f. */
+static void t_pin(const char *dir) {
+  char sums[4096];
+  snprintf(sums, sizeof sums, "%s/SHA256SUMS", dir);
+  unlink(sums);
+  CHECK(yame_assets_pin_check(dir, "0000") == YAME_PIN_ABSENT, "no manifest is not ABSENT");
+
+  const char *text = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.cm\n";
+  FILE *f = fopen(sums, "w"); fputs(text, f); fclose(f);
+  char anchor[65];
+  yame_assets_sha256_buf(text, strlen(text), anchor);
+  CHECK(yame_assets_pin_check(dir, anchor) == YAME_PIN_MATCH, "own manifest is not MATCH");
+  CHECK(yame_assets_pin_check(dir, NULL) == YAME_PIN_UNKNOWN, "no anchor is not UNKNOWN");
+  CHECK(yame_assets_pin_check(dir, "ffff") == YAME_PIN_CONFLICT, "a stranger's manifest is not CONFLICT");
+
+  yame_pin_prior_t prior = { "v0.9", anchor };
+  CHECK(yame_assets_pin_state(dir, "ffff", &prior, 1) == YAME_PIN_ANCESTOR,
+        "a known earlier tag is not ANCESTOR");
+  const char *t = yame_assets_pin_prior_tag(dir, &prior, 1);
+  CHECK(t && strcmp(t, "v0.9") == 0, "prior tag is %s, want v0.9", t ? t : "(null)");
+  CHECK(yame_assets_pin_state(dir, "ffff", NULL, 0) == YAME_PIN_CONFLICT,
+        "with no priors, pin_state is not plain pin_check");
+  CHECK(yame_assets_pin_prior_tag(dir, NULL, 0) == NULL, "prior tag without priors is not NULL");
+  unlink(sums);
+}
+
+/* Reference resolution: a row count identifies the row space outright
+ * (29,401,795 rows is hg38 and nothing else), and a -R/-m argument is either
+ * a path used as given or a name looked up in the store the row space owns.
+ * It resolves only; it never downloads. */
+static void t_refstore(const char *store) {
+  char path[4096]; const char *name = NULL, *fetch = NULL;
+
+  /* hg38 by row count, with nothing fetched: identified, missing, and the
+   * message would know which fetch supplies it */
+  int st = yame_ref_for_rows(29401795, store, "genome", path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_MISSING, "hg38 by rows in an empty store returned %d, want MISSING", st);
+  CHECK(name && strcmp(name, "hg38") == 0, "row space name is %s, want hg38", name ? name : "(null)");
+  CHECK(fetch && *fetch, "no fetch hint for a missing reference");
+
+  /* a count matching nothing */
+  st = yame_ref_for_rows(12345, store, NULL, path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_UNKNOWN, "an unknown row count returned %d, want UNKNOWN", st);
+
+  /* the wrong kind: hg38 is a genome, not an array */
+  st = yame_ref_for_rows(29401795, store, "array", path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_WRONG_KIND || st == YAME_REF_MISSING,
+        "hg38 asked for as an array returned %d", st);
+
+  /* an existing path is used as given, whatever the row count says */
+  char own[4096]; snprintf(own, sizeof own, "%s/own.cr", store);
+  FILE *f = fopen(own, "w"); fputs("x", f); fclose(f);
+  st = yame_ref_resolve(own, 29401795, store, NULL, path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_OK, "an existing path returned %d, want OK", st);
+  CHECK(strcmp(path, own) == 0, "an existing path was rewritten to %s", path);
+
+  /* a name in the row space's own directory resolves once the file exists */
+  char dir[4096]; snprintf(dir, sizeof dir, "%s/hg38", store);
+  mkdir(dir, 0755);
+  char cr[4096]; snprintf(cr, sizeof cr, "%s/cpg_nocontig.cr", dir);
+  f = fopen(cr, "w"); fputs("x", f); fclose(f);
+  st = yame_ref_for_rows(29401795, store, "genome", path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_OK, "hg38 by rows with its .cr present returned %d, want OK", st);
+  CHECK(strcmp(path, cr) == 0, "hg38 resolved to %s, want %s", path, cr);
+  st = yame_ref_resolve("hg38", 29401795, store, "genome", path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_OK, "the name hg38 returned %d, want OK", st);
+
+  /* a name nothing in that row space carries */
+  st = yame_ref_resolve("NoSuchMask", 29401795, store, NULL, path, sizeof path, &name, &fetch);
+  CHECK(st == YAME_REF_NO_NAME || st == YAME_REF_MISSING,
+        "an unknown name returned %d, want NO_NAME", st);
+
+  /* the row count of a real file */
+  unlink(own); unlink(cr);
+}
+
 int main(int argc, char **argv) {
-  if (argc < 4) { fprintf(stderr, "usage: probe <one.cg> <three.cg> <bundle> <limit>\n"); return 2; }
+  if (argc < 4) { fprintf(stderr, "usage: probe <one.cg> <three.cg> <bundle> <limit> [dir]\n"); return 2; }
+  if (argc > 5) t_refstore(argv[5]);
   t_read(argv[1], 4, '3');
   t_read_cdata1(argv[2], 3);
   t_accessors(argv[1]);
+  t_sha256();
+  t_parse_sums();
+  if (argc > 5) t_pin(argv[5]);
   if (argc > 4) t_bounded(argv[3], (int64_t) strtoll(argv[4], NULL, 10));
   if (fails) { fprintf(stderr, "%d library assertion(s) failed\n", fails); return 1; }
   return 0;
