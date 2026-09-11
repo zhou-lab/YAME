@@ -112,6 +112,26 @@ narrow=$("$YAME" hprint -c -g -R ref.cr -r chr2 -w 4 two.cg 2>/dev/null | sed -n
 "$YAME" hprint -c -g -R ref.cr -r chr2 -w 4 two.cg 2>/dev/null | head -1 | grep -q 'win=' ||
   { echo "a window-averaged view does not say so in its title"; exit 1; }
 
+## A format-3 region is streamed compressed; every other format is inflated
+## and drawn by a different printer, and only that one does the windowing. So
+## the windowed region view needs a non-fmt3 record to be reached at all.
+"$YAME" unpack -f 1 s1.cg 2>/dev/null > b1.txt
+"$YAME" unpack -f 1 s2.cg 2>/dev/null > b2.txt
+"$YAME" pack -f n b1.txt > b1.cg
+"$YAME" pack -f n b2.txt > b2.cg
+cat b1.cg b2.cg > beta.cg
+"$YAME" index -s names.txt beta.cg
+for extra in "" "-g"; do
+  "$YAME" hprint -c $extra -R ref.cr -r chr2 -w 3 beta.cg 2>/dev/null > bw.txt
+  [ -s bw.txt ] || { echo "windowed fmt4 region view ($extra) printed nothing"; exit 1; }
+  head -1 bw.txt | grep -q 'win=' ||
+    { echo "windowed fmt4 region ($extra) did not say win= in its title"; head -1 bw.txt; exit 1; }
+done
+## and a format-6 record through the same printer
+"$YAME" binarize s1.cg > q6.cg 2>/dev/null
+"$YAME" hprint -c -R ref.cr -r chr2 -w 3 q6.cg >/dev/null 2>&1 ||
+  { echo "windowed fmt6 region view exited non-zero"; exit 1; }
+
 ## ---- 5. hprint whole-genome view ------------------------------------------
 ## One column per CpG window across all chroms; -R without -r.
 "$YAME" hprint -c -R ref.cr two.cg 2>/dev/null > wg.txt

@@ -92,6 +92,20 @@ done
 ## -T keeps the state name in the label even when it is not needed
 "$YAME" summary -T -m st.cg q.cg >/dev/null 2>&1 || { echo "summary -T failed"; exit 1; }
 
+## -V 2bit has its own counting loop for the masked and maskless cases, and
+## another for a state mask, where it reports per key.
+"$YAME" summary -V 2bit q.cg > v2_nomask.txt 2>/dev/null
+[ "$(tail -n +2 v2_nomask.txt | wc -l)" -ge 1 ] ||
+  { echo "-V 2bit without a mask printed nothing"; exit 1; }
+"$YAME" summary -V 2bit -m st.cg q.cg > v2_state.txt 2>/dev/null
+for k in Alpha Beta Gamma; do
+  grep -q "$k" v2_state.txt || { echo "-V 2bit over a state mask did not report $k"; cat v2_state.txt; exit 1; }
+done
+## and -V meth over a state mask, the third combination
+"$YAME" summary -V meth -m st.cg q.cg > vm_state.txt 2>/dev/null
+[ "$(tail -n +2 vm_state.txt | wc -l)" -ge 3 ] ||
+  { echo "-V meth over a 3-key state mask gave $(tail -n +2 vm_state.txt | wc -l) rows"; exit 1; }
+
 ## ---- 6. subset of a state track by TERM (-s) ------------------------------
 ## For format 2, subset selects terms rather than samples.
 "$YAME" subset -s st.cg Alpha > alpha.cg 2>/dev/null

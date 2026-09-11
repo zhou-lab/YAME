@@ -304,6 +304,15 @@ int main(int argc, char **argv) {
   t_read_cdata1(argv[2], 3);
   t_accessors(argv[1]);
   t_sha256();
+  {   /* the directory the running binary sits in -- used to find a store
+       * beside an installed yame. It must produce an absolute path or say it
+       * could not, never a half-filled buffer. */
+    char exe[4096]; exe[0] = '\0';
+    int ok = yame_assets_exe_dir(exe, sizeof exe);
+    CHECK(ok == 0 || exe[0] == '/', "exe_dir returned %d with %s", ok, exe);
+    char tiny[2]; tiny[0] = 'x';
+    yame_assets_exe_dir(tiny, sizeof tiny);   /* must not overrun */
+  }
   t_parse_sums();
   if (argc > 5) t_pin(argv[5]);
   if (argc > 4) t_bounded(argv[3], (int64_t) strtoll(argv[4], NULL, 10));

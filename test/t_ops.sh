@@ -94,6 +94,23 @@ awk -F'\t' '$1 + $2 != 2 { print "row " NR ": " $0; exit 1 }' ba0.txt
 "$YAME" rowop -o stat -t 3 three.cg > st4.txt 2>/dev/null
 diff st1.txt st4.txt || { echo "rowop -t 3 disagrees with the serial run"; exit 1; }
 
+## ---- 4b. rowop -t without an index: the streaming record queue ------------
+## With an index the parallel path seeks to each record; without one it reads
+## the stream once and hands records to the workers through a queue. Both must
+## give the serial answer, and the queue is only reached by the second.
+cp three.cg noidx.cg                       # deliberately no .idx beside it
+for op in binasum musum stat; do
+  "$YAME" rowop -o $op three.cg > par_idx.txt 2>/dev/null
+  "$YAME" rowop -o $op -t 3 noidx.cg > par_str.txt 2>/dev/null
+  diff par_idx.txt par_str.txt >/dev/null ||
+    { echo "rowop -o $op -t 3 without an index disagrees with the serial answer"; exit 1; }
+done
+## and through a pipe, where there is no file to seek in at all
+"$YAME" rowop -o stat -t 2 - < three.cg > par_pipe.txt 2>/dev/null
+"$YAME" rowop -o stat three.cg > ser.txt 2>/dev/null
+diff ser.txt par_pipe.txt >/dev/null ||
+  { echo "rowop -t over a pipe disagrees with the serial answer"; exit 1; }
+
 ## ---- 5. subset -l: names from a list file ---------------------------------
 printf 'c\na\n' > want.txt
 "$YAME" subset -l want.txt three.cg > sl.cg 2>/dev/null

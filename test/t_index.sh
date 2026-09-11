@@ -85,7 +85,46 @@ for i in $(seq 1 $n); do
 done
 cd ..
 
-## ---- 6. a duplicate name is refused ---------------------------------------
+## ---- 6. unpack's four ways of choosing records ----------------------------
+## By name, the first N, the last N (needs the index), and everything. Each
+## has its own reader, and they must agree about which records they name.
+"$YAME" unpack -a -f -1 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > ncols.txt
+[ "$(cat ncols.txt)" = "12" ] || { echo "-a on 6 M/U samples gave $(cat ncols.txt) columns"; exit 1; }
+
+## named samples, in the order asked for
+"$YAME" unpack -f -1 store.cg sample4 sample1 2>/dev/null | cut -f1,2 > byname.txt
+paste <(cut -f1 s4.txt) <(cut -f2 s4.txt) > byname.want
+diff byname.want byname.txt || { echo "unpack by name did not put sample4 first"; exit 1; }
+
+## -l takes the same names from a file
+printf 'sample4\nsample1\n' > pick.txt
+"$YAME" unpack -f -1 -l pick.txt store.cg 2>/dev/null | cut -f1,2 > bylist.txt
+diff byname.txt bylist.txt || { echo "unpack -l disagrees with naming the samples"; exit 1; }
+
+## -H N is the first N records, -T N the last N (the tail reader needs the index)
+"$YAME" unpack -f -1 -H 2 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > h.txt
+[ "$(cat h.txt)" = "4" ] || { echo "-H 2 gave $(cat h.txt) columns, want 4"; exit 1; }
+"$YAME" unpack -f -1 -H 2 store.cg 2>/dev/null | cut -f1,2 > head2.txt
+paste <(cut -f1 s1.txt) <(cut -f2 s1.txt) > head2.want
+diff head2.want head2.txt || { echo "-H 2 did not start at the first record"; exit 1; }
+
+"$YAME" unpack -f -1 -T 2 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > t.txt
+[ "$(cat t.txt)" = "4" ] || { echo "-T 2 gave $(cat t.txt) columns, want 4"; exit 1; }
+"$YAME" unpack -f -1 -T 2 store.cg 2>/dev/null | cut -f3,4 > tail2.txt
+paste <(cut -f1 s6.txt) <(cut -f2 s6.txt) > tail2.want
+diff tail2.want tail2.txt || { echo "-T 2 did not end at the last record"; exit 1; }
+
+## -H beyond the record count is the whole file, not an error
+"$YAME" unpack -f -1 -H 99 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > hbig.txt
+[ "$(cat hbig.txt)" = "12" ] || { echo "-H 99 on 6 records gave $(cat hbig.txt) columns"; exit 1; }
+
+## a name the store does not have
+if "$YAME" unpack store.cg nosuchsample >/dev/null 2>uerr.txt; then
+  echo "unpack accepted a name the store does not have"; exit 1
+fi
+[ -s uerr.txt ] || { echo "unpack failed silently on an unknown name"; exit 1; }
+
+## ---- 7. a duplicate name is refused ---------------------------------------
 printf 'dup\ndup\n' > dupnames.txt
 cat s1.cg s2.cg > two.cg
 if "$YAME" index -s dupnames.txt two.cg 2>err.txt; then
