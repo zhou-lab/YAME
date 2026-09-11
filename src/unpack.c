@@ -113,7 +113,8 @@ static int usage(void) {
   yame_usage_text("Print selected records from a .cx file as a tab-delimited table.");
   yame_usage_text("Each output row is a genomic row index; each output column is a selected sample/record.");
   yame_usage_text("Sample selection (default: first record):");
-  yame_usage_opt("-a", "Output all records in the file.");
+  yame_usage_opt("-a", "Output all records in the file, one COLUMN per record (a matrix,");
+  yame_usage_cont("not stacked rows); -C names the columns.");
   yame_usage_opt("-l <list>", "Sample list file (one name per line).");
   yame_usage_cont("Ignored if sample names are provided as trailing arguments.");
   yame_usage_opt("-H <N>", "Output the first N samples.");
@@ -132,7 +133,7 @@ static int usage(void) {
   yame_usage_text("Value printing (-f):");
   yame_usage_opt("-f <N>", "Print mode for certain formats (default: 0):");
   yame_usage_cont("For format 3 (MU):");
-  yame_usage_cont("  N == 0 : print packed MU (uint64)");
+  yame_usage_cont("  N == 0 : print packed MU (uint64) -- raw storage, not a beta");
   yame_usage_cont("  N  < 0 : print M<tab>U (two columns)");
   yame_usage_cont("  N  > 0 : print beta; print NA if cov < N or cov==0");
   yame_usage_cont("For format 6 (set+universe):");
@@ -174,8 +175,20 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
   }
   case '3': {
     uint64_t mu = f3_get_mu(c, i);
-    if (pfmt.data == 0)
+    if (pfmt.data == 0) {
+      /* Once per run, on stderr: the raw packed integer is what -f 0 means,
+       * but nobody reading "unpack" expects 4294967297 where the beta is 0.5,
+       * and a pipeline that compares it to betas matches nothing with exit
+       * code 0. Two 35-minute jobs produced empty tables that way. stdout is
+       * untouched; the default itself is left for a version boundary. */
+      static int said = 0;
+      if (!said) {
+        fprintf(stderr, "[unpack] format 3 printed as packed M/U integers "
+                "(-f 0, the default); -f 1 prints beta, -f -1 prints M and U.\n");
+        said = 1;
+      }
       fprintf(stdout, "%"PRIu64"", mu);
+    }
     else if (pfmt.data < 0)
       fprintf(stdout, "%"PRIu64"\t%"PRIu64"",mu>>32, mu<<32>>32);
     else {

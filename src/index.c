@@ -74,6 +74,32 @@ index_t* loadIndex(char* fname_index) {
   }
   free(line);
   wzclose(file);
+
+  /* Two records cannot begin at the same byte, so equal offsets under
+   * different names is always a corrupt index -- and a silent one: the seek
+   * succeeds, a valid record comes back, and it is the wrong sample. That is
+   * precisely what conda builds of `index -1` wrote until v1.42 (every entry
+   * after the second carrying the second's address), and it was caught by
+   * eye rather than by any command. The index is the only record of which
+   * name lives where, so nothing downstream can notice; refusing here is the
+   * one place it can be seen at all. */
+  {
+    int n = 0, dup = -1;
+    /* index_pairs() strdup's every key and sorts by offset, so duplicates
+     * adjoin -- and the keys are the CALLER's to free. */
+    index_pair_t *pairs = index_pairs(idx, &n);
+    if (pairs) {
+      for (int i = 1; i < n; ++i)
+        if (pairs[i].value == pairs[i-1].value) { dup = i; break; }
+      if (dup > 0)
+        fprintf(stderr, "[loadIndex] %s is corrupt: %s and %s both claim "
+                "offset %"PRId64". Rebuild it with `yame index -s <names>`.\n",
+                fname_index, pairs[dup-1].key, pairs[dup].key, pairs[dup].value);
+      for (int i = 0; i < n; ++i) free(pairs[i].key);
+      free(pairs);
+      if (dup > 0) { cleanIndex(idx); return NULL; }
+    }
+  }
   return idx;
 }
 
