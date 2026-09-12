@@ -79,6 +79,14 @@ from an unrelated tag; known earlier registry tags upgrade automatically.
 `.idx`/`.tbi` companions are fetched with their data. Verify by hand with
 `shasum -a 256 -c SHA256SUMS` in any store directory.
 
+A failed download names the cause: `download failed: HTTP 404 Not Found: <url>`,
+or curl's own text (`curl: Couldn't resolve host name`) for a failure below HTTP.
+HTTP 429 and 503 are retried up to three times, waiting what the server's
+`Retry-After` header asks for or 30 s then 60 s, with each wait announced on
+stderr even under `-q`; a `Retry-After` above 120 s is reported instead of slept.
+Nothing else is retried. Under `YAME_ASSETS_MIRROR` the URL in the message is
+the mirror's, so a mirror that is down is named rather than the upstream.
+
 Models are in the shared registry (`yame fetch hg38/models` or `mm10/models`).
 `hg38_wg.updecx` is a stable filename, not a stable model version: cite
 `zhou-lab/methscope@v4` plus SHA-256, or YAME v1.35, which pins the bytes.
