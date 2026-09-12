@@ -127,10 +127,19 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, name: linux-64}
-          - {os: macos-14,      name: osx-arm64}
+          - {os: macos-15,      name: osx-arm64}
           # osx-64 (macos-13, Intel) is omitted: GitHub is retiring Intel
           # runners, so those jobs queue indefinitely. osx-arm64 covers modern
           # Macs, and bioconda still publishes osx-64.
+          #
+          # macos-15, not macos-14: on 2026-09-12 macos-14 stopped being given
+          # runners mid-morning -- a job ran at 10:11 and every one queued
+          # after 10:37 sat for hours with no runner, no error and Actions
+          # reported healthy. That is the same way macos-13 went when Intel
+          # was retired, so the deprecated label is being drained. Pinned
+          # rather than macos-latest: the release builds against a macOS SDK,
+          # and a label that moves under us is a surprise in the one workflow
+          # that publishes.
     defaults:
       run:
         shell: bash -el {0}
