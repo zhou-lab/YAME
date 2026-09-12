@@ -27,14 +27,34 @@ ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 JOBS=${JOBS:-$(( ncpu < 8 ? ncpu : 8 ))}
 logs=$(mktemp -d); trap 'rm -rf "$logs"' EXIT
 running=0
+## bash 4.3 brought `wait -n`. Asked by version rather than probed: `wait -n`
+## with no children exits 127 even where it exists, so a probe reads as absent.
+have_wait_n=no
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] ||
+   { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }; then
+  have_wait_n=yes
+fi
 slow="t_valgrind t_ui t_fetch_http t_registry_gen t_format_matrix t_corrupt t_fetch"
+## `[[ ]]` rather than a `case`: bash 3.2, which is what macOS ships and what
+## the conda test phase runs there, cannot parse a `case` inside a `$( )` at
+## all -- its scanner takes the first pattern's `)` for the closing paren of
+## the substitution and then trips over the `;;`. The suite is only run by CI
+## on macOS, so this went unseen until the macOS leg first reached it.
 ordered=$(for n in $slow; do [ -f "$here/$n.sh" ] && echo "$here/$n.sh"; done
-          for t in "$here"/t_*.sh; do case " $slow " in *" $(basename "$t" .sh) "*) ;; *) echo "$t";; esac; done)
+          for t in "$here"/t_*.sh; do
+            b=$(basename "$t" .sh)
+            [[ " $slow " == *" $b "* ]] || echo "$t"
+          done)
 for t in $ordered; do
   name=$(basename "$t" .sh)
   ( if bash "$t" > "$logs/$name.out" 2>&1; then : > "$logs/$name.ok"; fi ) &
   running=$((running + 1))
-  if [ "$running" -ge "$JOBS" ]; then wait -n 2>/dev/null || wait; running=$((running - 1)); fi
+  ## `wait -n` is bash 4.3; on bash 3.2 it errors, and the fallback waits for
+  ## the whole batch instead of the first to finish. Slower there, not wrong.
+  if [ "$running" -ge "$JOBS" ]; then
+    if [ "$have_wait_n" = yes ]; then wait -n; running=$((running - 1))
+    else wait; running=0; fi
+  fi
 done
 wait
 
