@@ -48,9 +48,11 @@ test:
   # rebuild, and belongs in CI rather than in a package test.
   source_files:
     - test/
-    # t_fetch serves a loopback mirror built from ONE cached manifest, so the
-    # compiled anchor matches; without this it finds no manifest and fails.
-    - tools/registry/sums/InfiniumAnnotation/
+    # t_fetch serves a loopback mirror built from cached manifests, so the
+    # compiled anchors match, and stages a store one tag behind from the
+    # previous methscope_models manifest; t_registry_gen regenerates from the
+    # whole catalogue. Without these the tests find no files and fail.
+    - tools/
   requires:
     - python                     # the pty and mirror harnesses in t_ui / t_fetch
   commands:

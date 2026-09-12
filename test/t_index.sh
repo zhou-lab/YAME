@@ -6,7 +6,14 @@
 ## behind when a name was missing.
 set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
-d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+d=$(mktemp -d)
+## Keep every command's stderr, and show it if the script fails: under a
+## sanitizer this file failed in CI with nothing to read, because each
+## command's stderr went to /dev/null.
+report() { rc=$?; if [ $rc -ne 0 ] && [ -s "$d/yame.err" ]; then
+             echo "--- stderr of the commands so far:"; tail -30 "$d/yame.err"; fi
+           rm -rf "$d"; exit $rc; }
+trap report EXIT
 cd "$d"
 
 n=6
@@ -40,17 +47,17 @@ diff <(sort store.cg.idx) <(sort one.cg.idx) ||
 ## The raw path copies compressed bytes; -z re-encodes. They must agree.
 for nm in sample1 sample4 sample6; do
   i=${nm#sample}
-  "$YAME" subset store.cg "$nm" > got.cg 2>/dev/null
-  "$YAME" unpack -f -1 got.cg 2>/dev/null > got.txt
+  "$YAME" subset store.cg "$nm" > got.cg 2>>"$d/yame.err"
+  "$YAME" unpack -f -1 got.cg 2>>"$d/yame.err" > got.txt
   diff "s$i.txt" got.txt >/dev/null || { echo "subset $nm returned the wrong record"; exit 1; }
-  "$YAME" subset -z6 store.cg "$nm" > gotz.cg 2>/dev/null
-  "$YAME" unpack -f -1 gotz.cg 2>/dev/null > gotz.txt
+  "$YAME" subset -z6 store.cg "$nm" > gotz.cg 2>>"$d/yame.err"
+  "$YAME" unpack -f -1 gotz.cg 2>>"$d/yame.err" > gotz.txt
   diff got.txt gotz.txt >/dev/null || { echo "subset -z6 $nm differs from the raw path"; exit 1; }
 done
 
 ## several names at once, in the order asked for rather than store order
-"$YAME" subset store.cg sample5 sample2 > multi.cg 2>/dev/null
-"$YAME" unpack -f -1 -a multi.cg 2>/dev/null | cut -f1 > multi.first
+"$YAME" subset store.cg sample5 sample2 > multi.cg 2>>"$d/yame.err"
+"$YAME" unpack -f -1 -a multi.cg 2>>"$d/yame.err" | cut -f1 > multi.first
 [ "$(head -1 multi.first)" = "5" ] && [ "$(head -1 multi.first | wc -l)" -eq 1 ] ||
   { echo "subset with several names lost the requested order"; exit 1; }
 
@@ -73,14 +80,14 @@ mkdir sp && cd sp
 for i in $(seq 1 $n); do
   f="outsample$i.cx"
   [ -f "$f" ] || { echo "split -s did not produce $f"; /bin/ls; exit 1; }
-  "$YAME" unpack -f -1 "$f" 2>/dev/null > s.txt
+  "$YAME" unpack -f -1 "$f" 2>>"$d/yame.err" > s.txt
   diff "../s$i.txt" s.txt >/dev/null || { echo "split -s: $f holds the wrong record"; exit 1; }
 done
 "$YAME" split ../store.cg pre >/dev/null 2>&1
 for i in $(seq 1 $n); do
   f="pre_split_$i.cx"
   [ -f "$f" ] || { echo "split did not produce $f"; /bin/ls; exit 1; }
-  "$YAME" unpack -f -1 "$f" 2>/dev/null > s.txt
+  "$YAME" unpack -f -1 "$f" 2>>"$d/yame.err" > s.txt
   diff "../s$i.txt" s.txt >/dev/null || { echo "split: $f holds the wrong record"; exit 1; }
 done
 cd ..
@@ -88,34 +95,34 @@ cd ..
 ## ---- 6. unpack's four ways of choosing records ----------------------------
 ## By name, the first N, the last N (needs the index), and everything. Each
 ## has its own reader, and they must agree about which records they name.
-"$YAME" unpack -a -f -1 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > ncols.txt
+"$YAME" unpack -a -f -1 store.cg 2>>"$d/yame.err" | awk -F'\t' '{print NF}' | sort -u > ncols.txt
 [ "$(cat ncols.txt)" = "12" ] || { echo "-a on 6 M/U samples gave $(cat ncols.txt) columns"; exit 1; }
 
 ## named samples, in the order asked for
-"$YAME" unpack -f -1 store.cg sample4 sample1 2>/dev/null | cut -f1,2 > byname.txt
+"$YAME" unpack -f -1 store.cg sample4 sample1 2>>"$d/yame.err" | cut -f1,2 > byname.txt
 paste <(cut -f1 s4.txt) <(cut -f2 s4.txt) > byname.want
 diff byname.want byname.txt || { echo "unpack by name did not put sample4 first"; exit 1; }
 
 ## -l takes the same names from a file
 printf 'sample4\nsample1\n' > pick.txt
-"$YAME" unpack -f -1 -l pick.txt store.cg 2>/dev/null | cut -f1,2 > bylist.txt
+"$YAME" unpack -f -1 -l pick.txt store.cg 2>>"$d/yame.err" | cut -f1,2 > bylist.txt
 diff byname.txt bylist.txt || { echo "unpack -l disagrees with naming the samples"; exit 1; }
 
 ## -H N is the first N records, -T N the last N (the tail reader needs the index)
-"$YAME" unpack -f -1 -H 2 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > h.txt
+"$YAME" unpack -f -1 -H 2 store.cg 2>>"$d/yame.err" | awk -F'\t' '{print NF}' | sort -u > h.txt
 [ "$(cat h.txt)" = "4" ] || { echo "-H 2 gave $(cat h.txt) columns, want 4"; exit 1; }
-"$YAME" unpack -f -1 -H 2 store.cg 2>/dev/null | cut -f1,2 > head2.txt
+"$YAME" unpack -f -1 -H 2 store.cg 2>>"$d/yame.err" | cut -f1,2 > head2.txt
 paste <(cut -f1 s1.txt) <(cut -f2 s1.txt) > head2.want
 diff head2.want head2.txt || { echo "-H 2 did not start at the first record"; exit 1; }
 
-"$YAME" unpack -f -1 -T 2 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > t.txt
+"$YAME" unpack -f -1 -T 2 store.cg 2>>"$d/yame.err" | awk -F'\t' '{print NF}' | sort -u > t.txt
 [ "$(cat t.txt)" = "4" ] || { echo "-T 2 gave $(cat t.txt) columns, want 4"; exit 1; }
-"$YAME" unpack -f -1 -T 2 store.cg 2>/dev/null | cut -f3,4 > tail2.txt
+"$YAME" unpack -f -1 -T 2 store.cg 2>>"$d/yame.err" | cut -f3,4 > tail2.txt
 paste <(cut -f1 s6.txt) <(cut -f2 s6.txt) > tail2.want
 diff tail2.want tail2.txt || { echo "-T 2 did not end at the last record"; exit 1; }
 
 ## -H beyond the record count is the whole file, not an error
-"$YAME" unpack -f -1 -H 99 store.cg 2>/dev/null | awk -F'\t' '{print NF}' | sort -u > hbig.txt
+"$YAME" unpack -f -1 -H 99 store.cg 2>>"$d/yame.err" | awk -F'\t' '{print NF}' | sort -u > hbig.txt
 [ "$(cat hbig.txt)" = "12" ] || { echo "-H 99 on 6 records gave $(cat hbig.txt) columns"; exit 1; }
 
 ## a name the store does not have
