@@ -43,6 +43,13 @@ requirements:
     - libcurl
 
 test:
+  # The suite needs its own files in the test environment; source_files copies
+  # them out of the recipe's source. Not scripts/ -- coverage needs gcov and a
+  # rebuild, and belongs in CI rather than in a package test.
+  source_files:
+    - test/
+  requires:
+    - python                     # the pty and mirror harnesses in t_ui / t_fetch
   commands:
     # The banner carries the compiled-in version, so this checks the binary
     # rather than the recipe's idea of it.
@@ -55,6 +62,10 @@ test:
     # output at all -- including a yame that did not run -- so grep for the
     # line that is only printed when downloading works.
     - yame fetch -h 2>&1 | grep -q "fetch available"
+    # The command-level suite, against the INSTALLED binary with its library
+    # paths already fixed up. A failure fails the package for this platform,
+    # and the publish job then holds the whole version back.
+    - YAME=$(which yame) bash test/run.sh    # [not win]
 
 about:
   home: https://github.com/zhou-lab/YAME

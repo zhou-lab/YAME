@@ -130,20 +130,42 @@ cp idx.good whole.cg.idx
 ## way and the asymmetry read as a real difference between them.
 ##
 ## Under a hard address-space cap the command must name what it could not
-## allocate and exit non-zero. Skipped where `ulimit -v` does not bite.
-if ( ulimit -v 20000 2>/dev/null ); then
-  awk 'BEGIN { for (i = 0; i < 200000; i++) print (i % 10) "\t" (10 - (i % 10)) }' |
-    "$YAME" pack -f m - > big.cg 2>/dev/null
-  ## `&& rc=0 || rc=$?`: the subshell is EXPECTED to fail, and a bare `; rc=$?`
-  ## would let `set -e` kill the script before the assignment ran.
-  rc=0
-  ( ulimit -v 20000; "$YAME" unpack -f 1 big.cg > oom.out 2> oom.err ) || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    echo "a starved unpack exited 0 (wrote $(wc -l < oom.out) lines)"; exit 1
+## allocate and exit non-zero.
+##
+## The cap has to be small enough that inflating 200k rows fails and large
+## enough that the process can still START, and how much it needs before main()
+## depends on how it was linked: a conda build pulls libcurl and with it
+## nettle, so a 20 MB cap that suits a plain source build dies in the loader
+## instead ("libhogweed.so.6: failed to map segment") -- a crash on the way in,
+## not the graceful refusal under test. So probe for a cap that lets a trivial
+## command through, and only then assert.
+awk 'BEGIN { for (i = 0; i < 200000; i++) print (i % 10) "\t" (10 - (i % 10)) }' |
+  "$YAME" pack -f m - > big.cg 2>/dev/null
+printf '1\t1\n' | "$YAME" pack -f m - > tiny.cg 2>/dev/null
+
+cap=""
+for kb in 20000 40000 80000 160000 320000; do
+  if ( ulimit -v $kb 2>/dev/null && "$YAME" info tiny.cg >/dev/null 2>&1 ); then
+    cap=$kb; break
   fi
-  [ "$rc" -lt 128 ] || { echo "a starved unpack died on signal $((rc - 128))"; exit 1; }
-  ## which allocation fails first depends on the build (-O0 lays the heap out
-  ## differently), so accept the shared phrase from any of them
-  grep -qiE 'out of memory|cannot allocate' oom.err ||
-    { echo "a starved unpack did not say it ran out of memory"; head -3 oom.err; exit 1; }
+done
+
+if [ -z "$cap" ]; then
+  echo "skip: no address-space cap both starts the binary and constrains it" >&2
+else
+  ## `|| rc=$?`: the subshell is EXPECTED to fail, and a bare `; rc=$?` would
+  ## let `set -e` kill the script before the assignment ran.
+  rc=0
+  ( ulimit -v $cap; "$YAME" unpack -f 1 big.cg > oom.out 2> oom.err ) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    ## Some platforms do not honour `ulimit -v` at all, macOS among them, so a
+    ## success here means the cap never bit -- not that the guard is missing.
+    echo "skip: ulimit -v $cap did not constrain the process" >&2
+  else
+    [ "$rc" -lt 128 ] || { echo "a starved unpack died on signal $((rc - 128))"; exit 1; }
+    ## which allocation fails first depends on the build (-O0 lays the heap out
+    ## differently), so accept the shared phrase from any of them
+    grep -qiE 'out of memory|cannot allocate' oom.err ||
+      { echo "a starved unpack did not say it ran out of memory"; head -3 oom.err; exit 1; }
+  fi
 fi

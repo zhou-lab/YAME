@@ -30,12 +30,13 @@ make -j"${CPU_COUNT:-1}" \
      LDFLAGS="${LDFLAGS:-}" \
      CURL="${PREFIX}/bin/curl-config"
 
-# The command-level tests, against the binary this build just produced with
-# this toolchain. Every test packs its own fixtures from inline text, so this
-# needs no network and no data store. Both matrix legs build natively, so the
-# binary runs here; a failing test fails the package for that platform, and
-# the publish job then holds the whole version back.
-bash test/run.sh
+# The suite does NOT run here. conda-build rewrites a binary's library paths
+# during install, not during build, so on macOS the yame sitting in $SRC_DIR
+# cannot load libz yet -- "Library not loaded: @rpath/libz.1.dylib, no
+# LC_RPATH's found" -- and every test that invokes it aborts. Linux happened
+# to work, which is how this shipped green once. It runs in the recipe's
+# `test:` phase instead, against the INSTALLED package, which is also the
+# thing users get.
 
 install -d "${PREFIX}/bin"
 install -v -m 0755 yame "${PREFIX}/bin"

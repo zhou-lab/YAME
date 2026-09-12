@@ -31,6 +31,11 @@ jobs:
              env: "ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"}
     steps:
       - uses: actions/checkout@v4
+      # The Makefile refuses to build without curl-config rather than quietly
+      # dropping `yame fetch`, so a bare runner needs the dev package. The
+      # conda legs get libcurl from the recipe's host deps instead.
+      - name: Install libcurl
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev
       - name: Build
         run: make -B CC="${{ matrix.cc }}" LDFLAGS="${{ matrix.mode == 'asan' && '-fsanitize=address,undefined' || '' }}"
       - name: Run the suite
