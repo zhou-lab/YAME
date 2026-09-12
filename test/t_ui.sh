@@ -55,10 +55,13 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         except OSError: alive = False; break
         alive = pump(settle, quiet=0.025)
         ## A bare ESC is told apart from the start of an escape sequence by a
-        ## 40 ms poll for a following byte. Send the next key inside that
-        ## window and it is read as the sequence's tail and swallowed -- a `q`
-        ## after ESC then never arrives and the session runs to its timeout.
-        if k == b"\x1b": time.sleep(0.06)
+        ## 40 ms poll for a following byte (read_key in src/ui.c). A key that
+        ## lands inside that window is taken for the sequence's tail and
+        ## DISCARDED, so a `q` after ESC never arrives and the session runs to
+        ## its timeout. 200 ms rather than 60: on a loaded CI runner the pump
+        ## above can return while the frame is still coming, which shortens the
+        ## real gap, and this failed exactly once that way on macOS.
+        if k == b"\x1b": time.sleep(0.20)
     # wait for exit, but never forever
     t0 = time.time(); status = None
     while time.time() - t0 < timeout:
@@ -67,7 +70,13 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         pump(0.05, quiet=0.01)
     if status is None:
         os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
-        print(f"  FAIL {label}: still running after the keys; killed"); fails += 1
+        print(f"  FAIL {label}: still running after the keys; killed")
+        ## What it was sitting on. Without this a hang here is only reproducible
+        ## by pushing again and reading the next run's log.
+        tail = out[-400:].decode("utf8", "replace").replace("\x1b", "<ESC>")
+        print(f"   keys sent: {b' '.join(keys)!r}")
+        print(f"   last output: {tail}")
+        fails += 1
         return None, out
     pump(0.1)
     if os.WIFSIGNALED(status):
