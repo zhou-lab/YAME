@@ -80,6 +80,19 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         fails += 1
     return code, out
 
+def settle(fd, t=2.0, quiet=0.05):
+    """Read from fd until it has been quiet for `quiet` s or `t` s pass; return
+    the bytes. The wait every interactive check needs: it ends when the frame
+    is finished, not on a timer."""
+    out = b""; end = time.time() + t; last = time.time()
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.01)
+        if r:
+            try: out += os.read(fd, 65536); last = time.time()
+            except OSError: break
+        elif out and time.time() - last >= quiet: break
+    return out
+
 def frame_has(out, text, label):
     global fails
     if text.encode() not in out:
@@ -116,12 +129,8 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "20"; os.environ["LINES"] = "6"
     os.execv(YAME, ["yame", "fetch"])
-time.sleep(0.3)
-try: os.read(fd, 65536)
-except OSError: pass
-os.write(fd, b"jjq"); time.sleep(0.3)
-try: os.read(fd, 65536)
-except OSError: pass
+settle(fd)
+os.write(fd, b"jjq"); settle(fd, t=1.0)
 _, st = os.waitpid(pid, 0)
 if os.WIFSIGNALED(st):
     print(f"  FAIL narrow terminal: died on signal {os.WTERMSIG(st)}"); fails += 1
@@ -171,29 +180,21 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "120"; os.environ["LINES"] = "40"
     os.execv(YAME, ["yame", "fetch"])
-time.sleep(0.3)
-try: os.read(fd, 65536)
-except OSError: pass
+settle(fd)
 import fcntl, termios, struct
 try:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
     os.kill(pid, signal.SIGWINCH)
 except Exception:
     pass
-time.sleep(0.1)
-os.write(fd, b"j")
-time.sleep(0.1)
-try: os.read(fd, 65536)
-except OSError: pass
-os.write(fd, b"q")
-time.sleep(0.15)
-try: os.read(fd, 65536)
-except OSError: pass
+settle(fd, t=1.0)                      # the redraw the signal triggers, if any
+os.write(fd, b"j"); settle(fd, t=1.0)
+os.write(fd, b"q"); settle(fd, t=1.0)
 t0 = time.time(); st = None
 while time.time() - t0 < 5:
     p, s_ = os.waitpid(pid, os.WNOHANG)
     if p: st = s_; break
-    time.sleep(0.05)
+    settle(fd, t=0.05, quiet=0.01)
 if st is None:
     os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
     print("  FAIL resize: did not exit after q"); fails += 1
