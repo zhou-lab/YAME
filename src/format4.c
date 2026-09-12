@@ -204,7 +204,7 @@ void fmt4_compress(cdata_t *c) {
   /* the last rle */
   if (l > 0) {
     if (n+2>m) { m<<=1; s = wzrealloc(s, m*sizeof(uint32_t));}
-    s[n++] = ((1<<31) | l);
+    s[n++] = ((1u<<31) | l);       /* the final flush of the same run encoder */
   }
   
   free(c->s);
