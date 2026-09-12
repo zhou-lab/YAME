@@ -27,7 +27,6 @@
 #include "wzbed.h"
 #include "cfile.h"
 #include "assets.h"
-const yame_fetch_cfg_t *yame_own_fetch_cfg(void);   /* main.c: yame's registry */
 #include "snames.h"
 #include "summary.h"
 
@@ -377,7 +376,12 @@ int main_summary(int argc, char *argv[]) {
     yame_ref_for_rows(rows, NULL, NULL, path, sizeof(path), &rname, &rfetch);
 
     char **masks = NULL;
-    size_t n = yame_browse_pick(yame_own_fetch_cfg(), rname, &masks);
+    const yame_fetch_cfg_t *cfg = yame_default_fetch_cfg();
+    if (!cfg)
+      wzfatal("[summary] -b browses this tool's registry, and this build has "
+              "not registered one (yame_set_default_fetch_cfg). Name the mask "
+              "with -m instead.\n");
+    size_t n = yame_browse_pick(cfg, rname, &masks);
     if (!n) {
       if (!yame_ui_fancy())
         fprintf(stderr, "-b needs a terminal it can draw on. Name the mask "

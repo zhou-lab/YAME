@@ -520,6 +520,17 @@ typedef struct {
  * the single-file form, mirrors, -t/-k. argv[0] is ignored. */
 int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]);
 
+/* The registry the running tool considers its own, for library code that
+ * needs one but is not handed one -- `summary -b` picking masks through the
+ * browser is the case today. The executable registers it at startup; a
+ * library object must never reference a symbol only the executable defines,
+ * because a static archive links whole objects and every downstream that
+ * pulls summary.o for summarize1() would then fail to link. (v1.43's first
+ * cut did exactly that.) NULL until registered: a downstream tool that has
+ * not registered one gets "no registry in this build", not a link error. */
+void yame_set_default_fetch_cfg(const yame_fetch_cfg_t *cfg);
+const yame_fetch_cfg_t *yame_default_fetch_cfg(void);
+
 /* The mask picker `summary -b` uses, over the same registry. */
 size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit,
                         char ***paths);

@@ -918,3 +918,8 @@ int yame_store_report(const yame_asset_reg_t *reg, size_t n_reg,
   }
   return said;
 }
+
+/* ------------------------------------------------ the tool's own registry */
+static const yame_fetch_cfg_t *default_fetch_cfg;
+void yame_set_default_fetch_cfg(const yame_fetch_cfg_t *cfg) { default_fetch_cfg = cfg; }
+const yame_fetch_cfg_t *yame_default_fetch_cfg(void) { return default_fetch_cfg; }

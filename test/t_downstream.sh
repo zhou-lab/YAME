@@ -48,3 +48,20 @@ grep -q '^\[methprobe fetch\] hg38/probe is at a tag this methprobe does not kno
   { echo "the behind-store line is not in the tool's voice"; cat r.txt; exit 1; }
 ## and the tool's store variable wins over YAME_DATA_HOME: nothing was read from ystore
 [ -z "$(find "$YAME_DATA_HOME" -type f)" ] || { echo "the tool read yame's store"; exit 1; }
+
+## ---- 5. the library is self-contained ---------------------------------------
+## A static archive links whole objects, so an object in libyame.a that
+## references a symbol only the yame EXECUTABLE defines breaks every downstream
+## that pulls that object -- v1.43's first cut did it through summary.o. Linking
+## the WHOLE archive into a trivial program is the definitive test: every
+## undefined reference in every object must resolve from the archive itself or
+## its declared dependencies, or this fails at link time.
+printf 'int main(void) { return 0; }\n' > whole.c
+case "$(uname -s)" in
+  Darwin) whole="-Wl,-all_load $root/libyame.a" ;;
+  *)      whole="-Wl,--whole-archive $root/libyame.a -Wl,--no-whole-archive" ;;
+esac
+libs=$("$root/yame-config" --libs | sed "s|$root/libyame.a||")
+${CC:-cc} -std=gnu99 $("$root/yame-config" --cflags) -o whole whole.c $whole $libs 2>whole.err ||
+  { echo "libyame.a references a symbol it does not provide (an object depends on the executable):"
+    grep -E 'undefined reference|Undefined symbols|referenced from' whole.err | head -5; exit 1; }
