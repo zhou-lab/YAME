@@ -285,9 +285,11 @@ Reference data
 
 ## Traps
 
-- `unpack` on fmt3 defaults to `-f 0`, which prints the packed uint64
-  `(M<<32)|U` and looks like garbage. Use `-f -1` for M and U columns, or
-  `-f <N>` for beta. On fmt6, the default prints NA as '2'.
+- `unpack` on fmt3 requires `-f`, and refuses without it: M/U counts have no
+  one obvious print mode, and the old default (`-f 0`, the packed uint64
+  `(M<<32)|U`) looked like garbage to everyone who did not ask for it. Use
+  `-f -1` for M and U columns, or `-f <N>` for beta with NA below coverage N.
+  Every other format keeps its default. On fmt6, the default prints NA as '2'.
 - `pack -f1` keeps only the first character; `pack -f0` treats any line not
   starting with `0` as one, so `NA` is not missing; `pack -f6` needs exactly
   `1` in the first column to count as in-set.
