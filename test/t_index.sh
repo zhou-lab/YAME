@@ -103,6 +103,16 @@ cd ..
 paste <(cut -f1 s4.txt) <(cut -f2 s4.txt) > byname.want
 diff byname.want byname.txt || { echo "unpack by name did not put sample4 first"; exit 1; }
 
+## THREE names on the command line: the array of names grew by n+1 BYTES,
+## not pointers, so two fit by malloc's rounding and the third overflowed
+## the heap. Order asked for is order printed.
+"$YAME" unpack -f -1 store.cg sample6 sample2 sample4 2>>"$d/yame.err" | cut -f1,3,5 > three.txt
+paste <(cut -f1 s6.txt) <(cut -f1 s2.txt) <(cut -f1 s4.txt) > three.want
+diff three.want three.txt || { echo "unpack with three names returned the wrong columns"; exit 1; }
+"$YAME" unpack -f -1 store.cg sample1 sample2 sample3 sample4 sample5 sample6 2>>"$d/yame.err" |
+  awk -F'\t' '{print NF}' | sort -u > six.txt
+[ "$(cat six.txt)" = "12" ] || { echo "unpack with six names gave $(cat six.txt) columns"; exit 1; }
+
 ## -l takes the same names from a file
 printf 'sample4\nsample1\n' > pick.txt
 "$YAME" unpack -f -1 -l pick.txt store.cg 2>>"$d/yame.err" | cut -f1,2 > bylist.txt

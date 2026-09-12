@@ -406,7 +406,10 @@ int main_unpack(int argc, char *argv[]) {
   snames_t snames = {0};
   if (optind + 1 < argc) {      // The requested sample names from command line
     for(int i = optind + 1; i < argc; ++i) {
-      snames.s = wzrealloc(snames.s, (snames.n+1));
+      /* pointers, not bytes: the same line in subset.c has the sizeof, and
+       * without it two names fit only because malloc rounds up -- the third
+       * wrote past the block (ASan: "insufficient space for a char *") */
+      snames.s = wzrealloc(snames.s, (snames.n+1)*sizeof(const char*));
       snames.s[snames.n++] = wzstrdup(argv[i]);
     }
   } else {                      // from a file list
