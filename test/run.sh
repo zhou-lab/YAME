@@ -27,7 +27,7 @@ ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 JOBS=${JOBS:-$(( ncpu < 8 ? ncpu : 8 ))}
 logs=$(mktemp -d); trap 'rm -rf "$logs"' EXIT
 running=0
-slow="t_valgrind t_ui t_registry_gen t_format_matrix t_corrupt t_fetch"
+slow="t_valgrind t_ui t_fetch_http t_registry_gen t_format_matrix t_corrupt t_fetch"
 ordered=$(for n in $slow; do [ -f "$here/$n.sh" ] && echo "$here/$n.sh"; done
           for t in "$here"/t_*.sh; do case " $slow " in *" $(basename "$t" .sh) "*) ;; *) echo "$t";; esac; done)
 for t in $ordered; do

@@ -428,7 +428,94 @@ static CURL *new_handle(const char *url) {
 
 int yame_assets_have_curl(void) { return 1; }
 
-char *yame_assets_http_get_mem(const char *url, size_t *len) {
+/*
+ * What a transfer came back with, kept so a failure can say WHY. A bare
+ * "download failed: <url>" once cost a user a `curl -I` by hand to learn that
+ * HuggingFace was rate-limiting them (429) -- "wait and retry" -- and not that
+ * the registry was broken; nothing in the message told a 429 from a 404, a
+ * moved tag, a DNS miss or a TLS problem.
+ */
+typedef struct {
+  CURLcode rc;               /* CURLE_HTTP_RETURNED_ERROR when `http` speaks */
+  long     http;             /* response code, 0 when the request never got one */
+  long     retry_after;      /* seconds the server asked for, 0 when it did not */
+  int      tries;            /* performs made, 1 when nothing was retried */
+} http_res_t;
+
+static const char *http_phrase(long code) {
+  switch (code) {
+  case 400: return "Bad Request";       case 401: return "Unauthorized";
+  case 403: return "Forbidden";         case 404: return "Not Found";
+  case 408: return "Request Timeout";   case 410: return "Gone";
+  case 429: return "Too Many Requests"; case 500: return "Internal Server Error";
+  case 502: return "Bad Gateway";       case 503: return "Service Unavailable";
+  case 504: return "Gateway Timeout";   default:  return NULL;
+  }
+}
+
+/* "HTTP 429 Too Many Requests (Retry-After: 30 s)", or the libcurl text for
+ * a failure below HTTP: "curl: Couldn't resolve host name". */
+static void http_why(const http_res_t *r, char *buf, size_t n) {
+  if (r->rc == CURLE_HTTP_RETURNED_ERROR || (r->rc == CURLE_OK && r->http >= 400)) {
+    const char *ph = http_phrase(r->http);
+    int k = snprintf(buf, n, "HTTP %ld%s%s", r->http, ph ? " " : "", ph ? ph : "");
+    if (r->retry_after > 0 && k > 0 && (size_t) k < n)
+      snprintf(buf + k, n - (size_t) k, " (Retry-After: %ld s)", r->retry_after);
+  } else {
+    snprintf(buf, n, "curl: %s", curl_easy_strerror(r->rc));
+  }
+}
+
+/* A transient status, one the same request will likely clear on its own. */
+static int http_transient(long code) { return code == 429 || code == 503; }
+
+/*
+ * Bounded automatic retry, for 429 and 503 only. Three tries, waiting what
+ * the server asked for in Retry-After when it said, else 30 s then 60 s. A
+ * Retry-After beyond two minutes is reported, not slept: a user can decide
+ * to wait ten minutes, a fetch should not decide it for them. Every other
+ * status fails at once -- a 404 does not get better by asking again.
+ *
+ * `reset` puts the sink back to empty before the next try. libcurl under
+ * FAILONERROR stops at the status line and delivers no error body, so
+ * nothing should have landed, but the sink is truncated regardless.
+ */
+static CURLcode http_perform(CURL *h, http_res_t *r,
+                             void (*reset)(void *), void *sink) {
+  const int TRIES = 3;
+  const long backoff[] = { 30, 60 };
+  memset(r, 0, sizeof *r);
+  for (;;) {
+    r->tries++;
+    r->rc = curl_easy_perform(h);
+    r->http = 0; r->retry_after = 0;
+    curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &r->http);
+#if LIBCURL_VERSION_NUM >= 0x074200                    /* 7.66: CURLINFO_RETRY_AFTER */
+    { curl_off_t ra = 0;
+      if (curl_easy_getinfo(h, CURLINFO_RETRY_AFTER, &ra) == CURLE_OK && ra > 0)
+        r->retry_after = (long) (ra > 86400 ? 86400 : ra); }
+#endif
+    if (r->rc == CURLE_OK) return r->rc;
+    if (r->rc != CURLE_HTTP_RETURNED_ERROR || !http_transient(r->http)) return r->rc;
+    if (r->tries >= TRIES) return r->rc;
+
+    long wait = r->retry_after > 0 ? r->retry_after : backoff[r->tries - 1];
+    if (wait > 120) return r->rc;                      /* said, not slept */
+
+    char why[128];
+    http_why(r, why, sizeof why);
+    /* On a terminal the progress bar owns the line; take it over cleanly. */
+    fprintf(stderr, "%s[yame] %s; retrying in %ld s (try %d of %d)\n",
+            isatty(STDERR_FILENO) ? "\r\033[K" : "", why, wait, r->tries + 1, TRIES);
+    fflush(stderr);
+    sleep((unsigned) wait);
+    if (reset) reset(sink);
+  }
+}
+
+static void mem_reset(void *ud) { ((membuf_t *) ud)->n = 0; }
+
+static char *http_get_mem_why(const char *url, size_t *len, http_res_t *res) {
   CURL *h = new_handle(url);
   if (!h) return NULL;
 
@@ -436,12 +523,18 @@ char *yame_assets_http_get_mem(const char *url, size_t *len) {
   curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, mem_write);
   curl_easy_setopt(h, CURLOPT_WRITEDATA, &b);
 
-  CURLcode rc = curl_easy_perform(h);
+  http_res_t r;
+  CURLcode rc = http_perform(h, &r, mem_reset, &b);
   curl_easy_cleanup(h);
+  if (res) *res = r;
 
   if (rc != CURLE_OK) { free(b.s); return NULL; }
   if (len) *len = b.n;
   return b.s;
+}
+
+char *yame_assets_http_get_mem(const char *url, size_t *len) {
+  return http_get_mem_why(url, len, NULL);
 }
 
 typedef struct { const yame_fetch_opt_t *opt; } xfer_ctx_t;
@@ -464,8 +557,17 @@ static int on_xfer(void *ud, curl_off_t dltotal, curl_off_t dlnow,
  * store makes it worse, because the two racers can now be different tools, so
  * the fixed version is the one that moved here.
  */
+static void file_reset(void *ud) {
+  FILE *fp = ud;
+  fflush(fp);
+  if (ftruncate(fileno(fp), 0) == 0) rewind(fp);
+}
+
+/* Returns 0, or -1 with `res` saying why when the transfer itself failed
+ * (res->tries == 0 means it never started: a local file problem). */
 static int http_get_file(const char *url, const char *path,
-                         const yame_fetch_opt_t *opt) {
+                         const yame_fetch_opt_t *opt, http_res_t *res) {
+  memset(res, 0, sizeof *res);
   int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
   if (fd < 0) return -1;
   FILE *fp = fdopen(fd, "wb");
@@ -482,7 +584,7 @@ static int http_get_file(const char *url, const char *path,
     curl_easy_setopt(h, CURLOPT_NOPROGRESS, 0L);
   }
 
-  CURLcode rc = curl_easy_perform(h);
+  CURLcode rc = http_perform(h, res, file_reset, fp);
   curl_easy_cleanup(h);
   fclose(fp);
 
@@ -547,8 +649,32 @@ int yame_assets_download_verify(const char *url, const char *want_sha,
 
   if (opt && opt->on_begin) opt->on_begin(opt->ud, base, 0);
 
-  if (http_get_file(url, part, opt) != 0) {
-    set_err(err, "download failed: %s", url);
+  http_res_t res;
+  if (http_get_file(url, part, opt, &res) != 0) {
+    /* Name the URL actually asked, so a mirror that is down is blamed and
+     * not the upstream it stands in for. */
+    char mbuf[4096];
+    url = mirror_url(url, mbuf, sizeof mbuf);
+    if (res.tries == 0) {
+      set_err(err, "cannot create %s: %s", part, strerror(errno));
+    } else {
+      char why[128];
+      http_why(&res, why, sizeof why);
+      if (res.rc == CURLE_HTTP_RETURNED_ERROR && http_transient(res.http)) {
+        /* The one case where "try again later" is the whole answer. */
+        const char *ph = http_phrase(res.http);
+        if (res.tries > 1)
+          set_err(err, "download failed after %d tries: HTTP %ld %s, the "
+                  "server is rate-limiting this client; wait a few minutes "
+                  "and re-run: %s", res.tries, res.http, ph, url);
+        else
+          set_err(err, "download failed: HTTP %ld %s, the server asks for a "
+                  "%ld s wait, longer than a fetch waits on its own (120 s); "
+                  "re-run after that: %s", res.http, ph, res.retry_after, url);
+      } else {
+        set_err(err, "download failed: %s: %s", why, url);
+      }
+    }
     if (opt && opt->on_done) opt->on_done(opt->ud, base, 0, 0);
     return -1;
   }
@@ -663,9 +789,13 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
   if (wrote >= (int)sizeof(url)) { set_err(err, "URL too long"); return -1; }
 
   size_t sums_len = 0;
-  char *sums_text = yame_assets_http_get_mem(url, &sums_len);
+  http_res_t res;
+  char *sums_text = http_get_mem_why(url, &sums_len, &res);
   if (!sums_text) {
-    set_err(err, "cannot fetch %s", url);
+    char why[128], mbuf[4096];
+    http_why(&res, why, sizeof why);
+    set_err(err, "cannot fetch the manifest: %s: %s", why,
+            mirror_url(url, mbuf, sizeof mbuf));
     return -1;
   }
 
