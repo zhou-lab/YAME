@@ -49,6 +49,11 @@ for f in $FMTS; do
   [ "$rows" -eq $n ] || { echo "f$f.cg has $rows rows, want $n"; exit 1; }
 done
 
+## Format 3 has no default print mode -- unpack refuses to guess between
+## beta, M/U and the packed integer -- so every unpack of a format-3 record
+## here says -f 1. `pf` is that flag for the format at hand, empty otherwise.
+pf() { [ "$1" = 3 ] && echo "-f 1" || echo ""; }
+
 ## A command run on one format: it must either succeed and leave a readable
 ## store of `want` rows, or fail with a message. Never exit 0 with garbage.
 ## `want` of -1 means "same as the input".
@@ -66,8 +71,9 @@ check() {                       # <label> <expect-rows> <cmd...>
   if [ "$want" -ge 0 ] && [ "$got" != "$want" ]; then
     echo "$label: produced $got rows, want $want"; exit 1
   fi
-  ## and it can be printed back without dying
-  "$YAME" unpack out.cg >/dev/null 2>&1 ||
+  ## and it can be printed back without dying (format 3 needs its -f)
+  local ofmt; ofmt=$(tail -n +2 out.info | head -1 | cut -f5)
+  "$YAME" unpack $(pf "$ofmt") out.cg >/dev/null 2>&1 ||
     { echo "$label: output cannot be unpacked"; exit 1; }
 }
 
@@ -87,10 +93,10 @@ printf '9\n10\n11\n12\n13\n14\n15\n16\n' > idx8.txt
 awk -v n=$n 'BEGIN { for (i = 0; i < n; i++) print (i >= 8 && i < 16) ? 1 : 0 }' |
   "$YAME" pack -f b - > mid8.cg
 for f in $FMTS; do
-  "$YAME" rowsub -B 8_16    f$f.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null > by_b.txt
-  "$YAME" rowsub -I 1_8     f$f.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null > by_i.txt
-  "$YAME" rowsub -l idx8.txt f$f.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null > by_l.txt
-  "$YAME" rowsub -m mid8.cg f$f.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null > by_m.txt
+  "$YAME" rowsub -B 8_16    f$f.cg 2>/dev/null | "$YAME" unpack $(pf $f) - 2>/dev/null > by_b.txt
+  "$YAME" rowsub -I 1_8     f$f.cg 2>/dev/null | "$YAME" unpack $(pf $f) - 2>/dev/null > by_i.txt
+  "$YAME" rowsub -l idx8.txt f$f.cg 2>/dev/null | "$YAME" unpack $(pf $f) - 2>/dev/null > by_l.txt
+  "$YAME" rowsub -m mid8.cg f$f.cg 2>/dev/null | "$YAME" unpack $(pf $f) - 2>/dev/null > by_m.txt
   for other in by_i by_l by_m; do
     diff by_b.txt $other.txt >/dev/null ||
       { echo "f$f: rowsub selectors disagree on rows 8-15 (-B vs ${other#by_})"
@@ -107,6 +113,16 @@ for f in $FMTS; do check "rowsub -m f$f" 8 "$YAME" rowsub -m msk.cg f$f.cg; done
 ## ---- unpack, every format and every print mode ----------------------------
 for f in $FMTS; do
   for mode in "" "-f 0" "-f 1" "-f -1" "-f 5"; do
+    if [ "$f" = 3 ] && [ -z "$mode" ]; then
+      ## the one combination that must refuse: format 3 with no -f
+      if "$YAME" unpack f3.cg > nf.out 2> nf.err; then
+        echo "unpack on format 3 with no -f exited 0"; exit 1
+      fi
+      [ ! -s nf.out ] || { echo "the refusal still printed rows"; exit 1; }
+      grep -q -- '-f 1' nf.err && grep -q -- '-f -1' nf.err && grep -q -- '-f 0' nf.err ||
+        { echo "the refusal does not name the three modes"; cat nf.err; exit 1; }
+      continue
+    fi
     "$YAME" unpack $mode f$f.cg >/dev/null 2>&1 ||
       { echo "unpack $mode on f$f exited non-zero"; exit 1; }
   done
@@ -114,16 +130,16 @@ for f in $FMTS; do
   ## one that does not -- except for formats 2 and 7, which are not flat row
   ## vectors (a state track carries a key table, a .cr is a delta stream) and
   ## are refused by name rather than sliced positionally.
-  "$YAME" unpack f$f.cg 2>/dev/null > plain.txt
+  "$YAME" unpack $(pf $f) f$f.cg 2>/dev/null > plain.txt
   for s in 8 7; do
     if [ "$f" = 2 ] || [ "$f" = 7 ]; then
-      if "$YAME" unpack -c -s $s f$f.cg >/dev/null 2>ch.err; then
+      if "$YAME" unpack $(pf $f) -c -s $s f$f.cg >/dev/null 2>ch.err; then
         echo "unpack -c on f$f succeeded; it is not a flat row vector"; exit 1
       fi
       grep -qiE 'rowsub|does not support' ch.err ||
         { echo "unpack -c on f$f refused without saying why"; cat ch.err; exit 1; }
     else
-      "$YAME" unpack -c -s $s f$f.cg 2>/dev/null > chunk.txt
+      "$YAME" unpack $(pf $f) -c -s $s f$f.cg 2>/dev/null > chunk.txt
       diff plain.txt chunk.txt >/dev/null ||
         { echo "unpack -c -s $s on f$f differs from unchunked"; exit 1; }
     fi

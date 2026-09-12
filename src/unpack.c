@@ -131,7 +131,8 @@ static int usage(void) {
   yame_usage_opt("-C", "Print a header line (column names).");
   yame_usage_opt("-u <bytes>", "Inflated unit-size override (0=auto; allowed: 1,2,4,6,8).");
   yame_usage_text("Value printing (-f):");
-  yame_usage_opt("-f <N>", "Print mode for certain formats (default: 0):");
+  yame_usage_opt("-f <N>", "Print mode for certain formats (default: 0 for format 6;");
+  yame_usage_cont("REQUIRED for format 3, which has no default):");
   yame_usage_cont("For format 3 (MU):");
   yame_usage_cont("  N == 0 : print packed MU (uint64) -- raw storage, not a beta");
   yame_usage_cont("  N  < 0 : print M<tab>U (two columns)");
@@ -156,6 +157,8 @@ static int usage(void) {
 typedef struct cdata_pfmt_t {
   int data;
   int ref;
+  int given;                    /* -f was on the command line (data alone
+                                 * cannot say: -f 0 is a legal choice) */
 } cdata_pfmt_t;
 
 int fmt7_next_bed(cdata_t *c);
@@ -175,20 +178,8 @@ static void print_cdata1(cdata_t *c, uint64_t i, cdata_pfmt_t pfmt) {
   }
   case '3': {
     uint64_t mu = f3_get_mu(c, i);
-    if (pfmt.data == 0) {
-      /* Once per run, on stderr: the raw packed integer is what -f 0 means,
-       * but nobody reading "unpack" expects 4294967297 where the beta is 0.5,
-       * and a pipeline that compares it to betas matches nothing with exit
-       * code 0. Two 35-minute jobs produced empty tables that way. stdout is
-       * untouched; the default itself is left for a version boundary. */
-      static int said = 0;
-      if (!said) {
-        fprintf(stderr, "[unpack] format 3 printed as packed M/U integers "
-                "(-f 0, the default); -f 1 prints beta, -f -1 prints M and U.\n");
-        said = 1;
-      }
-      fprintf(stdout, "%"PRIu64"", mu);
-    }
+    if (pfmt.data == 0)
+      fprintf(stdout, "%"PRIu64"", mu);       /* -f 0, asked for by name */
     else if (pfmt.data < 0)
       fprintf(stdout, "%"PRIu64"\t%"PRIu64"",mu>>32, mu<<32>>32);
     else {
@@ -368,7 +359,7 @@ int main_unpack(int argc, char *argv[]) {
     case 'R': fname_row = wzstrdup(optarg); break;
     case 'r': pfmt.ref = atoi(optarg); break;
     case 'a': read_all = 1; break;
-    case 'f': pfmt.data = atoi(optarg); break;
+    case 'f': pfmt.data = atoi(optarg); pfmt.given = 1; break;
     case 'h': return usage(); break;
     default: usage(); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -436,6 +427,22 @@ int main_unpack(int argc, char *argv[]) {
   } else {
     cs = read_cdata_from_head(&cf, 1);
   }
+
+  /* Format 3 has no default print mode. Its "natural" rendering is the
+   * storage encoding -- 4294967297 where the beta is 0.5 -- and a pipeline
+   * that compared that against betas matched nothing and exited 0, twice,
+   * for 35 minutes each. Rather than guess which of the three renderings a
+   * caller meant, refuse and name them. -f 0 stays legal for anyone who
+   * really wants the packed integer; they just have to say so. The check is
+   * here, after the records are read and before the header or any row is
+   * printed, so stdin and files behave the same and nothing partial lands. */
+  if (!pfmt.given)
+    for (uint64_t i=0; i<cs->size; ++i)
+      if (ref_cdata_v(cs, i)->fmt == '3')
+        wzfatal("[unpack] %s holds format 3 (M/U counts), which has no default "
+                "print mode. Say which: -f 1 for beta (NA below coverage 1; -f N "
+                "for coverage N), -f -1 for M and U as two columns, -f 0 for the "
+                "packed integer.\n", fname_in);
 
   // set unit size
   if (unit > 8 || ((unit&0x1) && unit != 1 && unit)) {
