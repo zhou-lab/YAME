@@ -942,7 +942,8 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
  * store_sub wins, so hg38/KYCG is matched before hg38. */
 static const yame_asset_reg_t *row_for_path(const yame_asset_reg_t *reg, size_t n_reg,
                                             const char *root, const char *path,
-                                            const yame_asset_file_t **file_out) {
+                                            const yame_asset_file_t **file_out,
+                                            int *named_unlisted) {
   const yame_asset_reg_t *best = NULL;
   size_t best_len = 0;
   const char *rel = path;
@@ -957,12 +958,18 @@ static const yame_asset_reg_t *row_for_path(const yame_asset_reg_t *reg, size_t 
     }
   }
   if (file_out) *file_out = NULL;
+  if (named_unlisted) *named_unlisted = 0;
   if (!best) return NULL;
   const char *tail = rel + best_len;
   if (*tail == '/') ++tail;
   if (*tail && file_out) {
     for (size_t j = 0; j < best->n_files; ++j)
       if (strcmp(best->files[j].name, tail) == 0) { *file_out = &best->files[j]; break; }
+    /* A path that names a file this row does not list is not the same thing as
+     * a path that names the directory, and the caller has to tell them apart:
+     * the first is a withdrawn or foreign file, the second is just "how is
+     * this directory?". Both leave *file_out NULL. */
+    if (!*file_out && named_unlisted) *named_unlisted = 1;
   }
   return best;
 }
@@ -976,7 +983,8 @@ yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
   yame_assets_root(NULL, tool_env, root, sizeof root);
 
   const yame_asset_file_t *file = NULL;
-  const yame_asset_reg_t *row = row_for_path(reg, n_reg, root, path, &file);
+  int unlisted = 0;
+  const yame_asset_reg_t *row = row_for_path(reg, n_reg, root, path, &file, &unlisted);
   if (!row) return YAME_STORE_NOT_CATALOGUED;
 
   char dir[YAME_PATH_MAX];
@@ -1004,6 +1012,23 @@ yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
                          row->target, tool);
     return YAME_STORE_UNPINNED;
   default: break;                      /* MATCH: now the file, if one was named */
+  }
+
+  /* The directory is current, and the path named a file the registry does not
+   * list there. Reported rather than called current, which is what it used to
+   * get: a model withdrawn upstream would otherwise pass a downstream's
+   * load-time check as healthy. Nothing is deleted, here or by a fetch -- the
+   * file simply stops being something this build knows about. */
+  if (!file && unlisted) {
+    if (advice) {
+      const char *base = strrchr(path, '/');
+      snprintf(advice, n,
+               "%s is in %s but this %s does not list it; it may have been "
+               "withdrawn upstream. Nothing needs it and nothing will remove "
+               "it -- delete it yourself if you want the space back.",
+               base ? base + 1 : path, row->target, tool);
+    }
+    return YAME_STORE_NOT_LISTED;
   }
 
   if (!file) return YAME_STORE_CURRENT;

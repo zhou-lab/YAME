@@ -270,7 +270,12 @@ typedef enum {
   YAME_STORE_UNPINNED,      /* a manifest is there but this registry has no anchor     */
   YAME_STORE_STALE_FILE,    /* directory is current but this file's digest differs     */
   YAME_STORE_MISSING_FILE,  /* directory is current but this file is not on disk       */
-  YAME_STORE_NOT_CATALOGUED /* the path is under no directory this registry lists      */
+  YAME_STORE_NOT_CATALOGUED,/* the path is under no directory this registry lists      */
+  YAME_STORE_NOT_LISTED     /* the DIRECTORY is catalogued and current, but this file is
+                             * not among the ones this registry lists there -- a file
+                             * withdrawn upstream since this store was filled, or one
+                             * that was never ours. Appended rather than inserted so
+                             * the values a downstream compiled against do not move. */
 } yame_store_state_t;
 
 /**

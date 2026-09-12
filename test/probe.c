@@ -363,6 +363,24 @@ static void t_store_state(const char *store) {
   st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", "/nowhere/else", adv, sizeof adv);
   CHECK(st == YAME_STORE_NOT_CATALOGUED, "an uncatalogued path is %d", (int) st);
 
+  /* A file in a CURRENT directory that this registry does not list: what a
+   * model withdrawn upstream looks like to a store that still holds it. It
+   * used to read as CURRENT, so a downstream load-time check called a
+   * withdrawn file healthy. The directory itself stays current. */
+  char gone[4096]; snprintf(gone, sizeof gone, "%s/withdrawn.clfx", dir);
+  f = fopen(gone, "w"); fputs("bytes from an earlier tag", f); fclose(f);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", gone, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_LISTED, "an unlisted file is %d, want NOT_LISTED", (int) st);
+  CHECK(strstr(adv, "withdrawn.clfx") && strstr(adv, "does not list it"),
+        "NOT_LISTED advice is: %s", adv);
+  CHECK(strstr(adv, "nothing will remove it") != NULL,
+        "NOT_LISTED advice does not say the file is left alone: %s", adv);
+  /* and it is left alone, by this call and by anything else */
+  CHECK(yame_assets_is_file(gone), "the unlisted file was removed");
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", dir, adv, sizeof adv);
+  CHECK(st == YAME_STORE_CURRENT, "the directory holding it is %d, want CURRENT", (int) st);
+  unlink(gone);
+
   /* the report: one line for the old-tag case, none when current */
   f = fopen(sums, "w"); fputs(old_text, f); fclose(f);
   char buf[2048]; FILE *mf = fmemopen(buf, sizeof buf, "w");
