@@ -462,10 +462,15 @@ yame <span class="sub">binarize</span> -t 0.5 -c 3 -o calls.cg human_hg38_immune
 yame <span class="sub">subset</span> -o a.cg human_hg38_40_celltypes_chr20.cg GSM5652176_Adipocytes-Z000000T7
 yame <span class="sub">subset</span> -o b.cg human_hg38_40_celltypes_chr20.cg GSM5652181_Saphenous-Vein-Endothel-Z000000RM
 yame <span class="sub">pairwise</span> -H 1 -c 5 -d 0.2 a.cg b.cg  <span class="cm"># differential, fmt3 -&gt; fmt6</span>
+yame <span class="sub">pairwise</span> -S a.cg b.cg  <span class="cm"># or score the agreement instead: one TSV line</span>
 yame <span class="sub">rowop</span> -o binasum human_hg38_40_celltypes_chr20.cg pseudobulk.cg  <span class="cm"># collapse</span></code></pre>
   <pre class="res"><code>Sample    Nrow  Format
      1  773477       3</code></pre>
   <p>That last one is how pseudobulks are made: <code class='inl'>subset</code> the cells of a cluster, pipe into <code class='inl'>rowop</code>.</p>
+  <p><code class='inl'>pairwise -S</code> answers the other question about the same two samples &mdash; not <em>where</em> they differ but <em>how much</em> they agree &mdash; as one line of <code class='inl'>n mae rmse acc pearson</code> over the sites both cover. Either side may be beta (format 4) rather than counts, since comparing a model&rsquo;s output to its ground truth is inherently cross-format. Give it one sample and a multi-sample store and it scores every record against that sample, inflating the sample once while the store streams:</p>
+  <pre><code>yame <span class="sub">pairwise</span> -S -1 GSM5652176_Adipocytes-Z000000T7 human_hg38_40_celltypes_chr20.cg predictions.cg</code></pre>
+  <p>To score <em>imputation</em> rather than recall, blank the sites the model was shown before comparing &mdash; <code class='inl'>mask</code> with the query as the mask leaves exactly the sites it had to guess:</p>
+  <pre><code>yame <span class="sub">mask</span> truth.cg query.cg | yame <span class="sub">pairwise</span> -S -1 <span class="cm">&lt;cell&gt;</span> - predictions.cg</code></pre>
 </section>
 <section class="card">
   <h2>Perturb &amp; mask <span class="m">— for benchmarking</span></h2>

@@ -190,11 +190,26 @@ Compare and summarize
         because the slashes make it look for a file of that literal name. Note
         the asymmetry — `yame fetch` wants exactly that browser spelling, so
         the same string fetches a set and fails to resolve it.
-  pairwise [-o out] [-c cov] [-d delta] [-H 1|2|3] <MU1.cx> [MU2.cx]
-        fmt3 x fmt3 -> one fmt6 record. Universe = both samples at coverage
-        >= -c (default 1); set = direction (-H 1 hyper in sample 1, 2 hypo,
-        3 either) and |beta1-beta2| > -d (default 0). Without MU2.cx the
-        second record of MU1.cx is used. The delta magnitude is not stored.
+  pairwise [-S] [-1 name] [-2 name] [-t beta] [-o out] [-c cov] [-d delta]
+           [-H 1|2|3] <A.cx> [B.cx]
+        Two samples on the same row space, scored only where BOTH cover the
+        site. fmt3 or fmt4 on either side (fmt4 covers a site when it holds a
+        value; fmt3 when M+U >= -c, default 1).
+        Default output: one fmt6 record. Universe = both covered; set =
+        direction (-H 1 hyper in sample 1, 2 hypo, 3 either) and
+        |beta1-beta2| > -d (default 0). The delta magnitude is not stored.
+        -S instead prints one TSV line per pairing, with a header:
+        sample1 sample2 n mae rmse acc pearson -- acc is the share of sites
+        where both betas fall on the same side of -t (default 0.5).
+        -1/-2 name the record to take from each file through its index;
+        without them the first record is used, and without B.cx the second
+        record of A.cx is sample 2.
+        With -S and B.cx unnamed, EVERY record of B.cx is scored against
+        sample 1 (sample 1 inflated once, B streaming) -- the one-against-many
+        case. Two multi-record files with neither side named is an error, not
+        a guess about whether the pairing is positional or cartesian.
+        To score imputation, blank the sites the model was shown first:
+          yame mask truth.cg query.cg | yame pairwise -S -1 <cell> - pred.cg
   rowop -o <op> [-c mincov] [-t N] [-d 0-9] <in.cx> [out]
         binasum  fmt0/1/3 -> fmt3 per-row sample counts (-p/-q beta cutoffs,
                  default 0.4/0.6; betas between them are ignored) — this is
