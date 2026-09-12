@@ -336,3 +336,58 @@ if "$YAME" fetch -y "$asset" </dev/null > f8.log 2>&1; then
 else
   grep -qi 'manifest\|pin\|conflict\|-f' f8.log || { echo "pin conflict refused but not explained"; cat f8.log; exit 1; }
 fi
+
+## ---- 14. several files named out of ONE directory ---------------------------
+## Selection only, so this needs no bytes and no mirror: -n and -l read the
+## compiled registry. That is where the bug was. Until v1.44 a selection held
+## a single file name, so the second name for a directory was taken for a
+## duplicate of the first and dropped: `fetch dir/a dir/b` fetched only `a`,
+## and reported "1 file in 1 directory". Two files from DIFFERENT directories
+## always worked, which is why no docs example caught it.
+## The two SMALLEST files in the directory, 99 B and 1.0 KB, and neither has an
+## index companion to complicate the count. Nothing is transferred either way:
+## -n and -l read the compiled registry and never open a socket.
+empty=$d/emptystore; mkdir -p "$empty"
+for order in "Blacklist.20220304.cm ProbeType.cm" "ProbeType.cm Blacklist.20220304.cm"; do
+  set -- $order
+  plan=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n "$scope/$1" "$scope/$2" \
+           </dev/null 2>&1) || true
+  for want in "$1" "$2"; do
+    printf '%s\n' "$plan" | grep -q "  *$want " ||
+      { echo "two files from one directory: $want missing from the plan ($order)"
+        printf '%s\n' "$plan"; exit 1; }
+  done
+  printf '%s\n' "$plan" | grep -q '2 files in 1 directory' ||
+    { echo "two files from one directory did not plan as 2 ($order)"
+      printf '%s\n' "$plan"; exit 1; }
+done
+
+## naming the directory absorbs a file picked out of it, in either order, and
+## the result is the whole directory rather than the one file
+for order in "$scope $scope/ProbeType.cm" "$scope/ProbeType.cm $scope"; do
+  whole=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n $order </dev/null 2>&1) || true
+  printf '%s\n' "$whole" | grep -qE '2[0-9] files in 1 directory' ||
+    { echo "a directory named with one of its files did not take the directory ($order)"; printf '%s\n' "$whole"; exit 1; }
+done
+
+## -l is the dry run for a fetch, so a file name lists that file and nothing
+## else. It listed nothing at all before v1.45: the scope match only ever
+## compared directory prefixes.
+one_row=$("$YAME" fetch -l "$scope/Blacklist.20220304.cm" </dev/null 2>/dev/null | tail -n +2)
+[ "$(printf '%s\n' "$one_row" | grep -c .)" -eq 1 ] ||
+  { echo "-l of one file name listed $(printf '%s\n' "$one_row" | grep -c .) rows, want 1"; exit 1; }
+printf '%s\n' "$one_row" | cut -f5 | grep -qx 'Blacklist.20220304.cm' ||
+  { echo "-l of one file name listed the wrong file"; printf '%s\n' "$one_row" | cut -f5; exit 1; }
+
+## -l takes several names too, which it used to ignore past the first
+two_rows=$("$YAME" fetch -l "$scope/Blacklist.20220304.cm" "$scope/ProbeType.cm" \
+             </dev/null 2>/dev/null | tail -n +2 | cut -f5 | sort | paste -sd, -)
+[ "$two_rows" = "Blacklist.20220304.cm,ProbeType.cm" ] ||
+  { echo "-l of two file names gave [$two_rows]"; exit 1; }
+
+## a name that resolves to nothing is still an error, not an empty listing
+if "$YAME" fetch -l "$scope/nope.cm" </dev/null >/dev/null 2>&1; then
+  echo "-l of a nonexistent file name succeeded"; exit 1
+fi
+
+echo "ok: t_fetch"

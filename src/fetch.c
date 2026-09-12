@@ -883,6 +883,20 @@ static int facets_match(const char *facets, const char *terms);
 static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
                             size_t cap);
 
+/* One registry entry with the files named out of it: empty list = the whole
+ * directory. Declared here because `-l` prints exactly the selection a fetch
+ * would make, so both paths take this. */
+#define SEL_ONLY_MAX 64
+typedef struct {
+  const yame_asset_reg_t *a;
+  const char *only[SEL_ONLY_MAX];  /* empty: the whole directory */
+  size_t n_only;
+  const char *tag;                 /* @tag on this name, else -t, else pinned */
+} sel_t;
+static int file_wanted(const yame_asset_reg_t *a, const char *name,
+                       const char *filter,
+                       const char *const *only, size_t n_only);
+
 /**
  * Every file this build knows about, one per line, as TSV.
  *
@@ -896,24 +910,16 @@ static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
  * here is cut(1), not an eye. Descriptions come from data/assets.tsv keyed by
  * role, so one row describes `mask` for every platform that publishes one.
  */
-static int dump_registry(const char *dopt, const char *scope,
+static int dump_registry(const char *dopt, const sel_t *sel, size_t n_sel,
                          const char *filter) {
   char root[4096];
   yame_assets_root(dopt, cfg_->tool_env, root, sizeof(root));
-
-  /* The same selection a fetch would make, printed instead of downloaded, so
-   * `-l <name> -g <terms>` is the dry run for the command without -l. */
-  const yame_asset_reg_t *sel[64];
-  size_t n_sel = 0;
-  if (scope) n_sel = collect_scope(scope, sel, 64);
-  else for (size_t i = 0; i < YAME_ASSETS_N && n_sel < 64; ++i)
-         sel[n_sel++] = &YAME_ASSETS[i];
 
   printf("target\tsource\ttag\tstore_path\tfile\tbytes\tsha256\tdir_state\t"
          "local\tdescription\n");
 
   for (size_t i = 0; i < n_sel; ++i) {
-    const yame_asset_reg_t *a = sel[i];
+    const yame_asset_reg_t *a = sel[i].a;
     char dir[4096];
     yame_assets_join(dir, sizeof(dir), root, a->store_sub);
 
@@ -929,11 +935,11 @@ static int dump_registry(const char *dopt, const char *scope,
     for (size_t j = 0; j < a->n_files; ++j) {
       const yame_asset_file_t *f = &a->files[j];
 
-      if (filter) {
-        char facets[1024];
-        file_facets(a, f->name, facets, sizeof(facets));
-        if (!facets_match(facets, filter)) continue;
-      }
+      /* A name that picked out one file lists that file, not its directory:
+       * `-l <file>` is the dry run for fetching that file, which is what the
+       * usage text has always promised. */
+      if (!file_wanted(a, f->name, filter, sel[i].only, sel[i].n_only))
+        continue;
 
       char ikey[256];
       info_key_of(f->name, ikey, sizeof(ikey));
@@ -2065,19 +2071,34 @@ static int sel_present(const char *root, const yame_asset_reg_t *a,
   return 1;
 }
 
+/* One named file against one catalogue name, with its index riding along. */
+static int one_file_wanted(const char *name, const char *only_file) {
+  size_t l = strlen(only_file);
+  if (strncmp(name, only_file, l) != 0) return 0;
+  /* An index rides with its data file, the same way the browser folds it
+   * into that file's row. Handing back a .cg without its .idx gives you
+   * something `subset` and `split` cannot open, which is not what naming
+   * the file meant. */
+  if (name[l]) {
+    const char *sfx = yame_assets_index_suffix(name);
+    if (!sfx || strcmp(name + l, sfx) != 0) return 0;
+  }
+  return 1;
+}
+
+/* `only` is a LIST, because one directory can be named file by file:
+ * `fetch hg38/models/a.clfx hg38/models/b.updecx` resolves to one entry with
+ * two names. It held a single name until v1.44, and the second name was
+ * silently dropped as a duplicate of the first. Empty list: the whole
+ * directory. */
 static int file_wanted(const yame_asset_reg_t *a, const char *name,
-                       const char *filter, const char *only_file) {
-  if (only_file) {
-    size_t l = strlen(only_file);
-    if (strncmp(name, only_file, l) != 0) return 0;
-    /* An index rides with its data file, the same way the browser folds it
-     * into that file's row. Handing back a .cg without its .idx gives you
-     * something `subset` and `split` cannot open, which is not what naming
-     * the file meant. */
-    if (name[l]) {
-      const char *sfx = yame_assets_index_suffix(name);
-      if (!sfx || strcmp(name + l, sfx) != 0) return 0;
-    }
+                       const char *filter,
+                       const char *const *only, size_t n_only) {
+  if (n_only) {
+    int hit = 0;
+    for (size_t i = 0; i < n_only && !hit; ++i)
+      if (only[i] && one_file_wanted(name, only[i])) hit = 1;
+    if (!hit) return 0;
   }
   if (filter) {
     char f[1024];
@@ -2100,11 +2121,12 @@ static int file_wanted(const yame_asset_reg_t *a, const char *name,
  * it is what the anchor made trustworthy at build time.
  */
 static int fetch_entry_here(const yame_asset_reg_t *a, const char *tag,
-                            const char *filter, const char *only_file,
+                            const char *filter,
+                            const char *const *only, size_t n_only,
                             const yame_fetch_opt_t *opt, char **err) {
   for (size_t i = 0; i < a->n_files; ++i) {
     const char *name = a->files[i].name;
-    if (!file_wanted(a, name, filter, only_file)) continue;
+    if (!file_wanted(a, name, filter, only, n_only)) continue;
 
     char url[4096];
     int n = (a->remote_sub && a->remote_sub[0])
@@ -2196,13 +2218,13 @@ static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
 
 static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
                        const char *tag, const char *anchor, const char *filter,
-                       const char *only_file,
+                       const char *const *only, size_t n_only,
                        const yame_fetch_opt_t *opt, char **err) {
   const char **names = malloc(a->n_files * sizeof(*names));
   if (!names) return -1;
   size_t n_names = 0;
   for (size_t i = 0; i < a->n_files; ++i) {
-    if (!file_wanted(a, a->files[i].name, filter, only_file)) continue;
+    if (!file_wanted(a, a->files[i].name, filter, only, n_only)) continue;
     names[n_names++] = a->files[i].name;
   }
   if (!n_names) { free(names); return 0; }
@@ -2213,14 +2235,9 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
 }
 
 /* One selected directory, and what of it: the whole unit when `only` is
- * NULL, one file when a name picked one out. Per entry rather than per
+ * empty, the files a name picked out otherwise. Per entry rather than per
  * command, because `fetch a/x.cg b/y.cg` restricts each of the two
  * differently -- and each may carry its own @tag. */
-typedef struct {
-  const yame_asset_reg_t *a;
-  const char *only;               /* NULL: the whole directory */
-  const char *tag;                /* @tag on this name, else -t, else pinned */
-} sel_t;
 
 /**
  * Resolve one name onto selections, appending to `out`.
@@ -2338,15 +2355,101 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     int dup = 0;
     for (size_t k = 0; k < *n_out; ++k)
       if (out[k].a == hits[i]) {
-        if (!only) out[k].only = NULL;   /* the wider name wins */
-        dup = 1; break;
+        dup = 1;
+        /* Naming the directory itself absorbs any file already picked out of
+         * it, and stays absorbing: a whole-directory selection carries an
+         * empty list and a later file name does not narrow it back down. */
+        if (!only) out[k].n_only = 0;
+        else if (out[k].n_only) {
+          /* A SECOND file from the SAME directory. Until v1.44 this was taken
+           * for a duplicate of the first and dropped, so `fetch dir/a dir/b`
+           * silently fetched only `a`. */
+          int seen = 0;
+          for (size_t m = 0; m < out[k].n_only; ++m)
+            if (strcmp(out[k].only[m], only) == 0) { seen = 1; break; }
+          if (!seen) {
+            if (out[k].n_only >= SEL_ONLY_MAX) {
+              fprintf(stderr, "%s fetch: " "more than %d files named out of "
+                      "one directory; name the directory instead.\n",
+                      TOOL, SEL_ONLY_MAX);
+              return 1;
+            }
+            out[k].only[out[k].n_only++] = only;
+          }
+        }
+        break;
       }
     if (dup) continue;
     if (*n_out >= cap) { fprintf(stderr, "%s fetch: " "too many names.\n", TOOL); return 1; }
     out[*n_out].a = hits[i];
-    out[*n_out].only = only;
+    out[*n_out].n_only = 0;
+    if (only) out[*n_out].only[out[*n_out].n_only++] = only;
     out[*n_out].tag = tag;
     ++*n_out;
+  }
+  return 0;
+}
+
+/* Every name on the command line onto selections. `-l` and a real fetch take
+ * the same path, so `-l <names>` prints exactly what fetching them would
+ * take -- including a file-level name, which used to list nothing at all.
+ * `shown` collects the names for the plan line and the errors; pass NULL when
+ * there is no plan to print. */
+/* The whole catalogue as a selection: every entry, no file narrowed. */
+static size_t sel_all(sel_t *out, size_t cap) {
+  size_t n = 0;
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    out[n].a = &YAME_ASSETS[i];
+    out[n].n_only = 0;
+    out[n].tag = NULL;
+    ++n;
+  }
+  return n;
+}
+
+static int resolve_args(int argc, char *argv[], int first, const char *tag_override,
+                        sel_t *sel, size_t *n_sel, size_t SELCAP,
+                        char *shown, size_t shown_cap) {
+  for (int ai = first; ai < argc; ++ai) {
+    /* Commas separate names, the same way -m takes CGI,ChromHMM. Split
+     * first: parsing @tag before the comma would let `a@v3,b` read the tag
+     * as "v3,b" and swallow the second name.
+     *
+     * The whole string is still tried if any piece fails, so the syntax does
+     * not forbid a comma inside a catalogue name -- such a name would fail
+     * as pieces and resolve as itself. */
+    int rc = 1;
+    size_t before = *n_sel;
+    const char *bad = NULL;           /* the piece that did not resolve */
+    if (strchr(argv[ai], ',')) {
+      /* Deliberately never freed: a selection's `only` points into this copy
+       * and outlives the loop. One small allocation per argument. */
+      char *work = strdup(argv[ai]);
+      if (!work) return 1;
+      rc = 0;
+      for (char *save = NULL, *tok = strtok_r(work, ",", &save);
+           tok && rc == 0; tok = strtok_r(NULL, ",", &save)) {
+        while (*tok == ' ') ++tok;        /* "a, b" reads like -m does */
+        if (!*tok) continue;              /* a trailing or doubled comma */
+        rc = resolve_spec(tok, tag_override, sel, n_sel, SELCAP, 1);
+        if (rc != 0) bad = tok;
+      }
+      if (rc != 0) *n_sel = before;
+    }
+    if (rc != 0) {
+      /* The whole string may be a name in its own right. If it is not, the
+       * piece that failed is the more useful thing to name -- "nothing is
+       * called nope" beats quoting the entire list back. */
+      if (resolve_spec(argv[ai], tag_override, sel, n_sel, SELCAP,
+                       bad != NULL) != 0) {
+        if (bad) resolve_spec(bad, tag_override, sel, n_sel, SELCAP, 0);
+        return 1;
+      }
+    }
+    if (shown) {
+      size_t l = strlen(shown);
+      snprintf(shown + l, shown_cap - l, "%s%s", l ? " " : "", argv[ai]);
+    }
   }
   return 0;
 }
@@ -2396,8 +2499,15 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
       fputc('\n', stderr);
   }
 
-  if (list)
-    return dump_registry(dopt, optind < argc ? argv[optind] : NULL, filter);
+  if (list) {
+    sel_t lsel[64];
+    size_t n_l = 0;
+    if (optind >= argc) n_l = sel_all(lsel, 64);
+    else if (resolve_args(argc, argv, optind, tag_override, lsel, &n_l,
+                          sizeof(lsel)/sizeof(lsel[0]), NULL, 0) != 0)
+      return 1;
+    return dump_registry(dopt, lsel, n_l, filter);
+  }
 
   /* About to actually use the store, so this is where the one-time notice
    * about a pre-consolidation cache belongs -- not in every path that merely
@@ -2436,10 +2546,12 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
    * listing, so a script that runs `yame fetch` never blocks on a widget
    * waiting for a keystroke that will not come. */
   if (optind >= argc) {
+    sel_t lsel[64];
+    size_t n_l = sel_all(lsel, sizeof(lsel)/sizeof(lsel[0]));
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
-      return dump_registry(dopt, NULL, filter);
+      return dump_registry(dopt, lsel, n_l, filter);
     if (browse_catalog(dopt, force) == 0) return 0;
-    return dump_registry(dopt, NULL, filter); /* terminal cannot host the widget */
+    return dump_registry(dopt, lsel, n_l, filter); /* no terminal for the widget */
   }
 
   /* ---- catalogued form: <name>[@tag] ... ---- */
@@ -2447,45 +2559,9 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   size_t n_sel = 0;
   char shown[512] = "";           /* the names, for the plan and the errors */
   const size_t SELCAP = sizeof(sel)/sizeof(sel[0]);
-  for (int ai = optind; ai < argc; ++ai) {
-    /* Commas separate names, the same way -m takes CGI,ChromHMM. Split
-     * first: parsing @tag before the comma would let `a@v3,b` read the tag
-     * as "v3,b" and swallow the second name.
-     *
-     * The whole string is still tried if any piece fails, so the syntax does
-     * not forbid a comma inside a catalogue name -- such a name would fail
-     * as pieces and resolve as itself. */
-    int rc = 1;
-    size_t before = n_sel;
-    const char *bad = NULL;           /* the piece that did not resolve */
-    if (strchr(argv[ai], ',')) {
-      /* Deliberately never freed: a selection's `only` points into this copy
-       * and outlives the loop. One small allocation per argument. */
-      char *work = strdup(argv[ai]);
-      if (!work) return 1;
-      rc = 0;
-      for (char *save = NULL, *tok = strtok_r(work, ",", &save);
-           tok && rc == 0; tok = strtok_r(NULL, ",", &save)) {
-        while (*tok == ' ') ++tok;        /* "a, b" reads like -m does */
-        if (!*tok) continue;              /* a trailing or doubled comma */
-        rc = resolve_spec(tok, tag_override, sel, &n_sel, SELCAP, 1);
-        if (rc != 0) bad = tok;
-      }
-      if (rc != 0) n_sel = before;
-    }
-    if (rc != 0) {
-      /* The whole string may be a name in its own right. If it is not, the
-       * piece that failed is the more useful thing to name -- "nothing is
-       * called nope" beats quoting the entire list back. */
-      if (resolve_spec(argv[ai], tag_override, sel, &n_sel, SELCAP,
-                       bad != NULL) != 0) {
-        if (bad) resolve_spec(bad, tag_override, sel, &n_sel, SELCAP, 0);
-        return 1;
-      }
-    }
-    size_t l = strlen(shown);
-    snprintf(shown + l, sizeof(shown) - l, "%s%s", l ? " " : "", argv[ai]);
-  }
+  if (resolve_args(argc, argv, optind, tag_override, sel, &n_sel, SELCAP,
+                   shown, sizeof(shown)) != 0)
+    return 1;
 
 
   char root[4096];
@@ -2508,7 +2584,8 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   for (size_t i = 0; i < n_sel; ++i) {
     size_t n_here = 0;
     for (size_t j = 0; j < sel[i].a->n_files; ++j) {
-      if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter, sel[i].only))
+      if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter,
+                       sel[i].only, sel[i].n_only))
         continue;
       ++n_here;
       /* Already-present files are skipped unless -f, so counting their bytes
@@ -2567,7 +2644,8 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
       size_t k = 0;
       for (size_t i = 0; i < n_sel; ++i)
         for (size_t j = 0; j < sel[i].a->n_files && k < n_files; ++j) {
-          if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter, sel[i].only))
+          if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter,
+                       sel[i].only, sel[i].n_only))
             continue;
           if (!force && sel_present(root, sel[i].a, sel[i].a->files[j].name, here))
             continue;                 /* listing what will move, not what is */
@@ -2632,7 +2710,8 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
       int moving = 0;
       for (size_t j = 0; j < a->n_files && !moving; ++j)
         if (!a->files[j].store_sub &&
-            file_wanted(a, a->files[j].name, filter, sel[i].only) &&
+            file_wanted(a, a->files[j].name, filter,
+                        sel[i].only, sel[i].n_only) &&
             (force || !sel_present(root, a, a->files[j].name, here)))
           moving = 1;
       if (!moving) continue;
@@ -2677,7 +2756,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   {
     int all_named = (n_sel > 0);
     for (size_t i = 0; i < n_sel; ++i)
-      if (!sel[i].only) { all_named = 0; break; }
+      if (!sel[i].n_only) { all_named = 0; break; }
     if (all_named) assume_yes = 1;
   }
 
@@ -2729,9 +2808,10 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    int rc = here ? fetch_entry_here(a, tag, filter, sel[i].only, &opt, &err)
-                  : fetch_entry(a, root, tag, anchor, filter, sel[i].only,
-                                &opt, &err);
+    int rc = here
+      ? fetch_entry_here(a, tag, filter, sel[i].only, sel[i].n_only, &opt, &err)
+      : fetch_entry(a, root, tag, anchor, filter, sel[i].only, sel[i].n_only,
+                    &opt, &err);
     if (rc != 0) {
       fprintf(stderr, "%s fetch: " "%s\n", TOOL, err ? err : "failed");
       free(err);
