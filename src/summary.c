@@ -27,6 +27,7 @@
 #include "wzbed.h"
 #include "cfile.h"
 #include "assets.h"
+const yame_fetch_cfg_t *yame_own_fetch_cfg(void);   /* main.c: yame's registry */
 #include "snames.h"
 #include "summary.h"
 
@@ -376,7 +377,7 @@ int main_summary(int argc, char *argv[]) {
     yame_ref_for_rows(rows, NULL, NULL, path, sizeof(path), &rname, &rfetch);
 
     char **masks = NULL;
-    size_t n = yame_browse_pick(rname, &masks);
+    size_t n = yame_browse_pick(yame_own_fetch_cfg(), rname, &masks);
     if (!n) {
       if (!yame_ui_fancy())
         fprintf(stderr, "-b needs a terminal it can draw on. Name the mask "

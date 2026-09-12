@@ -45,18 +45,30 @@
 #include <unistd.h>
 
 #include "assets.h"
-#include "registry.h"
+/* No registry.h here. fetch runs over whatever registry the caller hands it
+ * through yame_fetch_cfg_t; the two macros below make the ~40 sites that read
+ * the catalogue read the caller's. The pointer is file-scope because every
+ * one of those sites is a static helper in this file, reached only from
+ * yame_fetch_main() or yame_browse_pick(), which set it first. */
+static const yame_fetch_cfg_t *cfg_;
+#define YAME_ASSETS   (cfg_->reg)
+#define YAME_ASSETS_N (cfg_->n_reg)
+#define TOOL          (cfg_->tool)
 #include "assetinfo.h"
 #include "yame_ui.h"
 
 #include "wzmisc.h"   /* wzmalloc/wzstrdup: allocation that cannot return NULL */
 static int usage(void) {
   char root[4096];
-  yame_assets_root(NULL, NULL, root, sizeof(root));
+  yame_assets_root(NULL, cfg_->tool_env, root, sizeof(root));
 
-  yame_usage_head("yame fetch                              browse the catalogue");
-  yame_usage_text("yame fetch [options] <name>[@tag] ...");
-  yame_usage_text("yame fetch [options] -u <url> -s <sha256> -o <dest>");
+  { char head[128];
+    snprintf(head, sizeof head, "%s fetch                              browse the catalogue", TOOL);
+    yame_usage_head(head); }
+  { char l1[128], l2[128];
+    snprintf(l1, sizeof l1, "%s fetch [options] <name>[@tag] ...", TOOL);
+    snprintf(l2, sizeof l2, "%s fetch [options] -u <url> -s <sha256> -o <dest>", TOOL);
+    yame_usage_text(l1); yame_usage_text(l2); }
 
   yame_usage_sec("Naming:");
   yame_usage_text("A name is what the browser shows: hg38, hg38/KYCG, hg38/data,");
@@ -90,10 +102,18 @@ static int usage(void) {
   yame_usage_text("against the same digest.");
 
   yame_usage_sec("Store:");
-  yame_usage_text("Resolved in order: -d, $YAME_DATA_HOME,");
+  /* a tool with its own store variable lists it first: that is what its
+   * users export, and it is read ahead of YAME_DATA_HOME */
+  if (cfg_->tool_env) {
+    char l[160];
+    snprintf(l, sizeof l, "Resolved in order: -d, $%s, $YAME_DATA_HOME,", cfg_->tool_env);
+    yame_usage_text(l);
+  } else
+    yame_usage_text("Resolved in order: -d, $YAME_DATA_HOME,");
   yame_usage_text("${XDG_DATA_HOME:-~/.local/share}/yame");
-  fprintf(stderr, "  %sYAME_DATA_HOME: %s%s\n",
-          yame_ui_green(), root, yame_ui_reset());
+  fprintf(stderr, "  %s%s: %s%s\n",
+          yame_ui_green(), cfg_->tool_env ? cfg_->tool_env : "YAME_DATA_HOME",
+          root, yame_ui_reset());
   yame_usage_sec("Mirror:");
   yame_usage_text("$YAME_ASSETS_MIRROR=<scheme://host[:port]> downloads from a site that");
   yame_usage_text("mirrors the public repositories, keeping each URL's path: the file at");
@@ -879,7 +899,7 @@ static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
 static int dump_registry(const char *dopt, const char *scope,
                          const char *filter) {
   char root[4096];
-  yame_assets_root(dopt, NULL, root, sizeof(root));
+  yame_assets_root(dopt, cfg_->tool_env, root, sizeof(root));
 
   /* The same selection a fetch would make, printed instead of downloaded, so
    * `-l <name> -g <terms>` is the dry run for the command without -l. */
@@ -1782,7 +1802,7 @@ static int browse_catalog(const char *dopt, int force) {
 
   memset(&b, 0, sizeof(b));
   b.force = force;
-  yame_assets_root(dopt, NULL, b.root, sizeof(b.root));
+  yame_assets_root(dopt, cfg_->tool_env, b.root, sizeof(b.root));
 
   /* Every unit at the top level, with its species as a heading above it: a
    * label to read past, not a level to open. */
@@ -1802,7 +1822,7 @@ static int browse_catalog(const char *dopt, int force) {
   refresh_roots(&b);
 
   static char title[4200];
-  snprintf(title, sizeof(title), "yame fetch   %s   %s", yame_ui_bullet(),
+  snprintf(title, sizeof(title), "%s fetch   %s   %s", TOOL, yame_ui_bullet(),
            b.root);
 
   yame_ui_tree_t spec;
@@ -1841,7 +1861,8 @@ static int browse_catalog(const char *dopt, int force) {
  * Returns the number of paths (malloc'd, caller frees both the strings and
  * the array), or 0 if nothing was chosen or the terminal cannot host a tree.
  */
-size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
+size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char ***out_paths) {
+  cfg_ = cfg;
   enum { MAXROOT = 64 };
   static char *roots[MAXROOT];
   static unsigned char styles[MAXROOT], branch[MAXROOT];
@@ -1850,7 +1871,7 @@ size_t yame_browse_pick(const char *open_unit, char ***out_paths) {
 
   *out_paths = NULL;
   memset(&b, 0, sizeof(b));
-  yame_assets_root(NULL, NULL, b.root, sizeof(b.root));
+  yame_assets_root(NULL, cfg_->tool_env, b.root, sizeof(b.root));
 
   memset(roots, 0, sizeof(roots));
   b.roots = roots;
@@ -2212,7 +2233,7 @@ static int resolve_spec(const char *arg, const char *tag_opt,
                         sel_t *out, size_t *n_out, size_t cap, int quiet) {
   char spec[512];
   if (snprintf(spec, sizeof(spec), "%s", arg) >= (int)sizeof(spec)) {
-    fprintf(stderr, "yame fetch: target name too long.\n");
+    fprintf(stderr, "%s fetch: " "target name too long.\n", TOOL);
     return 1;
   }
   const char *tag = tag_opt;
@@ -2293,8 +2314,8 @@ static int resolve_spec(const char *arg, const char *tag_opt,
       only = file_of(hit[0], fname)->name;
     }
     else if (n_claim > 1) {
-      fprintf(stderr, "yame fetch: %zu directories publish a file called "
-                      "%s. Name one:\n", n_claim, fname);
+      fprintf(stderr, "%s fetch: " "%zu directories publish a file called "
+                      "%s. Name one:\n", TOOL, n_claim, fname);
       for (size_t i = 0; i < n_hit; ++i)
         fprintf(stderr, "  %s\n", hitpath[i]);
       if (n_claim > n_hit)
@@ -2307,10 +2328,10 @@ static int resolve_spec(const char *arg, const char *tag_opt,
   if (!n_sel) {
     if (quiet) return 1;              /* the caller has another reading to try */
     fprintf(stderr,
-            "yame fetch: nothing in the catalogue is called %s.\n"
+            "%s fetch: nothing in the catalogue is called %s.\n"
             "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
             "  hg38/data, EPIC. A name takes everything under it.\n"
-            "  `yame fetch -l` lists what there is.\n", spec);
+            "  `%s fetch -l` lists what there is.\n", TOOL, spec, TOOL);
     return 1;
   }
   for (size_t i = 0; i < n_sel; ++i) {
@@ -2321,7 +2342,7 @@ static int resolve_spec(const char *arg, const char *tag_opt,
         dup = 1; break;
       }
     if (dup) continue;
-    if (*n_out >= cap) { fprintf(stderr, "yame fetch: too many names.\n"); return 1; }
+    if (*n_out >= cap) { fprintf(stderr, "%s fetch: " "too many names.\n", TOOL); return 1; }
     out[*n_out].a = hits[i];
     out[*n_out].only = only;
     out[*n_out].tag = tag;
@@ -2330,7 +2351,9 @@ static int resolve_spec(const char *arg, const char *tag_opt,
   return 0;
 }
 
-int main_fetch(int argc, char *argv[]) {
+int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
+  cfg_ = cfg;
+  optind = 1;                       /* a library entry: never trust the caller's */
   const char *dopt = NULL, *tag_override = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
@@ -2361,6 +2384,18 @@ int main_fetch(int argc, char *argv[]) {
   /* After the loop, not inside it, so `-l -d <dir>` reports presence against
    * the store that was actually asked for. Returning from the case label read
    * fine until -d could change the answer. */
+  /* A store that is behind this binary says so, once, on stderr -- before the
+   * listing and before the browser, and only when nothing was named, since a
+   * named fetch is already the fix. One line per directory, each naming the
+   * command that repairs it; a script sees them, a person sees them above
+   * the browser, and neither has to know to read a dir_state column. The
+   * store state comes from the same helper a downstream tool calls at load
+   * time, so yame and methscope describe the situation in the same words. */
+  if (optind >= argc && !quiet) {
+    if (yame_store_report(cfg_->reg, cfg_->n_reg, TOOL, cfg_->tool_env, dopt, stderr) > 0 && !list)
+      fputc('\n', stderr);
+  }
+
   if (list)
     return dump_registry(dopt, optind < argc ? argv[optind] : NULL, filter);
 
@@ -2369,7 +2404,7 @@ int main_fetch(int argc, char *argv[]) {
    * asks where the store is. */
   {
     char nroot[4096];
-    yame_assets_root(dopt, NULL, nroot, sizeof(nroot));
+    yame_assets_root(dopt, cfg_->tool_env, nroot, sizeof(nroot));
     if (!quiet) yame_assets_legacy_notice(nroot);
   }
 
@@ -2383,11 +2418,11 @@ int main_fetch(int argc, char *argv[]) {
   /* ---- single-file form ---- */
   if (url || sha || dest) {
     if (!url || !sha || !dest) {
-      fprintf(stderr, "yame fetch: -u, -s and -o go together.\n");
+      fprintf(stderr, "%s fetch: " "-u, -s and -o go together.\n", TOOL);
       return 1;
     }
     if (yame_assets_download_verify(url, sha, dest, &opt, NULL, &err) != 0) {
-      fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
+      fprintf(stderr, "%s fetch: " "%s\n", TOOL, err ? err : "failed");
       free(err);
       return 1;
     }
@@ -2454,13 +2489,14 @@ int main_fetch(int argc, char *argv[]) {
 
 
   char root[4096];
-  yame_assets_root(dopt, NULL, root, sizeof(root));
+  yame_assets_root(dopt, cfg_->tool_env, root, sizeof(root));
   /* -c never touches the store, so a read-only one must not stop it. */
   if (!here && !yame_assets_root_writable(root)) {
     fprintf(stderr,
-            "yame fetch: %s is not writable. A read-only shared store is fine "
+            "%s fetch: %s is not writable. A read-only shared store is fine "
             "to read from, but nothing can be fetched into it; set -d or "
-            "YAME_DATA_HOME to somewhere you own.\n", root);
+            "%s to somewhere you own.\n", TOOL, root,
+            cfg_->tool_env ? cfg_->tool_env : "YAME_DATA_HOME");
     return 1;
   }
 
@@ -2486,11 +2522,11 @@ int main_fetch(int argc, char *argv[]) {
 
   if (!n_files) {
     if (filter)
-      fprintf(stderr, "yame fetch: nothing under %s matches -g %s.\n"
+      fprintf(stderr, "%s fetch: " "nothing under %s matches -g %s.\n"
                       "  Terms are ANDed and match the file name, its source, "
-                      "collection, title or upstream database.\n", shown, filter);
+                      "collection, title or upstream database.\n", TOOL, shown, filter);
     else
-      fprintf(stderr, "yame fetch: %s holds no files.\n", shown);
+      fprintf(stderr, "%s fetch: " "%s holds no files.\n", TOOL, shown);
     return 1;
   }
 
@@ -2678,10 +2714,10 @@ int main_fetch(int argc, char *argv[]) {
     if (sel[i].tag && strcmp(sel[i].tag, a->tag) != 0) {
       if (!unpinned_ok) {
         fprintf(stderr,
-                "yame fetch: this build pins %s at %s, so it holds no digest "
+                "%s fetch: this build pins %s at %s, so it holds no digest "
                 "for %s and cannot verify the manifest published there. "
                 "Re-run with -k to accept that, or regenerate the registry "
-                "and rebuild.\n", a->target, a->tag, sel[i].tag);
+                "and rebuild.\n", TOOL, a->target, a->tag, sel[i].tag);
         return 1;
       }
       anchor = NULL;
@@ -2689,7 +2725,7 @@ int main_fetch(int argc, char *argv[]) {
 
     char store_sub[4096];
     if (yame_assets_join(store_sub, sizeof(store_sub), root, a->store_sub) != 0) {
-      fprintf(stderr, "yame fetch: store path too long.\n");
+      fprintf(stderr, "%s fetch: " "store path too long.\n", TOOL);
       return 1;
     }
 
@@ -2697,7 +2733,7 @@ int main_fetch(int argc, char *argv[]) {
                   : fetch_entry(a, root, tag, anchor, filter, sel[i].only,
                                 &opt, &err);
     if (rc != 0) {
-      fprintf(stderr, "yame fetch: %s\n", err ? err : "failed");
+      fprintf(stderr, "%s fetch: " "%s\n", TOOL, err ? err : "failed");
       free(err);
       return 1;
     }

@@ -26,39 +26,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "assets.h"   /* yame_pin_prior_t */
+#include "assets.h"   /* yame_pin_prior_t, yame_asset_file_t, yame_asset_reg_t */
 
-/* One file a directory publishes, with the digest it must have.
- *
- * store_sub is normally the unit's, and NULL says so. It is set only where a
- * file belongs somewhere else in the store than the directory that publishes
- * it: a genome's cpg_nocontig.cr comes from the KYCGKB repo but is the
- * genome's index, so it lands at <genome>/ rather than <genome>/KYCG/. The
- * browser renders a file wherever this puts it, so the tree and the store
- * cannot drift apart. */
-typedef struct {
-    const char *name;
-    const char *sha256;
-    uint64_t    size;        /* 0 when upstream does not publish one */
-    const char *store_sub;   /* NULL: the unit's own store_sub */
-} yame_asset_file_t;
-
-#define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
-#define YAME_NPRIOR(t) (sizeof(t)/sizeof((t)[0]))
-
-typedef struct {
-    const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
-    const char *target;      /* platform, genome, or "<platform>/KYCG" */
-    const char *base_url;    /* <base>/<tag>/<remote_sub>/SHA256SUMS */
-    const char *tag;
-    const char *remote_sub;  /* "" when the manifest is at the repo root */
-    const char *store_sub;   /* path under the store root */
-    const char *anchor;      /* sha256 of that directory's SHA256SUMS */
-    const yame_asset_file_t *files;  /* what the directory holds */
-    size_t      n_files;
-    const yame_pin_prior_t *prior;   /* earlier tags this build supersedes */
-    size_t      n_prior;
-} yame_asset_reg_t;
+/* yame_asset_file_t and yame_asset_reg_t -- the row types this table is made
+ * of -- are declared in assets.h, not here: library code takes ANY tool's
+ * registry as an argument, so the types cannot live in one tool's generated
+ * file. This header is only the data. */
 
 static const yame_asset_file_t YAME_FILES_InfiniumAnnotation_EPIC[] = {
     { "EPIC.ordering.tsv.gz", "a55f9587ec0228406bb731a56bebb54bbde7f898d53c2afcfdd50b1b3e950d01", 7756709, NULL },

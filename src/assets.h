@@ -212,6 +212,96 @@ const char *yame_assets_pin_prior_tag(const char *dir,
                                       const yame_pin_prior_t *prior,
                                       size_t n_prior);
 
+/* ---------------------------------------------------- the registry's rows */
+/* One file a directory publishes, with the digest it must have.
+ *
+ * store_sub is normally the unit's, and NULL says so. It is set only where a
+ * file belongs somewhere else in the store than the directory that publishes
+ * it: a genome's cpg_nocontig.cr comes from the KYCGKB repo but is the
+ * genome's index, so it lands at <genome>/ rather than <genome>/KYCG/. The
+ * browser renders a file wherever this puts it, so the tree and the store
+ * cannot drift apart. */
+typedef struct {
+    const char *name;
+    const char *sha256;
+    uint64_t    size;        /* 0 when upstream does not publish one */
+    const char *store_sub;   /* NULL: the unit's own store_sub */
+} yame_asset_file_t;
+
+#define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
+#define YAME_NPRIOR(t) (sizeof(t)/sizeof((t)[0]))
+
+/* One fetchable directory: where it comes from, where it lands, and the
+ * digest its manifest must have. A tool's registry.h is an array of these;
+ * the types live HERE, not in that generated file, so library code can take
+ * any tool's registry as an argument rather than being bound to yame's at
+ * yame's build time. */
+typedef struct {
+    const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
+    const char *target;      /* platform, genome, or "<platform>/KYCG" */
+    const char *base_url;    /* <base>/<tag>/<remote_sub>/SHA256SUMS */
+    const char *tag;
+    const char *remote_sub;  /* "" when the manifest is at the repo root */
+    const char *store_sub;   /* path under the store root */
+    const char *anchor;      /* sha256 of that directory's SHA256SUMS */
+    const yame_asset_file_t *files;  /* what the directory holds */
+    size_t      n_files;
+    const yame_pin_prior_t *prior;   /* earlier tags this build supersedes */
+    size_t      n_prior;
+} yame_asset_reg_t;
+
+/* ------------------------------------------ is the store what this build pins? */
+/**
+ * What a tool should say about a store directory, or a file in one, before it
+ * trusts it. This is the one call a downstream tool makes at load time -- and
+ * what `fetch` itself prints when a store is behind -- so that every tool
+ * describes the same situation in the same words.
+ *
+ * The registry is an ARGUMENT, not yame's compiled-in one: methscope passes
+ * its own, so the verb in the advice is `methscope fetch`, and the tag it is
+ * judged against is the one methscope pins.
+ */
+typedef enum {
+  YAME_STORE_CURRENT = 0,   /* at this registry's tag; a named file's digest matches  */
+  YAME_STORE_ABSENT,        /* nothing fetched for this directory yet                  */
+  YAME_STORE_OLD_TAG,       /* filled at an earlier tag this registry knows -- fetch it */
+  YAME_STORE_OTHER_TAG,     /* filled at a tag this registry does not know -- the TOOL
+                             * is behind the store, or another tool filled it          */
+  YAME_STORE_UNPINNED,      /* a manifest is there but this registry has no anchor     */
+  YAME_STORE_STALE_FILE,    /* directory is current but this file's digest differs     */
+  YAME_STORE_MISSING_FILE,  /* directory is current but this file is not on disk       */
+  YAME_STORE_NOT_CATALOGUED /* the path is under no directory this registry lists      */
+} yame_store_state_t;
+
+/**
+ * Classify `path` -- a store directory, or a file inside one -- against
+ * `reg`. `path` may be absolute or relative to the store root that
+ * yame_assets_root() resolves from `tool_env` and $YAME_DATA_HOME.
+ *
+ * `advice`, if given, receives one sentence naming the situation and the
+ * exact command that fixes it, spelled with `tool` ("yame", "methscope"):
+ *
+ *   OLD_TAG    "hg38/models was fetched at an earlier tag than this yame;
+ *               run: yame fetch hg38/models"
+ *   OTHER_TAG  "hg38/models is at a tag this yame does not know -- update
+ *               yame, then run: yame fetch hg38/models"
+ *
+ * CURRENT leaves `advice` empty. Nothing here downloads or deletes.
+ */
+yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
+                                    const char *tool, const char *tool_env,
+                                    const char *path, char *advice, size_t n);
+
+/**
+ * Walk every directory in `reg` and print one advice line to `out` for each
+ * that is OLD_TAG or OTHER_TAG. Returns how many lines it printed, so a
+ * caller can decide whether to say anything more. This is what a bare
+ * `<tool> fetch` and `<tool> fetch -l` print on stderr.
+ */
+int yame_store_report(const yame_asset_reg_t *reg, size_t n_reg,
+                      const char *tool, const char *tool_env,
+                      const char *root_override, FILE *out);
+
 /* --------------------------------------------------------------- fetching */
 
 typedef struct {
@@ -409,6 +499,29 @@ void yame_ref_explain(FILE *out, uint64_t rows, int status, const char *name,
  * and the array), or 0 if nothing was chosen or the terminal cannot host a
  * tree -- in which case the caller should say what it needs and stop.
  */
-size_t yame_browse_pick(const char *open_unit, char ***paths);
+/* ------------------------------------- fetch, over the caller's registry */
+/**
+ * What `fetch` needs to know about the tool it is running inside. yame's own
+ * entry point builds one of these from its compiled-in registry; a downstream
+ * tool that ships fetch over the YAME code it bundles builds one from ITS
+ * registry (make_registry.sh --tool=<name>), so the models its docs name are,
+ * by construction, the ones its own binary pins. Store conflicts between
+ * tools stay handled by yame_assets_pin_state.
+ */
+typedef struct {
+  const yame_asset_reg_t *reg;  /* the catalogue: one row per directory       */
+  size_t n_reg;
+  const char *tool;             /* "yame", "methscope": usage text, messages   */
+  const char *tool_env;         /* NULL, or e.g. "METHSCOPE_DATA_HOME" -- read
+                                 * ahead of $YAME_DATA_HOME for the store root */
+} yame_fetch_cfg_t;
+
+/* `<tool> fetch ...` -- the whole subcommand: browser, -l, named targets,
+ * the single-file form, mirrors, -t/-k. argv[0] is ignored. */
+int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]);
+
+/* The mask picker `summary -b` uses, over the same registry. */
+size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit,
+                        char ***paths);
 
 #endif /* _YAME_ASSETS_H */

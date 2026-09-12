@@ -804,3 +804,117 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
 }
 
 #endif /* YAME_HAVE_CURL */
+
+/* ------------------------------------------ is the store what this build pins? */
+
+/* The registry row whose directory contains `path`, and -- when `path` names
+ * a file rather than the directory itself -- that file's entry. Longest
+ * store_sub wins, so hg38/KYCG is matched before hg38. */
+static const yame_asset_reg_t *row_for_path(const yame_asset_reg_t *reg, size_t n_reg,
+                                            const char *root, const char *path,
+                                            const yame_asset_file_t **file_out) {
+  const yame_asset_reg_t *best = NULL;
+  size_t best_len = 0;
+  const char *rel = path;
+  size_t rl = strlen(root);
+  if (strncmp(path, root, rl) == 0 && (path[rl] == '/' || path[rl] == '\0'))
+    rel = path + rl + (path[rl] == '/');
+  for (size_t i = 0; i < n_reg; ++i) {
+    const char *sub = reg[i].store_sub;
+    size_t sl = strlen(sub);
+    if (strncmp(rel, sub, sl) == 0 && (rel[sl] == '/' || rel[sl] == '\0') && sl >= best_len) {
+      best = &reg[i]; best_len = sl;
+    }
+  }
+  if (file_out) *file_out = NULL;
+  if (!best) return NULL;
+  const char *tail = rel + best_len;
+  if (*tail == '/') ++tail;
+  if (*tail && file_out) {
+    for (size_t j = 0; j < best->n_files; ++j)
+      if (strcmp(best->files[j].name, tail) == 0) { *file_out = &best->files[j]; break; }
+  }
+  return best;
+}
+
+yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
+                                    const char *tool, const char *tool_env,
+                                    const char *path, char *advice, size_t n) {
+  if (advice && n) advice[0] = '\0';
+  if (!tool) tool = "yame";
+  char root[YAME_PATH_MAX];
+  yame_assets_root(NULL, tool_env, root, sizeof root);
+
+  const yame_asset_file_t *file = NULL;
+  const yame_asset_reg_t *row = row_for_path(reg, n_reg, root, path, &file);
+  if (!row) return YAME_STORE_NOT_CATALOGUED;
+
+  char dir[YAME_PATH_MAX];
+  if (yame_assets_join(dir, sizeof dir, root, row->store_sub) != 0)
+    return YAME_STORE_NOT_CATALOGUED;
+
+  /* The directory first: a file's digest only means something once the
+   * manifest beside it is the one this registry expects. */
+  int pin = yame_assets_pin_state(dir, row->anchor, row->prior, row->n_prior);
+  switch (pin) {
+  case YAME_PIN_ABSENT:
+    if (advice) snprintf(advice, n, "%s has not been fetched; run: %s fetch %s",
+                         row->target, tool, row->target);
+    return YAME_STORE_ABSENT;
+  case YAME_PIN_ANCESTOR:
+    if (advice) snprintf(advice, n, "%s was fetched at an earlier tag than this %s; "
+                         "run: %s fetch %s", row->target, tool, tool, row->target);
+    return YAME_STORE_OLD_TAG;
+  case YAME_PIN_CONFLICT:
+    if (advice) snprintf(advice, n, "%s is at a tag this %s does not know -- update %s, "
+                         "then run: %s fetch %s", row->target, tool, tool, tool, row->target);
+    return YAME_STORE_OTHER_TAG;
+  case YAME_PIN_UNKNOWN:
+    if (advice) snprintf(advice, n, "%s has a manifest this %s cannot check (no anchor)",
+                         row->target, tool);
+    return YAME_STORE_UNPINNED;
+  default: break;                      /* MATCH: now the file, if one was named */
+  }
+
+  if (!file) return YAME_STORE_CURRENT;
+
+  char full[YAME_PATH_MAX];
+  if (yame_assets_join(full, sizeof full, dir, file->name) != 0) return YAME_STORE_CURRENT;
+  if (!yame_assets_is_file(full)) {
+    if (advice) snprintf(advice, n, "%s/%s is not in the store; run: %s fetch %s/%s",
+                         row->target, file->name, tool, row->target, file->name);
+    return YAME_STORE_MISSING_FILE;
+  }
+  char got[65];
+  if (yame_assets_sha256_file(full, got) == 0 && !yame_assets_digest_equal(got, file->sha256)) {
+    if (advice) snprintf(advice, n, "%s/%s does not match the digest this %s pins; "
+                         "run: %s fetch %s/%s", row->target, file->name, tool, tool,
+                         row->target, file->name);
+    return YAME_STORE_STALE_FILE;
+  }
+  return YAME_STORE_CURRENT;
+}
+
+int yame_store_report(const yame_asset_reg_t *reg, size_t n_reg,
+                      const char *tool, const char *tool_env,
+                      const char *root_override, FILE *out) {
+  if (!tool) tool = "yame";
+  char root[YAME_PATH_MAX];
+  yame_assets_root(root_override, tool_env, root, sizeof root);
+  int said = 0;
+  for (size_t i = 0; i < n_reg; ++i) {
+    char dir[YAME_PATH_MAX];
+    if (yame_assets_join(dir, sizeof dir, root, reg[i].store_sub) != 0) continue;
+    int pin = yame_assets_pin_state(dir, reg[i].anchor, reg[i].prior, reg[i].n_prior);
+    if (pin != YAME_PIN_ANCESTOR && pin != YAME_PIN_CONFLICT) continue;
+    /* two rows can share a directory (a genome and its KYCG index); say it once */
+    int dup = 0;
+    for (size_t k = 0; k < i; ++k)
+      if (strcmp(reg[k].store_sub, reg[i].store_sub) == 0) { dup = 1; break; }
+    if (dup) continue;
+    char advice[1024];
+    yame_store_state(reg, n_reg, tool, tool_env, dir, advice, sizeof advice);
+    if (advice[0]) { fprintf(out, "[%s fetch] %s\n", tool, advice); ++said; }
+  }
+  return said;
+}

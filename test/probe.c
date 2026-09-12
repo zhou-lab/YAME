@@ -13,6 +13,7 @@
 #include <inttypes.h>
 #include "cfile.h"
 #include <unistd.h>
+#include <stdlib.h>
 
 static int fails = 0;
 #define CHECK(cond, ...) do {                                   \
@@ -297,9 +298,88 @@ static void t_refstore(const char *store) {
   unlink(own); unlink(cr);
 }
 
+/* The store-state helper, against a registry the PROBE defines -- which is
+ * the point: a downstream tool passes its own, and gets advice spelled with
+ * its own verb. Every state is reached by writing a manifest whose digest is
+ * (or is not) one this registry knows. */
+static void t_store_state(const char *store) {
+  /* a manifest text, and its digest, which the registry will call current */
+  const char *cur_text = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.cm\n";
+  char cur_anchor[65]; yame_assets_sha256_buf(cur_text, strlen(cur_text), cur_anchor);
+  const char *old_text = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  a.cm\n";
+  char old_anchor[65]; yame_assets_sha256_buf(old_text, strlen(old_text), old_anchor);
+
+  static yame_asset_file_t files[] = {
+    { "a.cm", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0, NULL },
+    { NULL, NULL, 0, NULL } };
+  yame_pin_prior_t prior[] = { { "v1", old_anchor } };
+  yame_asset_reg_t reg[] = {
+    { "probe", "hg38/probe", "http://x", "v2", "", "hg38/probe", cur_anchor,
+      files, YAME_NFILES(files), prior, 1 } };
+  const size_t n_reg = 1;
+
+  char dir[4096]; snprintf(dir, sizeof dir, "%s/hg38/probe", store);
+  char sums[4096]; snprintf(sums, sizeof sums, "%s/SHA256SUMS", dir);
+  char afile[4096]; snprintf(afile, sizeof afile, "%s/a.cm", dir);
+  mkdir(dir, 0755);
+  char adv[1024];
+  yame_store_state_t st;
+
+  /* the helper resolves the root from tool_env; point it at the probe's store */
+  setenv("PROBE_DATA_HOME", store, 1);
+
+  unlink(sums); unlink(afile);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", dir, adv, sizeof adv);
+  CHECK(st == YAME_STORE_ABSENT, "empty directory is %d, want ABSENT", (int) st);
+  CHECK(strstr(adv, "probe fetch hg38/probe") != NULL, "ABSENT advice is: %s", adv);
+
+  FILE *f = fopen(sums, "w"); fputs(old_text, f); fclose(f);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", dir, adv, sizeof adv);
+  CHECK(st == YAME_STORE_OLD_TAG, "a prior tag's manifest is %d, want OLD_TAG", (int) st);
+  CHECK(strstr(adv, "earlier tag") && strstr(adv, "probe fetch hg38/probe"),
+        "OLD_TAG advice is: %s", adv);
+
+  f = fopen(sums, "w"); fputs("ffff  z.cm\n", f); fclose(f);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", dir, adv, sizeof adv);
+  CHECK(st == YAME_STORE_OTHER_TAG, "an unknown manifest is %d, want OTHER_TAG", (int) st);
+  CHECK(strstr(adv, "update probe") != NULL, "OTHER_TAG advice does not say to update the tool: %s", adv);
+
+  f = fopen(sums, "w"); fputs(cur_text, f); fclose(f);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", dir, adv, sizeof adv);
+  CHECK(st == YAME_STORE_CURRENT, "the current manifest is %d, want CURRENT", (int) st);
+  CHECK(adv[0] == '\0', "CURRENT left advice: %s", adv);
+
+  /* now a FILE in a current directory: missing, wrong, right */
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", afile, adv, sizeof adv);
+  CHECK(st == YAME_STORE_MISSING_FILE, "a listed file not on disk is %d, want MISSING_FILE", (int) st);
+  f = fopen(afile, "w"); fputs("not empty", f); fclose(f);
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", afile, adv, sizeof adv);
+  CHECK(st == YAME_STORE_STALE_FILE, "a file with the wrong digest is %d, want STALE_FILE", (int) st);
+  f = fopen(afile, "w"); fclose(f);          /* the empty file: its sha256 is e3b0...  */
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", afile, adv, sizeof adv);
+  CHECK(st == YAME_STORE_CURRENT, "a file with the right digest is %d, want CURRENT", (int) st);
+
+  /* a path the registry knows nothing about */
+  st = yame_store_state(reg, n_reg, "probe", "PROBE_DATA_HOME", "/nowhere/else", adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED, "an uncatalogued path is %d", (int) st);
+
+  /* the report: one line for the old-tag case, none when current */
+  f = fopen(sums, "w"); fputs(old_text, f); fclose(f);
+  char buf[2048]; FILE *mf = fmemopen(buf, sizeof buf, "w");
+  int said = yame_store_report(reg, n_reg, "probe", "PROBE_DATA_HOME", NULL, mf); fclose(mf);
+  CHECK(said == 1, "report printed %d lines for one old-tag directory, want 1", said);
+  CHECK(strstr(buf, "[probe fetch]") != NULL, "report line is not prefixed with the tool: %s", buf);
+  f = fopen(sums, "w"); fputs(cur_text, f); fclose(f);
+  mf = fmemopen(buf, sizeof buf, "w");
+  said = yame_store_report(reg, n_reg, "probe", "PROBE_DATA_HOME", NULL, mf); fclose(mf);
+  CHECK(said == 0, "report printed %d lines for a current store, want 0", said);
+
+  unlink(sums); unlink(afile); rmdir(dir);
+}
+
 int main(int argc, char **argv) {
   if (argc < 4) { fprintf(stderr, "usage: probe <one.cg> <three.cg> <bundle> <limit> [dir]\n"); return 2; }
-  if (argc > 5) t_refstore(argv[5]);
+  if (argc > 5) { t_refstore(argv[5]); t_store_state(argv[5]); }
   t_read(argv[1], 4, '3');
   t_read_cdata1(argv[2], 3);
   t_accessors(argv[1]);

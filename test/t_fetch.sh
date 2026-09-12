@@ -182,32 +182,35 @@ if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "110"; os.environ["LINES"] = "34"
     os.execv(YAME, ["yame", "fetch"])
 out = b""
-def pump(t):
+def pump(t, quiet=0.03, until=None):
+    """Read until quiet for `quiet` s, or `until` (bytes) appears, or `t` s."""
     global out
-    end = time.time() + t
+    end = time.time() + t; last = time.time()
     while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.05)
+        if until and until in out: return
+        r, _, _ = select.select([fd], [], [], 0.01)
         if r:
-            try: out += os.read(fd, 65536)
+            try: out += os.read(fd, 65536); last = time.time()
             except OSError: return
-pump(0.9)
+        elif time.time() - last >= quiet and out and not until: return
+pump(2.0)
 for k in [b"/"] + [bytes([c]) for c in b"Blacklist"] + [b"\r"]:
-    os.write(fd, k); pump(0.15)
-os.write(fd, b" "); pump(0.3)              # select the highlighted directory
+    os.write(fd, k); pump(0.5)
+os.write(fd, b" "); pump(0.5)              # select the highlighted directory
 mark = len(out)
-os.write(fd, b"f"); pump(1.5)              # propose the fetch
+os.write(fd, b"f"); pump(3.0, until=b"Proceed")              # propose the fetch
 prompt = out[mark:].decode("utf8", "replace")
 if "Proceed" not in prompt:
     sys.exit("f did not ask before fetching:\n" + prompt[-300:])
 if "Fetch" not in prompt:
     sys.exit("the prompt does not say what it would fetch")
-os.write(fd, b"n"); pump(0.8)              # decline
-os.write(fd, b"q"); pump(0.8)
+os.write(fd, b"n"); pump(1.0)              # decline
+os.write(fd, b"q"); pump(1.0)
 st = None; t0 = time.time()
 while time.time() - t0 < 15:
     p, s_ = os.waitpid(pid, os.WNOHANG)
     if p: st = s_; break
-    pump(0.1)
+    pump(0.05, quiet=0.01)
 if st is None:
     os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
     sys.exit("the browser did not exit after declining")
@@ -242,21 +245,24 @@ if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "110"; os.environ["LINES"] = "34"
     os.execv(YAME, ["yame", "fetch"])
 out = b""
-def pump(t):
+def pump(t, quiet=0.03, until=None):
+    """Read until quiet for `quiet` s, or `until` (bytes) appears, or `t` s."""
     global out
-    end = time.time() + t
+    end = time.time() + t; last = time.time()
     while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.05)
+        if until and until in out: return
+        r, _, _ = select.select([fd], [], [], 0.01)
         if r:
-            try: out += os.read(fd, 65536)
+            try: out += os.read(fd, 65536); last = time.time()
             except OSError: return
-pump(0.9)
+        elif time.time() - last >= quiet and out and not until: return
+pump(2.0)
 for k in [b"/"] + [bytes([c]) for c in b"Mammal40"] + [b"\r"]:
-    os.write(fd, k); pump(0.15)
-os.write(fd, b" "); pump(0.3)
-os.write(fd, b"f"); pump(1.5)
+    os.write(fd, k); pump(0.5)
+os.write(fd, b" "); pump(0.5)
+os.write(fd, b"f"); pump(3.0, until=b"Proceed")
 mark = len(out)
-os.write(fd, b"y"); pump(10.0)             # accept, and let it run
+os.write(fd, b"y"); pump(30.0, until=b"press any key")   # accept; wait for the summary, not a timer
 report = out[mark:].decode("utf8", "replace")
 if "fetched" not in report:
     sys.exit("no completion line after the fetch:\n" + report[-400:])
@@ -264,13 +270,13 @@ if "failed" in report:
     sys.exit("the browser fetch reported failures:\n" + report[-400:])
 ## It ends on "press any key to return to the catalogue", so the first key
 ## goes to that screen and only the SECOND one reaches the browser.
-os.write(fd, b" "); pump(0.8)
+os.write(fd, b" "); pump(1.0)
 os.write(fd, b"q"); pump(1.0)
 st = None; t0 = time.time()
 while time.time() - t0 < 30:
     p, s_ = os.waitpid(pid, os.WNOHANG)
     if p: st = s_; break
-    pump(0.2)
+    pump(0.05, quiet=0.01)
 if st is None:
     os.kill(pid, 9); os.waitpid(pid, 0); sys.exit("the browser hung during the fetch")
 if os.WIFSIGNALED(st): sys.exit(f"the browser died on signal {os.WTERMSIG(st)}")
@@ -284,7 +290,42 @@ PY
   done
 fi
 
-## ---- 12. a stale local manifest is a pin conflict, not silently overwritten --
+## ---- 12. a store that is behind says so, once, on stderr --------------------
+## Bare `fetch` and `fetch -l` print one line per directory whose manifest is
+## from an earlier tag this binary knows, naming the command that repairs it.
+## A named fetch prints nothing extra, since it IS the repair, and -q is quiet.
+##
+## Staged with the real mechanism: methscope_models carries prior anchors and
+## its earlier manifests are cached, so a directory holding a cached prior
+## manifest is exactly a store filled at that earlier tag.
+rm -rf "$YAME_DATA_HOME"/*
+"$YAME" fetch -l </dev/null 2> quiet.err >/dev/null
+grep -q 'earlier tag' quiet.err && { echo "an empty store was reported as behind"; cat quiet.err; exit 1; }
+
+cur=$(grep -o 'methscope_models *v[0-9]*' "$root/tools/registry/TAGS" | /usr/bin/awk '{print $2}')
+prev="v$(( ${cur#v} - 1 ))"
+prevsums="$root/tools/registry/sums/methscope_models/$prev/SHA256SUMS"
+if [ -f "$prevsums" ]; then
+  mkdir -p "$YAME_DATA_HOME/hg38/models"
+  cp "$prevsums" "$YAME_DATA_HOME/hg38/models/"
+  "$YAME" fetch -l </dev/null 2> behind.err >/dev/null
+  grep -q "hg38/models was fetched at an earlier tag than this yame; run: yame fetch hg38/models" behind.err ||
+    { echo "-l did not report the $prev-filled hg38/models as behind"; cat behind.err; exit 1; }
+  [ "$(grep -c 'hg38/models' behind.err)" -eq 1 ] ||
+    { echo "hg38/models was reported more than once"; cat behind.err; exit 1; }
+  "$YAME" fetch </dev/null 2> bare.err >/dev/null
+  grep -q 'earlier tag' bare.err || { echo "bare fetch did not report the store as behind"; exit 1; }
+  ## naming any target suppresses the report: the fetch is the repair
+  "$YAME" fetch -n "$asset" </dev/null 2> named.err >/dev/null
+  grep -q 'earlier tag' named.err && { echo "a named fetch printed the report"; cat named.err; exit 1; }
+  "$YAME" fetch -q -l </dev/null 2> q.err >/dev/null
+  grep -q 'earlier tag' q.err && { echo "-q did not silence the report"; exit 1; }
+else
+  echo "skip: no cached $prev manifest to stage an old-tag store" >&2
+fi
+rm -rf "$YAME_DATA_HOME"/*
+
+## ---- 13. a stale local manifest is a pin conflict, not silently overwritten --
 rm -rf "$YAME_DATA_HOME"/*
 mkdir -p "$YAME_DATA_HOME/$scope"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"

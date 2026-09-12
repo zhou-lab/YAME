@@ -22,7 +22,7 @@ import os, pty, sys, time, select, signal
 YAME = sys.argv[1]
 fails = 0
 
-def drive(args, keys, label, want_exit=0, settle=0.15, timeout=8.0):
+def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
     """Run yame under a pty, feed keys with a pause between them, collect
     everything it draws, and return (exit status, output)."""
     global fails
@@ -33,28 +33,38 @@ def drive(args, keys, label, want_exit=0, settle=0.15, timeout=8.0):
         os.environ.pop("NO_COLOR", None)  # NO_COLOR or TERM=dumb means "plain
         os.execv(YAME, ["yame"] + args)    # terminal": a table, not the browser
     out = b""
-    def pump(t):
+    def pump(t, quiet=0.03):
+        """Read until the output has been quiet for `quiet` seconds, or `t`
+        has elapsed -- whichever is first. A finished frame goes quiet in a
+        few milliseconds, so this is the wait a keypress actually needs; a
+        fixed sleep of the largest plausible time made this file take 24 s."""
         nonlocal out
-        end = time.time() + t
+        end = time.time() + t; last = time.time()
         while time.time() < end:
-            r, _, _ = select.select([fd], [], [], 0.05)
-            if not r: continue
-            try: out += os.read(fd, 65536)
-            except OSError: return False
+            r, _, _ = select.select([fd], [], [], 0.01)
+            if r:
+                try: out += os.read(fd, 65536); last = time.time()
+                except OSError: return False
+            elif time.time() - last >= quiet and out: return True
         return True
-    pump(0.6)                              # first frame
+    pump(2.0)                              # first frame, however long it takes
     alive = True
     for k in keys:
         if not alive: break
         try: os.write(fd, k)
         except OSError: alive = False; break
-        alive = pump(settle)
+        alive = pump(settle, quiet=0.05)
+        ## A bare ESC is told apart from the start of an escape sequence by a
+        ## 40 ms poll for a following byte. Send the next key inside that
+        ## window and it is read as the sequence's tail and swallowed -- a `q`
+        ## after ESC then never arrives and the session runs to its timeout.
+        if k == b"\x1b": time.sleep(0.06)
     # wait for exit, but never forever
     t0 = time.time(); status = None
     while time.time() - t0 < timeout:
         p, st = os.waitpid(pid, os.WNOHANG)
         if p: status = st; break
-        pump(0.05)
+        pump(0.05, quiet=0.01)
     if status is None:
         os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
         print(f"  FAIL {label}: still running after the keys; killed"); fails += 1
@@ -106,7 +116,7 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "20"; os.environ["LINES"] = "6"
     os.execv(YAME, ["yame", "fetch"])
-time.sleep(0.6)
+time.sleep(0.3)
 try: os.read(fd, 65536)
 except OSError: pass
 os.write(fd, b"jjq"); time.sleep(0.3)
@@ -161,7 +171,7 @@ pid, fd = pty.fork()
 if pid == 0:
     os.environ["TERM"] = "xterm"; os.environ["COLUMNS"] = "120"; os.environ["LINES"] = "40"
     os.execv(YAME, ["yame", "fetch"])
-time.sleep(0.6)
+time.sleep(0.3)
 try: os.read(fd, 65536)
 except OSError: pass
 import fcntl, termios, struct
@@ -170,13 +180,13 @@ try:
     os.kill(pid, signal.SIGWINCH)
 except Exception:
     pass
-time.sleep(0.3)
+time.sleep(0.1)
 os.write(fd, b"j")
-time.sleep(0.2)
+time.sleep(0.1)
 try: os.read(fd, 65536)
 except OSError: pass
 os.write(fd, b"q")
-time.sleep(0.4)
+time.sleep(0.15)
 try: os.read(fd, 65536)
 except OSError: pass
 t0 = time.time(); st = None
