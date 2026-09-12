@@ -140,14 +140,17 @@ done
 
 ## ---- 5. names through the index, and the header line ----
 printf 'sample1\tsample2\tn\tmae\trmse\tacc\tpearson\n' > named.expected
-sed 's/^1\t1\t/sA\tsC\t/' s34.expected >> named.expected   # last s34 run was t=0.3
+## A literal tab, not \t: whether sed understands the escape is a dialect
+## question, and BSD sed's answer is "a letter t".
+tab=$(printf '\t')
+sed "s/^1${tab}1${tab}/sA${tab}sC${tab}/" s34.expected >> named.expected  # last s34 run was t=0.3
 "$YAME" pairwise -S -t 0.3 -1 sA -2 sC abc.cg abc.cg > named.got
 diff named.expected named.got || { echo "-1/-2 by name differs"; exit 1; }
 
 ## ---- 6. broadcast: one named record against every record of file 2 ----
 "$YAME" pairwise -S -1 sA abc.cg abc.cg > bc.got
 [ "$(wc -l < bc.got)" -eq 4 ] || { echo "broadcast: expected 3 lines + header"; cat bc.got; exit 1; }
-[ "$(cut -f2 bc.got | tail -n +2 | paste -sd,)" == "sA,sB,sC" ] ||
+[ "$(cut -f2 bc.got | tail -n +2 | paste -sd, -)" == "sA,sB,sC" ] ||
   { echo "broadcast: labels not in file order"; cat bc.got; exit 1; }
 ## sA against itself: perfect agreement
 awk -F'\t' 'NR == 2 && !($4 == "0.000000" && $6 == "1.000000" && $7 == "1.000000") {

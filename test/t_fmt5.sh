@@ -31,8 +31,8 @@ python3 "$here/make_fmt5.py" long.cg $(python3 -c 'print(" ".join(["2"]*127 + ["
   { echo "the NA run lost values"; exit 1; }
 
 python3 "$here/make_fmt5.py" bits.cg 1 0 1 1 0 0 1 0 1 > /dev/null
-[ "$("$YAME" unpack bits.cg 2>/dev/null | paste -sd,)" = "1,0,1,1,0,0,1,0,1" ] ||
-  { echo "a pure 0/1 vector did not round-trip"; "$YAME" unpack bits.cg | paste -sd,; exit 1; }
+[ "$("$YAME" unpack bits.cg 2>/dev/null | paste -sd, -)" = "1,0,1,1,0,0,1,0,1" ] ||
+  { echo "a pure 0/1 vector did not round-trip"; "$YAME" unpack bits.cg | paste -sd, -; exit 1; }
 
 python3 "$here/make_fmt5.py" nas.cg 2 2 2 2 > /dev/null
 [ "$("$YAME" unpack nas.cg 2>/dev/null | sort -u)" = "NA" ] ||
@@ -53,7 +53,7 @@ printf '1\n0\n1\n0\n1\n0\n1\n0\n1\n0\n1\n0\n1\n0\n1\n0\n' | "$YAME" pack -f b - 
 cat f5.cg f0.cg > mixed.cg
 printf 'five\nzero\n' > nm.txt
 "$YAME" index -s nm.txt mixed.cg
-[ "$("$YAME" info mixed.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd,)" = "5,0" ] ||
+[ "$("$YAME" info mixed.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd, -)" = "5,0" ] ||
   { echo "a store holding format 5 beside format 0 misreports"; "$YAME" info mixed.cg; exit 1; }
 "$YAME" subset mixed.cg five 2>/dev/null | "$YAME" unpack - 2>/dev/null > back.txt
 diff want.txt back.txt || { echo "format 5 did not survive subset out of a mixed store"; exit 1; }

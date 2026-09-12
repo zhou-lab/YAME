@@ -68,7 +68,7 @@ diff fmts.want fmts.sorted ||
 ## "not set" and "not asked" are different answers.
 printf '1\t1\n0\t1\n0\t0\n1\t1\n' > f6u.txt
 "$YAME" pack -f d f6u.txt > f6u.cg
-[ "$("$YAME" unpack f6u.cg 2>/dev/null | paste -sd,)" = "1,0,2,1" ] ||
+[ "$("$YAME" unpack f6u.cg 2>/dev/null | paste -sd, -)" = "1,0,2,1" ] ||
   { echo "fmt6 default mode: out-of-universe is not '2'"; exit 1; }
 [ "$("$YAME" unpack -f -1 f6u.cg 2>/dev/null | sed -n 3p)" = "$(printf 'NA\t0')" ] ||
   { echo "fmt6 -f -1: out-of-universe is not NA<TAB>0"; exit 1; }
@@ -123,7 +123,7 @@ done
 "$YAME" pack -f n f4.txt > f4.cg
 "$YAME" pack -f s f2.txt > f2.cg
 cat f3.cg f4.cg f2.cg > mixed.cg
-[ "$("$YAME" info mixed.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd,)" = "3,4,2" ] ||
+[ "$("$YAME" info mixed.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd, -)" = "3,4,2" ] ||
   { echo "mixed-format store: formats not reported per record"; "$YAME" info mixed.cg; exit 1; }
 printf 'a\nb\nc\n' > mixed.names
 "$YAME" index -s mixed.names mixed.cg

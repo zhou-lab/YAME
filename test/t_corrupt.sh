@@ -86,7 +86,9 @@ notcx "store + foreign tail" tail.cg
 ## and make every later record silently invisible.
 "$YAME" pack -f m s1.txt > e1.cg      # ends with its own empty member
 cat e1.cg e1.cg s2.cg > dbl.cg        # e1's trailer meets e1's trailer
-n_dbl=$("$YAME" info dbl.cg 2>/dev/null | tail -n +2 | wc -l) || n_dbl=fail
+## `tr -d` on the count: BSD wc pads its output to a fixed width, so the bare
+## substitution is "       3" on macOS and the string compare below fails.
+n_dbl=$("$YAME" info dbl.cg 2>/dev/null | tail -n +2 | wc -l | tr -d '[:space:]') || n_dbl=fail
 [ "$n_dbl" = 3 ] || { echo "two end markers in a row: saw $n_dbl records, want 3"; exit 1; }
 
 ## ---- 5. a header that promises more than the file holds --------------------

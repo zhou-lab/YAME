@@ -152,7 +152,7 @@ done
 cat f0.cg f1.cg f2.cg f3.cg f4.cg f6.cg f7.cg > all.cg
 printf 'z0\nz1\nz2\nz3\nz4\nz6\nz7\n' > allnames.txt
 "$YAME" index -s allnames.txt all.cg
-[ "$("$YAME" info all.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd,)" = "0,1,2,3,4,6,7" ] ||
+[ "$("$YAME" info all.cg 2>/dev/null | tail -n +2 | cut -f5 | paste -sd, -)" = "0,1,2,3,4,6,7" ] ||
   { echo "the mixed store does not report one format per record"; "$YAME" info all.cg; exit 1; }
 ## each record still round-trips out of the middle of it
 for f in $FMTS; do
