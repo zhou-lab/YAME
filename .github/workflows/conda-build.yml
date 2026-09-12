@@ -27,8 +27,11 @@ jobs:
         include:
           - {mode: release, cc: "cc -O3",                            env: ""}
           - {mode: ndebug,  cc: "cc -O3 -DNDEBUG",                   env: ""}
+          # log_path: the report goes to a FILE, not the process's stderr. Many
+          # tests send a command's stderr to /dev/null on purpose, and a report
+          # that goes there leaves CI saying "FAIL" with a blank line under it.
           - {mode: asan,    cc: "cc -O1 -g -fsanitize=address,undefined",
-             env: "ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"}
+             env: "ASAN_OPTIONS=detect_leaks=0:log_path=/tmp/san/asan UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1:log_path=/tmp/san/ubsan"}
     steps:
       - uses: actions/checkout@v4
       # The Makefile refuses to build without curl-config rather than quietly
@@ -39,7 +42,14 @@ jobs:
       - name: Build
         run: make -B CC="${{ matrix.cc }}" LDFLAGS="${{ matrix.mode == 'asan' && '-fsanitize=address,undefined' || '' }}"
       - name: Run the suite
-        run: env ${{ matrix.env }} make test
+        run: mkdir -p /tmp/san && env ${{ matrix.env }} make test
+      - name: Sanitizer reports
+        if: always() && matrix.mode == 'asan'
+        run: |
+          if ls /tmp/san/* >/dev/null 2>&1; then
+            echo "::group::sanitizer reports"; cat /tmp/san/*; echo "::endgroup::"
+            { echo '### Sanitizer reports'; echo '```'; cat /tmp/san/*; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          else echo "no sanitizer reports"; fi
 
   # The badge is committed (docs/coverage.json, served from Pages), so it is
   # only as fresh as the last person who ran scripts/coverage.sh. This fails

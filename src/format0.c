@@ -141,13 +141,19 @@ void convertToFmt0(cdata_t *c) {
     c_out.compressed = 1;
     c_out.n=0;
     uint64_t i;
+    /* A format-1 run is a 3-byte triple: the value, then a 2-byte run length
+     * at offset 1 -- so every length sits at an ODD address, and reading it
+     * through a uint16_t pointer is undefined (the sanitizer traps on it;
+     * some targets fault). memcpy, as the writer side already does. */
+    uint16_t len;
     for (i=0; i<c->n/3; ++i) {
-      c_out.n += *((uint16_t*) (c->s+i*3+1));
+      memcpy(&len, c->s+i*3+1, sizeof len);
+      c_out.n += len;
     }
     c_out.s = wzcalloc((c_out.n>>3)+1, 1);
     size_t sum; uint16_t l=0;
     for (i=0, sum=0; i<c->n/3; ++i, sum+=l) {
-      l = *((uint16_t*) (c->s+i*3+1));
+      memcpy(&l, c->s+i*3+1, sizeof l);
       if (c->s[i*3] > '0') {
         for(size_t j=sum; j<sum+l; ++j) {
           FMT0_SET(c_out, j);
