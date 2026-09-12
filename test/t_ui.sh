@@ -33,7 +33,7 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         os.environ.pop("NO_COLOR", None)  # NO_COLOR or TERM=dumb means "plain
         os.execv(YAME, ["yame"] + args)    # terminal": a table, not the browser
     out = b""
-    def pump(t, quiet=0.03):
+    def pump(t, quiet=0.025):
         """Read until the output has been quiet for `quiet` seconds, or `t`
         has elapsed -- whichever is first. A finished frame goes quiet in a
         few milliseconds, so this is the wait a keypress actually needs; a
@@ -53,7 +53,7 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         if not alive: break
         try: os.write(fd, k)
         except OSError: alive = False; break
-        alive = pump(settle, quiet=0.05)
+        alive = pump(settle, quiet=0.025)
         ## A bare ESC is told apart from the start of an escape sequence by a
         ## 40 ms poll for a following byte. Send the next key inside that
         ## window and it is read as the sequence's tail and swallowed -- a `q`
@@ -80,7 +80,7 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         fails += 1
     return code, out
 
-def settle(fd, t=2.0, quiet=0.05):
+def settle(fd, t=2.0, quiet=0.025):
     """Read from fd until it has been quiet for `quiet` s or `t` s pass; return
     the bytes. The wait every interactive check needs: it ends when the frame
     is finished, not on a timer."""

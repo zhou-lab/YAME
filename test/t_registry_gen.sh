@@ -12,6 +12,9 @@ root=$(cd "$here/.." && pwd)
 d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
 
 ## ---- 1. yame's registry is a pure function of the catalogue -----------------
+## the two generations are independent and each takes ~2 s; run them together
+"$root/tools/make_registry.sh" --tool=methscope -o "$d/ms.h" >/dev/null 2>&1 &
+gen_ms=$!
 "$root/tools/make_registry.sh" --tool=yame -o "$d/yame.h" >/dev/null 2>&1 ||
   { echo "--tool=yame failed"; exit 1; }
 diff -q "$root/src/registry.h" "$d/yame.h" >/dev/null ||
@@ -19,8 +22,7 @@ diff -q "$root/src/registry.h" "$d/yame.h" >/dev/null ||
     diff "$root/src/registry.h" "$d/yame.h" | head -6; exit 1; }
 
 ## ---- 2. the methscope projection: same shape, its sources only --------------
-"$root/tools/make_registry.sh" --tool=methscope -o "$d/ms.h" >/dev/null 2>&1 ||
-  { echo "--tool=methscope failed"; exit 1; }
+wait $gen_ms || { echo "--tool=methscope failed"; exit 1; }
 head -1 "$d/ms.h" | grep -q -- '--tool=methscope' ||
   { echo "the header does not carry its own regenerate line"; head -1 "$d/ms.h"; exit 1; }
 for want in '"methscope", "hg38/data"' '"methscope", "hg38/models"' '"methscope", "mm10/models"'; do

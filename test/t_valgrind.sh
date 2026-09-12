@@ -35,13 +35,15 @@ awk 'BEGIN { for (i = 0; i < 64; i++) print (i % 4 == 0) ? 1 : 0 }' | "$YAME" pa
 ## to die anyway, and failing on those would bury the class that actually
 ## corrupts data. The CI sanitizer leg runs with detect_leaks=0 for the same
 ## reason.
+## Each launch pays ~0.6 s of valgrind start-up and almost nothing for the
+## work, so they run concurrently and the file takes the longest one rather
+## than the sum. Each writes its own report; failures are collected at the end.
+i=0
 run() {
-  valgrind -q --error-exitcode=9 --leak-check=no \
-           "$YAME" "$@" >/dev/null 2>vg.txt || {
-    echo "valgrind flagged: yame $*"
-    head -20 vg.txt
-    exit 1
-  }
+  i=$((i + 1))
+  ( valgrind -q --error-exitcode=9 --leak-check=no \
+             "$YAME" "$@" >/dev/null 2>"vg.$i.txt" || {
+      { echo "valgrind flagged: yame $*"; head -20 "vg.$i.txt"; } > "vg.$i.fail"; } ) &
 }
 run info two.cg
 run unpack -a -f 1 two.cg
@@ -59,3 +61,5 @@ run pairwise a.cg b.cg
 run pairwise -S a.cg b.cg
 run pairwise -S -1 a two.cg two.cg
 run hprint -c -g a.cg
+wait
+if ls vg.*.fail >/dev/null 2>&1; then cat vg.*.fail; exit 1; fi

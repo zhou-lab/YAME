@@ -19,10 +19,18 @@ fi
 ## the slowest test rather than the sum. Output is captured per test and
 ## printed in name order once all are done, so the report reads the same as
 ## a serial run. JOBS=1 gives the serial run back.
-JOBS=${JOBS:-4}
+## Default JOBS to the cores, capped at 8 -- the pty and valgrind tests are
+## each several processes already. Start the known slow scripts first, or in
+## alphabetical order the three longest begin after the fast ones finish and
+## set the wall time by themselves.
+ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+JOBS=${JOBS:-$(( ncpu < 8 ? ncpu : 8 ))}
 logs=$(mktemp -d); trap 'rm -rf "$logs"' EXIT
 running=0
-for t in "$here"/t_*.sh; do
+slow="t_valgrind t_ui t_registry_gen t_format_matrix t_corrupt t_fetch"
+ordered=$(for n in $slow; do [ -f "$here/$n.sh" ] && echo "$here/$n.sh"; done
+          for t in "$here"/t_*.sh; do case " $slow " in *" $(basename "$t" .sh) "*) ;; *) echo "$t";; esac; done)
+for t in $ordered; do
   name=$(basename "$t" .sh)
   ( if bash "$t" > "$logs/$name.out" 2>&1; then : > "$logs/$name.ok"; fi ) &
   running=$((running + 1))

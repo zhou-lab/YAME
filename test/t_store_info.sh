@@ -8,6 +8,12 @@
 ## populated YAME_DATA_HOME, and the fixtures it wants are 100 KB and 27.7 MB.
 set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
+## Opt in: this is the one test that fetches, and on a box with the shared
+## store it added 8 s of downloads to every `make test`. The release SOP sets
+## YAME_TEST_LAYER5=1 for the tag; day to day the suite stays self-contained.
+if [ -z "${YAME_TEST_LAYER5:-}" ]; then
+  echo "skip: layer 5 runs with YAME_TEST_LAYER5=1 (release checks)"; exit 0
+fi
 if [ -z "${YAME_DATA_HOME:-}" ]; then
   echo "skip: YAME_DATA_HOME unset (layer 5 needs the shared store)"; exit 0
 fi
