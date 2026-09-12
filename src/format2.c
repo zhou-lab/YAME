@@ -143,7 +143,10 @@ uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
   f2_aux_t *aux = (f2_aux_t*) c->aux;
   uint8_t *d = aux->data + c->unit*i;
   uint64_t value = 0;
-  for (uint8_t j=0; j<c->unit; ++j) value |= (d[j] << (8*j));
+  /* Widen BEFORE shifting. d[j] promotes to int, so at j == 4 this shifted a
+   * 32-bit value by 32 (undefined) and at j == 3 into the sign bit (also
+   * undefined); the function promises a uint64_t and only got one by luck. */
+  for (uint8_t j=0; j<c->unit; ++j) value |= ((uint64_t) d[j] << (8*j));
   return value;
 }
 

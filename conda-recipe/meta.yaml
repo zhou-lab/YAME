@@ -48,6 +48,9 @@ test:
   # rebuild, and belongs in CI rather than in a package test.
   source_files:
     - test/
+    # t_fetch serves a loopback mirror built from ONE cached manifest, so the
+    # compiled anchor matches; without this it finds no manifest and fails.
+    - tools/registry/sums/InfiniumAnnotation/
   requires:
     - python                     # the pty and mirror harnesses in t_ui / t_fetch
   commands:

@@ -187,7 +187,7 @@ void fmt4_compress(cdata_t *c) {
     if (!(s0[i] & (1ul<<31)) || l+2 >= (1ul<<31)) {
       if (l > 0) {
         if (n+2>m) { m<<=1; s = wzrealloc(s, m*sizeof(uint32_t));}
-        s[n++] = ((1<<31) | l);
+        s[n++] = ((1u<<31) | l);   /* 1<<31 overflows int: UB, and UBSan says so */
         l = 0;
       }
 
