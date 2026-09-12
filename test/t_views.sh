@@ -75,6 +75,28 @@ if "$YAME" summary -V meth -m m.cg mu.cg >/dev/null 2>merr.txt; then
   echo "-V meth accepted a format-3 query"; exit 1
 fi
 
+## ---- 3b. a binary query under a binary mask, at a row count that divides by 8
+## The masked overlap copied (n>>3)+1 bytes from a buffer holding (n+7)>>3,
+## which are equal except when n divides by 8, and then the copy reads one
+## byte past both the query and the mask. Every earlier fixture had a row
+## count that did not divide. 32 rows here, and the count is recomputed.
+awk 'BEGIN { for (i = 0; i < 32; i++) print (i % 3 == 0) ? 1 : 0 }' > q0.txt
+awk 'BEGIN { for (i = 0; i < 32; i++) print (i < 16) ? 1 : 0 }' > m0.txt
+"$YAME" pack -f b q0.txt > q0.cg
+"$YAME" pack -f b m0.txt > m0.cg
+"$YAME" summary -m m0.cg q0.cg > s00.txt 2>/dev/null || { echo "summary of fmt0 under a fmt0 mask at n=32 failed"; exit 1; }
+read -r nu nq nm no <<<"$(tail -1 s00.txt | cut -f5-8 | tr '\t' ' ')"
+paste q0.txt m0.txt | awk -F'\t' '{ if ($1) q++; if ($2) m++; if ($1 && $2) o++ } END { print NR, q, m, o }' > s00.want
+read -r wu wq wm wo < s00.want
+[ "$nu $nq $nm $no" = "$wu $wq $wm $wo" ] ||
+  { echo "fmt0-under-fmt0 counts are $nu $nq $nm $no, want $wu $wq $wm $wo"; exit 1; }
+for rows8 in 8 16 64; do                 # not `n`: the script's row count
+  awk -v n=$rows8 'BEGIN { for (i = 0; i < n; i++) print (i % 2) }' | "$YAME" pack -f b - > qn.cg
+  awk -v n=$rows8 'BEGIN { for (i = 0; i < n; i++) print 1 }' | "$YAME" pack -f b - > mn.cg
+  [ "$("$YAME" summary -m mn.cg qn.cg 2>/dev/null | tail -1 | cut -f8)" -eq $((rows8 / 2)) ] ||
+    { echo "fmt0 overlap at n=$rows8 is wrong"; exit 1; }
+done
+
 ## ---- 4. no mask at all: the universe plays the mask role ------------------
 "$YAME" summary q.cg > nomask.txt 2>/dev/null
 grep -q 'global' nomask.txt || { echo "a maskless summary does not report Mask as global"; head -2 nomask.txt; exit 1; }

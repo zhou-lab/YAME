@@ -215,10 +215,17 @@ stats_t* summarize1_queryfmt0(
     st[0].n_u = c->n;
     st[0].n_q = bit_count(c[0]);
     st[0].n_m = bit_count(c_mask[0]);
+    /* A decompressed format-0 record holds (n+7)>>3 bytes -- cdata_nbytes()
+     * says so and fmt0_decompress() allocates exactly that. (n>>3)+1 is the
+     * same number except when n divides by 8, and then it is one byte MORE:
+     * a read past the end of both the query and the mask. ASan caught it on
+     * a 32-row fixture; every fixture before that had a row count that did
+     * not divide, and the review's dsample fix was the same arithmetic. */
+    uint64_t nb = (c->n + 7) >> 3;
     cdata_t tmp = {0};
-    tmp.s = wzmalloc((c->n>>3)+1); tmp.n = c->n;
-    memcpy(tmp.s, c->s, (c->n>>3)+1);
-    for (uint64_t i=0; i<(tmp.n>>3)+1; ++i) tmp.s[i] &= c_mask->s[i];
+    tmp.s = wzmalloc(nb); tmp.n = c->n;
+    memcpy(tmp.s, c->s, nb);
+    for (uint64_t i=0; i<nb; ++i) tmp.s[i] &= c_mask->s[i];
     st[0].n_o = bit_count(tmp);
     free(tmp.s);
     st[0].sm = wzstrdup(sm);
