@@ -162,10 +162,35 @@ if [ "$refresh" = 1 ]; then
 
   msm_tag=$(tag_of methscope_models); msm_base=$(base_of methscope_models)
   echo "refreshing methscope_models @ $msm_tag" >&2
-  rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t; do
-    d=$sums_dir/methscope_models/$msm_tag; mkdir -p "$d"
-    curl -sfL -o "$d/SHA256SUMS" "$msm_base/$msm_tag/SHA256SUMS"
+  ## One manifest at the repo root serves every row, so fetch it ONCE rather
+  ## than per row, and fail loudly. This used to be a bare curl inside the row
+  ## loop with no status check: HuggingFace answered 429 during the v10 bump,
+  ## the line above still said "refreshing", and the failure only surfaced
+  ## later as "No such file or directory" from the emit step.
+  msm_d=$sums_dir/methscope_models/$msm_tag
+  mkdir -p "$msm_d"
+  msm_url="$msm_base/$msm_tag/SHA256SUMS"
+  msm_ok=0
+  for try in 1 2 3; do
+    code=$(curl -sL -o "$msm_d/SHA256SUMS.part" -w '%{http_code}' "$msm_url" || echo 000)
+    if [ "$code" = 200 ]; then
+      mv "$msm_d/SHA256SUMS.part" "$msm_d/SHA256SUMS"; msm_ok=1; break
+    fi
+    rm -f "$msm_d/SHA256SUMS.part"
+    ## 429 and 503 are "come back later" and are worth a wait; anything else
+    ## will not improve by asking again.
+    case $code in
+      429|503) echo "  HTTP $code from $msm_url; waiting 45 s (try $try of 3)" >&2
+               sleep 45 ;;
+      *)       break ;;
+    esac
   done
+  if [ "$msm_ok" != 1 ]; then
+    echo "make_registry.sh: cannot fetch $msm_url (HTTP $code)." >&2
+    echo "  The pin in TAGS is $msm_tag. Check the tag exists, then re-run;" >&2
+    echo "  a 429 is HuggingFace rate-limiting and clears on its own." >&2
+    exit 1
+  fi
 
   ## File sizes: the GitHub contents API is the only source, so this is the one
   ## part of the catalog that cannot be rebuilt from a manifest. Every source,

@@ -122,7 +122,14 @@ for g in tree ndebug ubtrap bash32 layer5; do
   else
     fails=$((fails + 1))
     printf '  FAIL  %-8s %4s s  %s\n' "$g" "$secs" "$tail"
-    sed 's/^/          /' "$logs/$g" | tail -25
+    ## The suite prints "FAIL <name>" followed by that test's own output, and
+    ## it can be anywhere in the log -- a plain tail showed the end of a green
+    ## run and named nothing. Show those lines first, then the tail.
+    if grep -q '^FAIL ' "$logs/$g"; then
+      grep -A12 '^FAIL ' "$logs/$g" | sed 's/^/          /'
+    else
+      sed 's/^/          /' "$logs/$g" | tail -25
+    fi
   fi
 done
 printf '%d of 5 gates passed in %d s; one after another they would be %d s\n' \
