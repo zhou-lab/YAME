@@ -14,6 +14,10 @@ set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
 
 command -v script >/dev/null || { echo "skip: no script(1) for a pty" >&2; exit 0; }
+## script(1) exists in the conda test image but cannot get a pty there, so the
+## terminal cases have nothing to test. Prove a pty works before relying on it.
+script -qec true /dev/null >/dev/null 2>&1 ||
+  { echo "skip: script(1) cannot allocate a pty here" >&2; exit 0; }
 d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
 cd "$d"
 

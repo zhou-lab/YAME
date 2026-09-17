@@ -363,6 +363,19 @@ EOF
     emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g" "genomes/$g"
   done
   fi
+  ## The coordinate stream ALONE, for a tool that needs to read its own output
+  ## against CpG positions but has no use for a knowledgebase. It comes from
+  ## the KYCGKB manifest and keeps the store path yame gives it, <genome>/, so
+  ## the two tools share one copy of a 23-30 MB file rather than fetching it
+  ## twice into different places. Requested by methscope, 2026-09-17.
+  if wants coordinates; then
+  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+    ## No lift: the row below already stores under <genome>/, which is where
+    ## yame's lift puts this same file. Both tools land it in one place.
+    emit_file_table "coordinates_$g" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
+                    "cpg_nocontig.cr"
+  done
+  fi
   if wants methscope; then
   rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
     emit_file_table "$(slug_of methscope "$g")" methscope "$ms_tag" "$sub" "methscope/$g"
@@ -396,6 +409,11 @@ EOF
     emit_prior_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g"
   done
   fi
+  if wants coordinates; then
+  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+    emit_prior_table "coordinates_$g" KYCGKB "$kb_tag" "$g"
+  done
+  fi
   if wants methscope; then
   rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
     emit_prior_table "$(slug_of methscope "$g")" methscope "$ms_tag" "$sub"
@@ -423,6 +441,18 @@ EOF
     printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
       "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")" "$s2" "$s2" \
       "$(prior_ref "$s2" InfiniumAnnotation "$ia_tag" "$p/KYCG")"
+  done
+  fi
+
+  ## The coordinate stream on its own. Target and store_sub are <genome>, the
+  ## same spelling and the same place yame uses, so `methscope fetch
+  ## hg38/cpg_nocontig.cr` and `yame fetch hg38/cpg_nocontig.cr` are the same
+  ## command over the same file.
+  if wants coordinates; then
+  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
+    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "%s", "%s", YAME_FILES_coordinates_%s, YAME_NFILES(YAME_FILES_coordinates_%s), %s },\n' \
+      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$g" "$g" \
+      "$(prior_ref "coordinates_$g" KYCGKB "$kb_tag" "$g")"
   done
   fi
 
@@ -749,7 +779,7 @@ EOF
 render() {
   case $tool in
     yame)      emit_yame ;;
-    methscope) emit_yame methscope "methscope methscope_models" ;;
+    methscope) emit_yame methscope "methscope methscope_models coordinates" ;;
     kycg)   emit_kycg ;;
     sesame) emit_sesame ;;
     *) echo "make_registry.sh: unknown --tool=$tool (yame|kycg|sesame|methscope)" >&2

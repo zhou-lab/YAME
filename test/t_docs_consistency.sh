@@ -17,7 +17,10 @@ YAME=${YAME:?export YAME=/path/to/yame}
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 llms=$root/docs/llms.txt
-[ -f "$llms" ] || { echo "no docs/llms.txt"; exit 1; }
+## The conda test phase copies test/, tools/ and one header out of the recipe
+## source -- not docs/ -- so this has nothing to compare against there. A skip,
+## not a failure: the release tests run it against the real tree every time.
+[ -f "$llms" ] || { echo "skip: no docs/llms.txt in this tree" >&2; exit 0; }
 
 ## The banner exits 1 by convention, so capture it before reading.
 banner=$("$YAME" </dev/null 2>&1) || true

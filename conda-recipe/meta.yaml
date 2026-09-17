@@ -48,6 +48,10 @@ test:
   # rebuild, and belongs in CI rather than in a package test.
   source_files:
     - test/
+    # docs/ for t_docs_consistency, which reads llms.txt and compares it
+    # against the binary. Without it that test skipped in the package test and
+    # the check ran nowhere but a developer's tree.
+    - docs/
     # t_fetch serves a loopback mirror built from cached manifests, so the
     # compiled anchors match, and stages a store one tag behind from the
     # previous methscope_models manifest; t_registry_gen regenerates from the
