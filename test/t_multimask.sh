@@ -37,6 +37,13 @@ ${CC:-cc} -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe_multi "$here/probe_multi
   $("$cfg" --libs) 2>cc.err || { echo "probe_multi did not build"; cat cc.err; exit 1; }
 ./probe_multi || { echo "the kernel disagrees with summarize1"; exit 1; }
 
+## The ENUMERATOR path separately. It shares the arithmetic with the record path
+## but not the route in, and it is the one that must survive a bank's slot count
+## without allocating per slot: 40 masks x 8 states is 320 accumulators here.
+${CC:-cc} -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe_runs "$here/probe_runs.c" \
+  $("$cfg" --libs) 2>cc2.err || { echo "probe_runs did not build"; cat cc2.err; exit 1; }
+./probe_runs || { echo "the enumerator path disagrees with the record path"; exit 1; }
+
 ## ---- and through the CLI, where the numbers must not move -----------------
 ## A mask of several records against one query: the printed table has to be the
 ## same whether the kernel ran or the per-mask path did.

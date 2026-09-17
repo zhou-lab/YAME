@@ -266,40 +266,80 @@ int yame_summarize_multi_cx(const cdata_t *query, cdata_t *masks, uint32_t n_mas
 
 /* --------------------------------------------------------- enumerator form -- */
 
-/* Runs land in a per-slot bitmap, then the same word-wise accumulation runs
- * over it. A long run sets whole words at once, which is why a caller with runs
- * pays less here than one with records: there is nothing to scan. */
+/*
+ * Runs are consumed WHERE THEY ARRIVE. Nothing per-slot is allocated.
+ *
+ * The first version of this turned each slot's runs into a bitmap and reused
+ * the word-wise code above. That is right for a handful of binary masks and
+ * catastrophic for the case it was actually built for: a bitmap is n/8 bytes,
+ * 3.7 MB on a whole-genome row space, and an MRMP bank is mostly STATE masks --
+ * 178 sets with even five states apiece is 890 slots, so 3.3 GB of bitmaps
+ * before a single count. Twenty states would be 13 GB.
+ *
+ * So each run is scored as it is emitted. The claimed count is its length. The
+ * overlap is a popcount of the query's covered bits inside its range. The sums
+ * read values only at those bits. Nothing scales with the slot count except the
+ * accumulators, which are 56 bytes each.
+ *
+ * A consequence worth knowing: a row claimed by several slots has its value read
+ * once per slot. For a bank where sets barely overlap that is the minimum work
+ * anyway, and caching it would cost more than it saves.
+ */
 typedef struct {
-  uint64_t **bm;            /* one bitmap per slot, allocated on first use */
-  uint64_t   n_words, n;
-  uint32_t   n_masks, n_acc;
+  const yame_qbits_t *qb;
+  yame_acc_t *acc;
+  uint32_t    n_masks, n_acc;
   const uint32_t *state_base;
-  int        bad;
-} build_t;
+  int         is_q3;
+  int         bad;
+} scat_t;
 
-static void build_emit(void *ctx, uint32_t mask,
-                       uint64_t start, uint64_t len, uint32_t state) {
-  build_t *b = ctx;
-  if (!len || mask >= b->n_masks) { if (mask >= b->n_masks) b->bad = 1; return; }
-  uint32_t slot = b->state_base ? b->state_base[mask] + state : mask;
-  if (slot >= b->n_acc) { b->bad = 1; return; }
+/* Covered bits of [lo, hi) as a word and its in-range mask, for one word. */
+static inline uint64_t range_word(const yame_qbits_t *qb, uint64_t w,
+                                  uint64_t lo, uint64_t hi) {
+  uint64_t base = w * WBITS;
+  uint64_t keep = ~(uint64_t) 0;
+  if (lo > base) keep &= ~(uint64_t) 0 << (lo - base);
+  if (hi < base + WBITS) {
+    uint64_t take = hi - base;
+    keep &= (take >= WBITS) ? ~(uint64_t) 0 : (((uint64_t) 1 << take) - 1);
+  }
+  return qb->cov[w] & keep;
+}
 
-  if (start >= b->n) return;                     /* past the query: clipped */
+static void scat_emit(void *ctx, uint32_t mask,
+                      uint64_t start, uint64_t len, uint32_t state) {
+  scat_t *k = ctx;
+  if (!len) return;
+  if (mask >= k->n_masks) { k->bad = 1; return; }
+  uint32_t slot = k->state_base ? k->state_base[mask] + state : mask;
+  if (slot >= k->n_acc) { k->bad = 1; return; }
+
+  uint64_t n = k->qb->q->n;
+  if (start >= n) return;                        /* past the query: clipped */
   uint64_t end = start + len;
-  if (end > b->n) end = b->n;
+  if (end > n) end = n;
 
-  if (!b->bm[slot]) b->bm[slot] = wzcalloc(b->n_words, sizeof(uint64_t));
-  uint64_t *m = b->bm[slot];
+  yame_acc_t *a = &k->acc[slot];
+  a->n_m += end - start;
 
-  /* Whole words in the middle, partial words at the two ends. */
-  uint64_t i = start;
-  while (i < end) {
-    uint64_t w = i / WBITS, off = i % WBITS;
-    uint64_t room = WBITS - off, take = end - i < room ? end - i : room;
-    uint64_t bits = (take == WBITS) ? ~(uint64_t) 0
-                                    : (((uint64_t) 1 << take) - 1) << off;
-    m[w] |= bits;
-    i += take;
+  uint64_t w0 = start / WBITS, w1 = (end - 1) / WBITS;
+  for (uint64_t w = w0; w <= w1; ++w) {
+    uint64_t ov = range_word(k->qb, w, start, end);
+    if (!ov) continue;
+    a->n_o += (uint64_t) pc64(ov);
+    if (!k->is_q3) continue;                     /* fmt6: counts are the answer */
+    uint64_t base = w * WBITS;
+    /* Increasing row order within the run, and runs of one slot arrive in
+     * increasing order from any sane enumerator, so the sum matches the
+     * per-mask path. */
+    while (ov) {
+      int b = ctz64(ov);
+      uint64_t mu = f3_get_mu((cdata_t *) k->qb->q, base + (uint64_t) b);
+      a->sum_depth += MU2cov(mu);
+      a->sum_beta  += MU2beta(mu);
+      ov &= ov - 1;
+    }
   }
 }
 
@@ -313,32 +353,28 @@ int yame_summarize_multi(const cdata_t *query,
   yame_qbits_t qb;
   if (yame_qbits_build(query, &qb) != 0) return -1;
 
-  build_t b;
-  memset(&b, 0, sizeof b);
-  b.n_words = qb.n_words; b.n = query->n;
-  b.n_masks = n_masks; b.n_acc = n_acc; b.state_base = state_base;
-  b.bm = wzcalloc(n_acc, sizeof(uint64_t *));
+  /* A format 6 query needs its SET bits too, and a run says nothing about them,
+   * so the enumerator form is format 3 only. A caller with a format 6 query and
+   * records uses yame_summarize_one_cx(). */
+  if (query->fmt != '3') { yame_qbits_free(&qb); return -1; }
 
-  int rc = runs(runs_ctx, build_emit, &b);
-  if (rc != 0 || b.bad) {
-    for (uint32_t s = 0; s < n_acc; ++s) free(b.bm[s]);
-    free(b.bm); yame_qbits_free(&qb);
-    return -1;
-  }
+  memset(acc, 0, (size_t) n_acc * sizeof(yame_acc_t));
 
-  /* The same per-mask code as `summary -m` runs here, over the bitmap the runs
-   * built: one definition of the arithmetic, not two. */
+  scat_t k;
+  memset(&k, 0, sizeof k);
+  k.qb = &qb; k.acc = acc;
+  k.n_masks = n_masks; k.n_acc = n_acc; k.state_base = state_base;
+  k.is_q3 = 1;
+
+  int rc = runs(runs_ctx, scat_emit, &k);
+  if (rc != 0 || k.bad) { yame_qbits_free(&qb); return -1; }
+
   for (uint32_t s = 0; s < n_acc; ++s) {
-    if (!b.bm[s]) continue;
-    mview_t mv; mv.bm = b.bm[s]; mv.cx = NULL; mv.nb = 0; mv.is6 = 0;
-    if (one_view(&qb, &mv, &acc[s]) != 0) {
-      for (uint32_t t = s; t < n_acc; ++t) free(b.bm[t]);
-      free(b.bm); yame_qbits_free(&qb);
-      return -1;
-    }
-    free(b.bm[s]);
+    acc[s].n_u = query->n;
+    acc[s].n_q = qb.n_q;
+    acc[s].beta = acc[s].sum_beta / acc[s].n_o;   /* Inf at zero overlap */
   }
-  free(b.bm);
+
   if (n_q_out) *n_q_out = qb.n_q;
   yame_qbits_free(&qb);
   return 0;
