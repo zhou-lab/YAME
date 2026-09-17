@@ -65,6 +65,11 @@ static int usage(void) {
                  "terminal, and NO_COLOR or TERM=dumb turns it off too, so a "
                  "redirect or a pipe is plain text already.");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
+  yame_usage_opt("-s <file>", "Record names for the input, one per line, in order,");
+  yame_usage_cont("the same file `index -s` takes. Names live in the .idx");
+  yame_usage_cont("sidecar, which a PIPE does not carry, so this is how a");
+  yame_usage_cont("streamed view gets labels. A count that disagrees with the");
+  yame_usage_cont("records is an error.");
   yame_usage_opt("-R <ref.cr|name>", "Reference coordinates (format 7).");
   yame_usage_cont("OPTIONAL with -r -- inferred from the row count.");
   yame_usage_cont("A name works too: -R hg38 finds it in the store.");
@@ -565,6 +570,75 @@ static char *infer_ref(uint64_t rows) {
   return NULL;
 }
 
+
+/*
+ * The input, opened ONCE, with its first record kept.
+ *
+ * Every view here asked the file two questions: how many rows does the first
+ * record have (to pick a reference, or to check one), and then what do all the
+ * records contain. It answered them with two separate open_cfile() calls. A
+ * regular file can be opened twice. A PIPE cannot: the first open drained it,
+ * the second printed "Error opening file -", and the view rendered its ruler
+ * over no data at all. `cat a.cg b.cg | yame hprint -r chr1:... -` produced a
+ * header and nothing else, which is how a docs page came to carry hand-written
+ * labels over output that never had any.
+ *
+ * So the first record is read once and handed back to the print loop.
+ */
+
+/*
+ * Record names for the view.
+ *
+ * They live in the .cx.idx sidecar, so a PIPE has none and every labelled view
+ * fell back to blank labels without a word. -s supplies them directly, in the
+ * order the records arrive, taking the same file `index -s` takes. Asked for
+ * by the methscope side after a docs page carried hand-written labels over
+ * output that never had any, one of them wrong.
+ */
+static snames_t hp_names(const char *fname, const char *fname_snames, int quiet) {
+  if (fname_snames) return loadSampleNames((char *)fname_snames, 1);
+  snames_t sn = loadSampleNamesFromIndex((char *)fname);
+  if (!sn.n && !quiet && strcmp(fname, "-") == 0)
+    fprintf(stderr, "[hprint] no index on a stream, so rows are unlabelled; "
+                    "-s names.txt supplies the names.\n");
+  return sn;
+}
+
+/* The names must describe the records that actually arrived. */
+static int hp_names_ok(const snames_t *sn, const char *fname_snames, int n_rec) {
+  if (!fname_snames) return 1;
+  if (sn->n == n_rec) return 1;
+  fprintf(stderr, "[hprint] -s gave %d name%s but the input holds %d record%s.\n",
+          sn->n, sn->n == 1 ? "" : "s", n_rec, n_rec == 1 ? "" : "s");
+  return 0;
+}
+
+typedef struct {
+  cfile_t cf;
+  cdata_t first;
+  int     used;               /* has `first` been handed to the caller yet? */
+} hp_input_t;
+
+static hp_input_t hp_open(const char *fname) {
+  hp_input_t in;
+  in.cf = open_cfile((char *)fname);
+  in.first = read_cdata1(&in.cf);
+  in.used = 0;
+  return in;
+}
+
+/* The first call returns the record already read; later calls read on. The
+ * caller frees what it gets, exactly as it did with read_cdata1. */
+static cdata_t hp_next(hp_input_t *in) {
+  if (!in->used) { in->used = 1; return in->first; }
+  return read_cdata1(&in->cf);
+}
+
+static void hp_close(hp_input_t *in) {
+  if (!in->used) free_cdata(&in->first);
+  bgzf_close(in->cf.fh);
+}
+
 int main_hprint(int argc, char *argv[]) {
   int c;
   /* Colour follows the OUTPUT, not a fixed default. Piped or redirected there
@@ -576,12 +650,13 @@ int main_hprint(int argc, char *argv[]) {
            && !getenv("NO_COLOR")
            && !(term_env && strcmp(term_env, "dumb") == 0);
   int label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
-  char *fname_cr = NULL, *region = NULL;
+  char *fname_cr = NULL, *region = NULL, *fname_snames = NULL;
 
-  while ((c = getopt(argc, argv, "cgR:r:l:t:w:h")) >= 0) {
+  while ((c = getopt(argc, argv, "cgR:r:s:l:t:w:h")) >= 0) {
     switch (c) {
     case 'c': color      = 0;              break;
     case 'g': granular   = 1;              break;
+    case 's': fname_snames = wzstrdup(optarg); break;
     case 'R': fname_cr   = wzstrdup(optarg); break;
     case 'r': region     = wzstrdup(optarg); break;
     case 'l': label_w    = atoi(optarg);   break;
@@ -601,14 +676,8 @@ int main_hprint(int argc, char *argv[]) {
     /* One read of the first record answers both questions asked below: which
      * reference this file belongs to, and whether it agrees with the one we
      * end up using. */
-    uint64_t data_n;
-    {
-      cfile_t cf_check = open_cfile(fname);
-      cdata_t c_check = read_cdata1(&cf_check);
-      data_n = cdata_n(&c_check);
-      free_cdata(&c_check);
-      bgzf_close(cf_check.fh);
-    }
+    hp_input_t in = hp_open(fname);
+    uint64_t data_n = cdata_n(&in.first);
 
     /* A region needs coordinates. The file says which ones by its row count,
      * so -R is a thing to supply only when that inference cannot be made --
@@ -673,15 +742,14 @@ int main_hprint(int argc, char *argv[]) {
     get_win_pos(&cr, chrm, beg1, end1, win_size, n_cols, win_pos);
     free_cdata(&cr);
 
-    snames_t snames = loadSampleNamesFromIndex(fname);
+    snames_t snames = hp_names(fname, fname_snames, 0);
 
     print_ruler(chrm, win_pos, n_cols, n_pos, win_size, last_cpg, label_w, tick_every);
     free(win_pos);
 
-    cfile_t cf = open_cfile((char *)fname);
     int si = 0;
     for (;;) {
-      cdata_t cin = read_cdata1(&cf);
+      cdata_t cin = hp_next(&in);
       if (cin.n == 0) { free_cdata(&cin); break; }
 
       const char *label = (si < snames.n) ? snames.s[si] : "";
@@ -706,16 +774,21 @@ int main_hprint(int argc, char *argv[]) {
       si++;
     }
 
-    bgzf_close(cf.fh);
+    hp_close(&in);
+    int nm_ok = hp_names_ok(&snames, fname_snames, si);
     cleanSampleNames2(snames);
-    free(chrm); free(fname_cr); free(region);
-    return 0;
+    free(chrm); free(fname_cr); free(region); free(fname_snames);
+    return nm_ok ? 0 : 1;
   }
 
   /* ---- whole-genome mode: -R without -r ---- */
+  /* Opened here, before anything asks the file a question, for the same reason
+   * the region branch does it: a pipe can be read once. */
+  hp_input_t gin = hp_open(fname);
+  uint64_t gdata_n = cdata_n(&gin.first);
+
   if (fname_cr && !yame_assets_is_file(fname_cr)) {
-    /* Only pay for the row count when a name actually needs resolving. */
-    uint64_t rows = yame_ref_file_rows(fname);
+    uint64_t rows = gdata_n;
     char resolved[4096];
     const char *rname = NULL, *rfetch = NULL;
     int st = yame_ref_resolve(fname_cr, rows, NULL, NULL, resolved,
@@ -746,11 +819,7 @@ int main_hprint(int argc, char *argv[]) {
 
     /* preflight dimension check */
     {
-      cfile_t  cf_check = open_cfile(fname);
-      cdata_t  c_check  = read_cdata1(&cf_check);
-      uint64_t data_n   = cdata_n(&c_check);
-      free_cdata(&c_check);
-      bgzf_close(cf_check.fh);
+      uint64_t data_n = gdata_n;
       if (data_n != cr_n)
         wzfatal("[hprint] Dimension mismatch: reference has %"PRIu64" CpGs "
                 "but data in %s has %"PRIu64". "
@@ -769,13 +838,12 @@ int main_hprint(int argc, char *argv[]) {
       total_cols  += ch[i].n_cols;
     }
 
-    snames_t snames = loadSampleNamesFromIndex(fname);
+    snames_t snames = hp_names(fname, fname_snames, 0);
     print_genome_ruler(ch, n_chroms, total_cols, label_w);
 
-    cfile_t cf = open_cfile((char *)fname);
     int si = 0;
     for (;;) {
-      cdata_t cin = read_cdata1(&cf);
+      cdata_t cin = hp_next(&gin);
       if (cin.n == 0) { free_cdata(&cin); break; }
 
       const char *label = (si < snames.n) ? snames.s[si] : "";
@@ -802,12 +870,13 @@ int main_hprint(int argc, char *argv[]) {
     }
 
 
-    bgzf_close(cf.fh);
+    hp_close(&gin);
+    int nm_ok = hp_names_ok(&snames, fname_snames, si);
     cleanSampleNames2(snames);
     for (int i = 0; i < n_chroms; i++) free(ch[i].chrm);
     free(ch);
-    free(fname_cr);
-    return 0;
+    free(fname_cr); free(fname_snames);
+    return nm_ok ? 0 : 1;
   }
 
   /* ---- full-dataset mode: one glyph per row, one line per sample ----
@@ -820,15 +889,30 @@ int main_hprint(int argc, char *argv[]) {
    *
    * fmt6 keeps its own 1/0/2 alphabet rather than the block characters the
    * region form draws: this output is old enough to be parsed elsewhere. */
-  cfile_t cf = open_cfile((char *)fname);
+  /* A label column ONLY when -s asked for one. The plain dump is parsed
+   * elsewhere by byte offset -- a docs page windows it with `cut -c1621-1680`
+   * -- so labelling it by default would move every row. With -s the caller has
+   * said they want the column. */
+  snames_t dnames = {0};
+  if (fname_snames) dnames = loadSampleNames(fname_snames, 1);
+  int dsi = 0;
+
   for (;;) {
-    cdata_t c2 = read_cdata1(&cf);
+    cdata_t c2 = hp_next(&gin);
     if (c2.n == 0) { free_cdata(&c2); break; }
+
+    int dunder = 0;
+    if (fname_snames) {
+      const char *label = (dsi < dnames.n) ? dnames.s[dsi] : "";
+      dunder = print_sample_label(label, label_w, color);
+    }
+    dsi++;
 
     /* fmt3 is walked compressed, as in the region form -- inflating it costs
      * a copy of the whole record for a single forward pass. */
     if (c2.fmt == '3') {
       stream_fmt3_full(&c2, color, granular);
+      if (dunder) fputs(ANSI_UNULINE, stdout);
       fputc('\n', stdout);
       free_cdata(&c2);
       continue;
@@ -857,15 +941,20 @@ int main_hprint(int argc, char *argv[]) {
       fprintf(stderr, "[hprint] format '%c' has no full-dataset view "
               "(formats 0, 3, 4 and 6 do).\n", c2.fmt);
       free_cdata(&c2);
-      bgzf_close(cf.fh);
+      hp_close(&gin);
       return 1;
     }
 
+    if (dunder) fputs(ANSI_UNULINE, stdout);
     fputc('\n', stdout);
     free_cdata(&c2);
   }
 
-  bgzf_close(cf.fh);
+  hp_close(&gin);
+  if (!hp_names_ok(&dnames, fname_snames, dsi)) {
+    cleanSampleNames2(dnames); free(fname_snames); return 1;
+  }
+  cleanSampleNames2(dnames); free(fname_snames);
   if (fname_cr) free(fname_cr);
   if (region)   free(region);
   return 0;

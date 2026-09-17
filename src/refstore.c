@@ -150,6 +150,8 @@ uint64_t yame_ref_file_rows(const char *path) {
   return rows;
 }
 
+static const yame_ref_rows_t *rowspace_by_name(const char *name);
+
 int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override,
                      const char *want_kind, char *path, size_t n,
                      const char **name, const char **fetch) {
@@ -167,6 +169,16 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override
   const yame_ref_rows_t *e = NULL;
   for (size_t i = 0; i < YAME_REF_ROWS_N; ++i)
     if (YAME_REF_ROWS[i].rows == rows) { e = &YAME_REF_ROWS[i]; break; }
+
+  /* rows == 0 means the count is NOT KNOWN, which is what a stream gives: the
+   * row count cannot be had from a pipe without consuming it, and
+   * yame_ref_file_rows() returns 0 for anything that is not a regular file.
+   * Then the NAME alone picks the row space and the dimension check happens
+   * when the first record arrives. Without this, `-R hg38` on a pipe failed
+   * with "0 rows matches no row space this build knows" in hprint, rowsub,
+   * summary and unpack alike -- the reason a docs page had to write its input
+   * to a file before it could draw a labelled view of it. */
+  if (!e && rows == 0) e = rowspace_by_name(spec);
   if (!e) return YAME_REF_UNKNOWN;
   if (name) *name = e->name;
   if (fetch) *fetch = e->fetch;

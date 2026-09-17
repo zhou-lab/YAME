@@ -156,7 +156,12 @@ Inspect and index
   split [-s list] [-v] <in.cx> <out_prefix>
         One file per record. Same raw copy as subset when the input is indexed
         and its records are block-aligned; -v says which path ran.
-  hprint [-r reg | -R ref] [-c] [-g] [-l W] [-t N] [-w N] <in.cx>
+  hprint [-r reg | -R ref] [-c] [-g] [-s names] [-l W] [-t N] [-w N] <in.cx>
+        -s <file> names the records, one per line, in order, taking the same
+        file `index -s` takes. Names live in the .idx sidecar, which a PIPE
+        does not carry, so this is how a streamed view gets labels; a count
+        that disagrees with the records is an error. Without -s the plain dump
+        has NO label column, so its byte offsets are unchanged.
         -c never colour. Colour is on only when stdout is a TERMINAL, and
         NO_COLOR or TERM=dumb turns it off as well, so redirecting or piping
         gives plain text without asking.
