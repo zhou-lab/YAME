@@ -371,8 +371,11 @@ EPIC          866,553   HM27           27,722</pre>
   as TSV instead, so a script never blocks on a keystroke. A folder is
   confirmed before it transfers &mdash; off a terminal that means
   <code class="inl">-y</code>, since a short name can reach a lot &mdash; but
-  <b>a name that picks out one file is its own confirmation</b>, so every
-  fetch line on this page runs in a script as it stands. Naming a target,
+  <b>a name that picks out one file is its own confirmation</b>. A
+  <i>filtered</i> directory is still a directory, though, even when the filter
+  leaves exactly one file, so the two <code class="inl">-g</code> lines below
+  carry <code class="inl">-y</code>; with those, every fetch line on this page
+  runs in a script as it stands. Naming a target,
   filtering it, dry runs and the rest:
   <code class="inl">yame fetch -h</code>.</p>
 </section>
@@ -449,12 +452,22 @@ human_hg38_test.truth.cg          1                                29401795     
   <h2>Compare &amp; summarize <span class="m">— the analysis command</span></h2>
   <p>With no mask, <code class='inl'>summary</code> describes the file. With one it gives the overlap table — universe, query, mask, overlap, log2 odds ratio, beta, depth. <b>The mask is named, not spelled out</b>: the query's row count says which row space to resolve it in.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
-yame <span class="sub">fetch</span> hg38/KYCG -g CGI   <span class="cm"># the mask, into the store</span>
+yame <span class="sub">fetch</span> -y hg38/KYCG -g CGI   <span class="cm"># the mask, into the store</span>
 yame <span class="sub">summary</span> -m CGI human_hg38_test.cg</code></pre>
   <pre class="res"><code>QFile               Query  MFile            Mask     N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
 human_hg38_test.cg      1  CGI.20220904.cm  OpenSea   29000    23857   23534      21149           3.17  0.899     NA
 human_hg38_test.cg      1  CGI.20220904.cm  Shelf     29000    23857    1224       1076           0.67  0.879     NA
-human_hg38_test.cg      1  CGI.20220904.cm  Shore     29000    23857    2074       1263          -1.74  0.609     NA</code></pre>
+human_hg38_test.cg      1  CGI.20220904.cm  Shore     29000    23857    2074       1263          -1.74  0.609     NA
+human_hg38_test.cg      1  CGI.20220904.cm  Island    29000    23857    2168        369          -5.10  0.170     NA</code></pre>
+  <p>Read the last row first: CpG islands are depleted in this methylome (log2 odds &minus;5.10) and what little overlaps is unmethylated (beta 0.170), against 0.899 in the open sea. That contrast is the whole point of the table, and it is one <code class='inl'>-m</code> away.</p>
+  <p><b>Two spellings, two namespaces.</b> <code class='inl'>fetch</code> takes
+  the BROWSER path, <code class='inl'>hg38/KYCG/CGI</code>, because that is
+  where the file goes in the store. <code class='inl'>-m</code> takes the BARE
+  name, <code class='inl'>CGI</code>, and resolves it inside the query's own row
+  space. The two are not interchangeable: <code class='inl'>-m
+  hg38/KYCG/CGI</code> fails, because the slashes make it look for a file of
+  that literal name. The block above uses both, one line apart, and that is the
+  asymmetry most likely to cost you an afternoon.</p>
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_immune_mixture.cg
 yame <span class="sub">fetch</span> -c hg38/data/human_hg38_40_celltypes_chr20.cg
@@ -476,14 +489,16 @@ yame <span class="sub">rowop</span> -o binasum human_hg38_40_celltypes_chr20.cg 
   <h2>Perturb &amp; mask <span class="m">— for benchmarking</span></h2>
   <p>Two different jobs. <code class='inl'>mask</code> is deterministic and file-driven — it decides <i>which</i> sites are valid. <code class='inl'>dsample</code> and <code class='inl'>perturb</code> are stochastic and seed-driven — they decide <i>how much</i> signal is left.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
-yame <span class="sub">dsample</span> -N 5000 -s 42 -o ds.cg human_hg38_test.cg</code></pre>
-  <pre class="res"><code>Query  N_univ  N_query   Beta
-    0    5000     4087  0.817</code></pre>
-  <pre><code>yame <span class="sub">perturb</span> -p 0.05 -s 7 -o noisy.cg human_hg38_test.cg</code></pre>
-  <pre class="res"><code>Query  N_univ  N_query   Beta
-    1   29000    22953  0.791</code></pre>
-  <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
-  <pre><code>yame <span class="sub">fetch</span> -c hg38/KYCG -g blacklist
+yame <span class="sub">dsample</span> -N 5000 -s 42 -o ds.cg human_hg38_test.cg
+yame <span class="sub">summary</span> ds.cg          <span class="cm"># dsample itself prints nothing</span></code></pre>
+  <pre class="res"><code>QFile  Query  MFile  Mask    N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
+ds.cg      0     NA  global    5000     4087    5000       4087             NA  0.817     NA</code></pre>
+  <pre><code>yame <span class="sub">perturb</span> -p 0.05 -s 7 -o noisy.cg human_hg38_test.cg
+yame <span class="sub">summary</span> noisy.cg</code></pre>
+  <pre class="res"><code>QFile     Query  MFile  Mask    N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
+noisy.cg      1     NA  global   29000    22953   29000      22953             NA  0.791     NA</code></pre>
+  <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible, and the same seed reproduces a run only on the same build and platform &mdash; these counts come from Linux, and a macOS build of the same version draws different sites. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
+  <pre><code>yame <span class="sub">fetch</span> -y -c hg38/KYCG -g blacklist
 yame <span class="sub">mask</span> -o clean.cg human_hg38_test.cg Blacklist.20220304.cm</code></pre>
 </section>
 </div>
@@ -492,6 +507,14 @@ yame <span class="sub">mask</span> -o clean.cg human_hg38_test.cg Blacklist.2022
 <div class="panel hidden" id="panel-model" role="tabpanel" aria-labelledby="tab-model">
 <section class="ref" id="ref">
   <h2>Data model <span class="m">&mdash; row space, records, and the seven packings</span></h2>
+  <p><b>The four extensions.</b> They are all the same container and differ
+  only in what they hold, so any command reads any of them:
+  <code class='inl'>.cg</code> a methylome, one value per CpG;
+  <code class='inl'>.cm</code> a feature set or mask;
+  <code class='inl'>.cr</code> the coordinates of a row space;
+  <code class='inl'>.cx</code> the generic name, used where the content is not
+  fixed &mdash; <code class='inl'>split</code> writes it for that reason.
+  Nothing enforces them; they are a convention for readers.</p>
   <p>A YAME file is values in order and nothing else. Row <i>i</i> means whatever row <i>i</i> of the reference means, so intersecting a methylome with a feature set is a bitwise AND rather than a genomic join — fast, and indifferent to how many rows there are.</p>
   <figure class="dia">
 <pre><span class="sub">cpg_nocontig.cr</span>   the reference: every CpG in the genome, in order
@@ -662,7 +685,8 @@ record.</figcaption>
 
 <footer>
   Full usage, the trust model for fetched data, and the format reference are in
-  the <a href="https://github.com/zhou-lab/YAME/blob/main/README.md">README</a>.
+  <a href="llms.txt">llms.txt</a>; per-command options are in
+  <code class='inl'>yame &lt;command&gt; -h</code>.
   AGPL-3.0-or-later. Supported by NIH/NIGMS 5R35GM146978.
 </footer>
 </div>
