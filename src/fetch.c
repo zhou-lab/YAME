@@ -130,8 +130,8 @@ static int usage(void) {
   yame_usage_cont("was populated from a different tag.");
   yame_usage_opt("-l", "Dump the registry as TSV and exit: one row per file, with");
   yame_usage_cont("its size, digest, description and whether the store has it.");
-  yame_usage_cont("Takes the same <name> and -g a fetch does, so `-l hg38 -g");
-  yame_usage_cont("methscope` is the dry run for fetching exactly that.");
+  yame_usage_cont("Takes the same <name> and -g a fetch does, so `-l -g");
+  yame_usage_cont("methscope hg38` is the dry run for fetching exactly that.");
   yame_usage_opt("-g <a,b>", "Only files matching every term: name, source, collection,");
   yame_usage_cont("title or upstream database. `-g chromatin` inside a");
   yame_usage_cont("knowledgebase, `-g celltype` across a whole genome.");

@@ -62,7 +62,8 @@ Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
 
 A name is a scope: `hg38` takes the unit and all beneath it, `hg38/data` one
 directory, `hg38/data/test.cg` one file. Several names may be given, separated
-by spaces or commas. Options may come before or after the names. Others:
+by spaces or commas. Options are accepted before or after the names, and the
+documented form leads with the options. Others:
 `-d <dir>` store root, `-t <tag>` upstream tag override (needs `-k` to accept
 an unpinned tag), `-q` no progress.
 

@@ -452,7 +452,7 @@ human_hg38_test.truth.cg          1                                29401795     
   <h2>Compare &amp; summarize <span class="m">— the analysis command</span></h2>
   <p>With no mask, <code class='inl'>summary</code> describes the file. With one it gives the overlap table — universe, query, mask, overlap, log2 odds ratio, beta, depth. <b>The mask is named, not spelled out</b>: the query's row count says which row space to resolve it in.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_test.cg
-yame <span class="sub">fetch</span> -y hg38/KYCG -g CGI   <span class="cm"># the mask, into the store</span>
+yame <span class="sub">fetch</span> -y -g CGI hg38/KYCG   <span class="cm"># the mask, into the store</span>
 yame <span class="sub">summary</span> -m CGI human_hg38_test.cg</code></pre>
   <pre class="res"><code>QFile               Query  MFile            Mask     N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
 human_hg38_test.cg      1  CGI.20220904.cm  OpenSea   29000    23857   23534      21149           3.17  0.899     NA
@@ -498,7 +498,7 @@ yame <span class="sub">summary</span> noisy.cg</code></pre>
   <pre class="res"><code>QFile     Query  MFile  Mask    N_univ  N_query  N_mask  N_overlap  Log2OddsRatio   Beta  Depth
 noisy.cg      1     NA  global   29000    22953   29000      22953             NA  0.791     NA</code></pre>
   <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible, and the same seed reproduces a run only on the same build and platform &mdash; these counts come from Linux, and a macOS build of the same version draws different sites. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
-  <pre><code>yame <span class="sub">fetch</span> -y -c hg38/KYCG -g blacklist
+  <pre><code>yame <span class="sub">fetch</span> -y -c -g blacklist hg38/KYCG
 yame <span class="sub">mask</span> -o clean.cg human_hg38_test.cg Blacklist.20220304.cm</code></pre>
 </section>
 </div>
