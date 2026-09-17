@@ -91,10 +91,21 @@ jobs:
         run: |
           last=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
           [ -n "$last" ] || { echo "no prior tag; nothing to compare"; exit 0; }
-          ## the transitive closure of #include "..." from the two entry headers
+          ## Every header a downstream tool includes, plus everything those
+          ## pull in. cdata.h and cfile.h are the format side. assets.h is the
+          ## store side: methscope's main.c includes it directly and calls
+          ## yame_fetch_main, yame_assets_root and yame_set_default_fetch_cfg,
+          ## and the registry it generates for itself is built from three types
+          ## declared there. It was missing until v1.45, so a change to the
+          ## store contract passed this job without a word.
+          ##
+          ## src/registry.h is deliberately NOT here. No downstream includes
+          ## YAME's copy; each tool generates its own. It is data, not an
+          ## interface, and it changes on every pin bump, so gating it would
+          ## demand a commit message name each time and catch nothing.
           surface=$(python3 - <<'PY'
           import re, os
-          seen, todo = [], ["src/cdata.h", "src/cfile.h"]
+          seen, todo = [], ["src/cdata.h", "src/cfile.h", "src/assets.h"]
           while todo:
               h = todo.pop(0)
               if h in seen or not os.path.exists(h): continue
