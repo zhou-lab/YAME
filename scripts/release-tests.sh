@@ -1,8 +1,13 @@
 #!/bin/bash
-## Every local release gate, unattended, lanes at once. Step 3 of the release
-## SOP in one command.
+## The release tests: the suite run every way a release needs, unattended and
+## all at once. Step 3 of the release SOP in one command.
 ##
-## Five gates, in three build lanes plus two that reuse the in-tree binary:
+## Four of the five lanes run the SAME suite (test/run.sh). They differ only in
+## how the binary was built, or which shell runs them. The first lane adds the
+## one check that is not a test: the coverage number in the badge against the
+## number the suite actually measures.
+##
+## Three build lanes, plus two that reuse the in-tree binary:
 ##
 ##   tree     the in-tree build: suite, then the coverage badge check
 ##   ndebug   -O3 -DNDEBUG, which is what conda-forge compiles and what
@@ -19,7 +24,7 @@
 ## run from one command instead of five, and that none is forgotten. JOBS is
 ## split across the lanes so they do not oversubscribe.
 ##
-## Usage: bash scripts/relgates.sh [-q]        (-q: only the summary)
+## Usage: bash scripts/release-tests.sh [-q]   (-q: only the summary)
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -33,14 +38,14 @@ lane_jobs=$(( ncpu / 3 )); [ "$lane_jobs" -lt 1 ] && lane_jobs=1
 B32=${B32:-$HOME/tmp/yame/bash32/bash-3.2/bash}
 
 t_start=$(date +%s)
-work=$(mktemp -d "${TMPDIR:-/tmp}/relgates.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/release-tests.XXXXXX")
 logs="$work/logs"; mkdir -p "$logs"
 trap 'rm -rf "$work"' EXIT
 
 say() { [ "$quiet" = 1 ] || printf '%s\n' "$*"; }
 
-## Each gate records its own seconds, so one run reports both the wall clock and
-## what the same gates would have cost one after another.
+## Each lane records its own seconds, so one run reports both the wall clock
+## and what the same lanes would have cost one after another.
 stamp() { date +%s > "$logs/$1.t0"; }
 elapsed() { echo $(( $(date +%s) - $(cat "$logs/$1.t0") )) > "$logs/$1.s"; }
 
@@ -71,7 +76,7 @@ stamp ubtrap
   rc=$?; elapsed ubtrap; exit $rc ) > "$logs/ubtrap" 2>&1 &
 p_ubtrap=$!
 
-## The in-tree lane goes here in the foreground: the two gates after it reuse
+## The in-tree lane goes here in the foreground: the two lanes after it reuse
 ## the binary it produces, and rebuilding it in a copy would only duplicate
 ## work the developer has already done.
 stamp tree
@@ -132,6 +137,6 @@ for g in tree ndebug ubtrap bash32 layer5; do
     fi
   fi
 done
-printf '%d of 5 gates passed in %d s; one after another they would be %d s\n' \
+printf '%d of 5 lanes passed in %d s; one after another they would be %d s\n' \
   $((5 - fails)) $(( $(date +%s) - t_start )) "$serial"
 [ "$fails" = 0 ]
