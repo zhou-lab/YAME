@@ -89,13 +89,17 @@ typedef struct {
  *
  * A format 6 query is only handled in the DEFAULT view. The 2-bit and meth
  * views count different things again, and fall back. */
+/* The record must be INFLATED. A compressed one counts bytes in `n` rather than
+ * rows, and is refused. */
 int  yame_qbits_build(const cdata_t *query, yame_qbits_t *out);
 void yame_qbits_free(yame_qbits_t *qb);
 
-/* One mask against those bitmaps, word-wise. Binary (fmt 0/1) and set+universe
- * (fmt 6) masks; -1 for anything else, or for a length that disagrees with the
- * query, so the caller falls back and the old path reports it in its own
- * words. `acc` is OVERWRITTEN, not added to. */
+/* One mask against those bitmaps, word-wise. Bit-packed (fmt 0) and
+ * set+universe (fmt 6) masks, INFLATED; -1 for anything else, for a compressed
+ * record, or for a length that disagrees with the query, so the caller falls
+ * back and the old path reports it in its own words. Format 1 is refused on
+ * purpose: inflated it is a byte per row, not a bit. `acc` is OVERWRITTEN, not
+ * added to. */
 int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc);
 
 /* --------------------------------------------- the enumerator entry point -- */
@@ -105,7 +109,22 @@ int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc
 typedef void (*yame_emit_fn)(void *emit_ctx, uint32_t mask,
                              uint64_t start, uint64_t len, uint32_t state);
 
-/* Called once; must emit every run of every mask. Order does not matter. */
+/*
+ * Called once; must emit every run of every mask.
+ *
+ * TWO OBLIGATIONS on the caller, because the kernel takes a run's length as its
+ * claimed count rather than counting bits:
+ *
+ *   - Runs of ONE slot must not overlap. A row emitted twice for one slot is
+ *     counted twice, in n_m, n_o, the depth and the beta. Runs of DIFFERENT
+ *     slots may overlap freely.
+ *   - Runs of one slot must arrive with ASCENDING start, or the sums are added
+ *     in another order and stop being bit-identical to the per-mask path. Order
+ *     across slots does not matter.
+ *
+ * A run reaching past the query's last row is clipped, where the record-fed
+ * form would have refused a length mismatch.
+ */
 typedef int (*yame_runs_fn)(void *ctx, yame_emit_fn emit, void *emit_ctx);
 
 /*

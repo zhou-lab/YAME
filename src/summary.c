@@ -283,6 +283,15 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
 /* One accumulator into one printed row. The per-mask path builds its stats_t
  * inside summarize1(); the kernel returns counts, so the naming and the derived
  * beta happen here -- once, rather than in each of the two call sites. */
+/* How many masks took the one-pass kernel and how many fell back, reported on
+ * stderr when YAME_SUMMARY_PATH is set.
+ *
+ * Nothing else can see which path ran: both produce identical numbers, which is
+ * the point. So when a guard I added silently sent every mask to the fallback,
+ * all 29 tests still passed and only a stopwatch noticed -- 6 s became 107 s on
+ * the TFBS knowledgebase. This is how a test asserts the fast path is alive. */
+static uint64_t path_kernel = 0, path_fallback = 0;
+
 static void emit_acc(const yame_acc_t *a, uint64_t n_q, const cdata_t *q,
                      const char *mask_name, uint64_t km,
                      const char *sq, const char *fname_qry, config_t *config) {
@@ -535,36 +544,44 @@ int main_summary(int argc, char *argv[]) {
 
       if (config.fname_mask) {   /* apply any mask? */
         if (c_masks_n) {        /* in memory or unseekable */
-          /* Every mask in ONE pass when the kernel covers this query. It walks
-           * the record once and scatters into N accumulators; the loop below
-           * walks it once PER MASK, which on a 29.4M-row methylome cost 1.6 s
-           * for one mask and 16.8 s for sixteen. Bit-identical, because within
-           * a mask both add the same doubles in the same row order. The kernel
-           * declines what it does not cover and the loop below runs instead. */
-          int multi_done = 0;
-          if (c_masks_n > 1 && config.f6_view == F6_VIEW_SET &&
-              yame_qbits_build(&c_qry, &qb) == 0) {
-            multi_done = 1;
-            for (uint64_t km = 0; km < c_masks_n && multi_done; ++km) {
+          /* The query bitmap is built once and every mask is measured against
+           * it, so the query is read once rather than once per mask: on a
+           * 29.4M-row methylome that took 1.6 s for one mask and 16.8 s for
+           * sixteen. Bit-identical, because within a mask both paths add the
+           * same doubles in the same row order.
+           *
+           * The fallback is PER MASK, not all-or-nothing. It used to set a flag
+           * and re-run the whole list, which printed every mask the kernel had
+           * already taken a SECOND time: `-M -m <binary><state>` gave five rows
+           * where four were right. A mask the kernel declines now falls back on
+           * its own, exactly as the streamed branch below does. */
+          int have_qb = (config.f6_view == F6_VIEW_SET &&
+                         yame_qbits_build(&c_qry, &qb) == 0);
+          for (uint64_t km=0; km<c_masks_n; ++km) {
+            if (have_qb) {
               yame_acc_t a = {0};
-              if (yame_summarize_one_cx(&qb, &c_masks[km], &a) != 0) {
-                multi_done = 0; break;    /* a mask it cannot take: fall back */
+              if (yame_summarize_one_cx(&qb, &c_masks[km], &a) == 0) {
+                path_kernel++;
+                emit_acc(&a, qb.n_q, &c_qry,
+                         km < (uint64_t) snames_mask.n ? snames_mask.s[km] : NULL,
+                         km, sq.s, fname_qry, &config);
+                continue;
               }
-              emit_acc(&a, qb.n_q, &c_qry, snames_mask.n ? snames_mask.s[km] : NULL,
-                       km, sq.s, fname_qry, &config);
             }
-            yame_qbits_free(&qb);
-          }
-          for (uint64_t km=0; !multi_done && km<c_masks_n; ++km) {
             cdata_t c_mask = c_masks[km];
             kstring_t sm = {0};
-            if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+            /* Bounded: a .cg.idx that lists fewer names than the file holds
+             * records read past the end here. The query loop has always
+             * checked; the mask loop never did. */
+            if (km < (uint64_t) snames_mask.n) kputs(snames_mask.s[km], &sm);
             else ksprintf(&sm, "%"PRIu64"", km+1);
             uint64_t n_st = 0;
+            path_fallback++;
             stats_t *st = summarize1(&c_qry, &c_mask, &n_st, sm.s, sq.s, &config);
             format_stats_and_clean(st, n_st, fname_qry, &config);
             free(sm.s);
           }
+          if (have_qb) yame_qbits_free(&qb);
         } else {                /* mask is seekable */
           if (bgzf_seek(cf_mask.fh, 0, SEEK_SET)!=0) {
             fprintf(stderr, "[%s:%d] Cannot seek mask.\n", __func__, __LINE__);
@@ -585,17 +602,22 @@ int main_summary(int argc, char *argv[]) {
             if (have_qb) {
               yame_acc_t a = {0};
               if (yame_summarize_one_cx(&qb, &c_mask, &a) == 0) {
+                path_kernel++;
                 emit_acc(&a, qb.n_q, &c_qry,
-                         snames_mask.n ? snames_mask.s[km] : NULL,
+                         km < (uint64_t) snames_mask.n ? snames_mask.s[km] : NULL,
                          km, sq.s, fname_qry, &config);
                 free_cdata(&c_mask);
                 continue;
               }
             }
             kstring_t sm = {0};
-            if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+            /* Bounded: a .cg.idx that lists fewer names than the file holds
+             * records read past the end here. The query loop has always
+             * checked; the mask loop never did. */
+            if (km < (uint64_t) snames_mask.n) kputs(snames_mask.s[km], &sm);
             else ksprintf(&sm, "%"PRIu64"", km+1);
             uint64_t n_st = 0;
+            path_fallback++;
             stats_t *st = summarize1(&c_qry, &c_mask, &n_st, sm.s, sq.s, &config);
             format_stats_and_clean(st, n_st, fname_qry, &config);
             free(sm.s);
@@ -614,17 +636,25 @@ int main_summary(int argc, char *argv[]) {
       free(sq.s);
       free_cdata(&c_qry); c_qry.s = NULL;
     }
-    if (c_masks_n) {
-      for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
-      free(c_masks);
-    }
     bgzf_close(cf_qry.fh);
     cleanSampleNames2(snames_qry);
+  }
+  /* The masks were loaded once, before this loop, so they are freed once after
+   * it. Freeing them per query FILE left c_masks dangling while c_masks_n
+   * stayed set, and `summary -M -m masks.cm a.cg b.cg` then read freed records
+   * and silently printed nothing for b.cg. Present since -M existed. */
+  if (c_masks_n) {
+    for (uint64_t i=0; i<c_masks_n; ++i) free_cdata(&c_masks[i]);
+    free(c_masks);
+    c_masks = NULL; c_masks_n = 0;
   }
   if (config.fname_snames) free(config.fname_snames);
   if (config.fname_mask) bgzf_close(cf_mask.fh);
   if (config.fname_mask) free(config.fname_mask);
   cleanSampleNames2(snames_mask);
+  if (getenv("YAME_SUMMARY_PATH"))
+    fprintf(stderr, "[summary] one-pass %"PRIu64", per-mask %"PRIu64"\n",
+            path_kernel, path_fallback);
   
   return 0;
 }

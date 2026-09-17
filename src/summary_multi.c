@@ -71,6 +71,12 @@ static inline uint64_t tail_mask(uint64_t n, uint64_t word) {
 int yame_qbits_build(const cdata_t *query, yame_qbits_t *out) {
   if (!query || !out) return -1;
   if (query->fmt != '3' && query->fmt != '6') return -1;
+  /* A COMPRESSED record counts bytes in `n`, not rows, while `unit` still
+   * describes the inflated width -- so reading row i of a compressed format 3
+   * record at unit 8 reaches eight times past the buffer. `summary` inflates
+   * before it gets here, but this is a public entry point and the caller cannot
+   * be assumed to have. */
+  if (query->compressed) return -1;
 
   memset(out, 0, sizeof *out);
   out->q = query;
@@ -198,7 +204,9 @@ static int one_q3(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) {
       ov &= ov - 1;
     }
   }
-  acc->beta = acc->sum_beta / acc->n_o;     /* Inf at zero overlap, as before */
+  acc->beta = acc->sum_beta / acc->n_o;     /* NaN at zero overlap; the
+                                             * per-mask path gives NaN too, and
+                                             * both print NA */
   return 0;
 }
 
@@ -223,7 +231,8 @@ static int one_q6(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) {
     acc->n_m += (uint64_t) pc64(ms);
     acc->n_o += (uint64_t) pc64(qs & ms);
   }
-  acc->beta = (double) acc->n_o / acc->n_m; /* Inf at an empty mask, as before */
+  acc->beta = (double) acc->n_o / acc->n_m; /* NaN at an empty mask, as the
+                                             * per-mask path also gives */
   return 0;
 }
 
@@ -236,7 +245,19 @@ static int one_view(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) 
 
 int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc) {
   if (!qb || !qb->cov || !mask || !acc) return -1;
-  if (mask->fmt != '0' && mask->fmt != '1' && mask->fmt != '6') return -1;
+  /* NOT format 1. An inflated format 1 record is one BYTE per row, not one bit,
+   * so reading it through load0() stays in bounds and answers zero -- silently.
+   * `summary` never offers one, because prepare_mask() converts it to format 0
+   * first, but a caller that has not done that gets a refusal rather than a
+   * plausible wrong number. */
+  if (mask->fmt != '0' && mask->fmt != '6') return -1;
+  /* NO compressed test here, deliberately. For a QUERY the flag matters: a
+   * compressed format 3 record counts bytes in `n`. For a format 0 or 6 MASK it
+   * does not describe the layout at all -- convertToFmt0() hands back a format 0
+   * record with compressed still set, because bit-packed IS its storage. A test
+   * here rejected almost every mask and sent the whole knowledgebase down the
+   * fallback: 6 s became 107 s, with the output still correct, so only a timing
+   * check caught it. */
   if (mask->n != qb->q->n) return -1;
 
   mview_t mv;
@@ -317,8 +338,12 @@ static void scat_emit(void *ctx, uint32_t mask,
 
   uint64_t n = k->qb->q->n;
   if (start >= n) return;                        /* past the query: clipped */
-  uint64_t end = start + len;
-  if (end > n) end = n;
+  /* start + len can WRAP. It did: len == UINT64_MAX made end 0, the clamp below
+   * never fired, n_m underflowed, and the sweep then indexed cov[] about 2^58
+   * words past its allocation -- a guaranteed crash, not an overread. Clamping
+   * before the addition is the only place that can catch it, because after the
+   * wrap the value looks legitimate. */
+  uint64_t end = (len > n - start) ? n : start + len;
 
   yame_acc_t *a = &k->acc[slot];
   a->n_m += end - start;
@@ -372,7 +397,7 @@ int yame_summarize_multi(const cdata_t *query,
   for (uint32_t s = 0; s < n_acc; ++s) {
     acc[s].n_u = query->n;
     acc[s].n_q = qb.n_q;
-    acc[s].beta = acc[s].sum_beta / acc[s].n_o;   /* Inf at zero overlap */
+    acc[s].beta = acc[s].sum_beta / acc[s].n_o;   /* NaN at zero overlap */
   }
 
   if (n_q_out) *n_q_out = qb.n_q;

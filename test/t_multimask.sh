@@ -82,4 +82,71 @@ tail -n +2 got.txt | cut -f5,6,7,8,10 > comb.txt
 diff sep.txt comb.txt ||
   { echo "a combined mask run differs from the masks run one at a time"; exit 1; }
 
+## ---- a mask the kernel DECLINES, among masks it takes ---------------------
+## The fallback must be per mask. It used to be all-or-nothing: a flag was
+## cleared and the whole list re-ran, so every mask already measured printed a
+## SECOND time. `-M` over a binary mask followed by a state mask gave 5 rows
+## where 4 were right, and only with -M, because the streamed branch always
+## fell back one mask at a time. Both branches are checked, both orders.
+/usr/bin/awk 'BEGIN { for (i = 0; i < 4000; i++)
+    print (i % 3 == 0) ? "A" : ((i % 3 == 1) ? "B" : "C") }' > states.txt
+"$YAME" pack -f 2 states.txt > state.cg 2>/dev/null
+[ -s state.cg ] || { echo "fixture: could not pack a state mask"; exit 1; }
+
+## 3 binary masks + 1 state mask of 3 terms = 3 + 3 = 6 rows, in any order
+for order in "m3.cg m7.cg m101.cg state.cg" "state.cg m3.cg m7.cg m101.cg" \
+             "m3.cg state.cg m7.cg m101.cg"; do
+  cat $order > mixed.cm
+  for opt in "-M" ""; do
+    got=$("$YAME" summary $opt -m mixed.cm q.cg 2>/dev/null | tail -n +2 | grep -c .)
+    [ "$got" -eq 6 ] ||
+      { echo "mixed mask ($order, ${opt:-streamed}) gave $got rows, want 6"
+        "$YAME" summary $opt -m mixed.cm q.cg 2>/dev/null | cut -f4; exit 1; }
+  done
+  ## and the two branches must agree with each other
+  diff <("$YAME" summary -M -m mixed.cm q.cg 2>/dev/null) \
+       <("$YAME" summary -m mixed.cm q.cg 2>/dev/null) ||
+    { echo "mixed mask ($order): -M and streamed disagree"; exit 1; }
+done
+
+## ---- several query FILES with -M ------------------------------------------
+## The masks are loaded once, before the query-file loop, but were freed INSIDE
+## it, leaving the array dangling while its count stayed set. So
+## `summary -M -m masks.cm a.cg b.cg` read freed records and printed nothing at
+## all for b.cg -- a silent wrong answer, present since -M existed. Without -M
+## it was always right, which is why nobody saw it.
+cp q.cg q2.cg
+for opt in "-M" ""; do
+  rows=$("$YAME" summary $opt -m multi.cm q.cg q2.cg 2>/dev/null | tail -n +2 | grep -c .)
+  [ "$rows" -eq 6 ] ||
+    { echo "two query files (${opt:-streamed}) gave $rows rows, want 6"
+      "$YAME" summary $opt -m multi.cm q.cg q2.cg 2>/dev/null | cut -f1,4; exit 1; }
+  files=$("$YAME" summary $opt -m multi.cm q.cg q2.cg 2>/dev/null |
+          tail -n +2 | cut -f1 | sort -u | grep -c .)
+  [ "$files" -eq 2 ] ||
+    { echo "two query files (${opt:-streamed}): only $files named in the output"; exit 1; }
+done
+
+## ---- the fast path must actually BE taken -----------------------------------
+## Both paths give identical numbers, which is the point, so nothing else here
+## can tell whether the kernel ran. A guard added during review rejected almost
+## every mask and sent the whole knowledgebase down the fallback: the output
+## stayed correct, all 29 tests passed, and only a stopwatch noticed -- 6 s
+## became 107 s. YAME_SUMMARY_PATH reports the split so this can be asserted.
+for opt in "-M" ""; do
+  p=$(YAME_SUMMARY_PATH=1 "$YAME" summary $opt -m multi.cm q.cg 2>&1 >/dev/null |
+      grep 'one-pass' | tail -1)
+  [ -n "$p" ] || { echo "YAME_SUMMARY_PATH printed nothing (${opt:-streamed})"; exit 1; }
+  k=$(printf '%s\n' "$p" | sed 's/.*one-pass \([0-9]*\).*/\1/')
+  b=$(printf '%s\n' "$p" | sed 's/.*per-mask \([0-9]*\).*/\1/')
+  [ "$k" -eq 3 ] && [ "$b" -eq 0 ] ||
+    { echo "3 binary masks (${opt:-streamed}) took one-pass=$k per-mask=$b, want 3 and 0"
+      exit 1; }
+done
+## a state mask must fall back, and say so
+p=$(YAME_SUMMARY_PATH=1 "$YAME" summary -m state.cg q.cg 2>&1 >/dev/null |
+    grep 'one-pass' | tail -1)
+printf '%s\n' "$p" | grep 'one-pass 0, per-mask 1' >/dev/null ||
+  { echo "a state mask did not fall back: $p"; exit 1; }
+
 echo "ok: t_multimask"

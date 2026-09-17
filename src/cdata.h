@@ -230,10 +230,19 @@ static inline uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
   return f3_get_mu_wide(c, i);
 }
 
-/* The fast path needs aux, which fmt2_set_aux() builds and which also asserts
- * the record is inflated. A record without it falls through and gets both. */
+/* The fast path needs aux, which fmt2_set_aux() builds; a record without it
+ * falls through to the wide form, which builds it.
+ *
+ * `!c->compressed` is not redundant. fmt2_compress() frees c->s and sets the
+ * flag but leaves c->aux in place, pointing into the freed buffer. The wide
+ * form asserts on a compressed record and would abort there; without this test
+ * the fast path would read freed memory instead, silently. No caller can reach
+ * that state today -- the only unit-1 records are never re-compressed and read
+ * -- so this keeps a guarantee rather than fixing a bug, and the flag shares a
+ * cache line with `unit`. */
 static inline uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
-  if (c->unit == 1 && c->aux) return ((f2_aux_t *) c->aux)->data[i];
+  if (c->unit == 1 && c->aux && !c->compressed)
+    return ((f2_aux_t *) c->aux)->data[i];
   return f2_get_uint64_wide(c, i);
 }
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))

@@ -38,6 +38,14 @@ static int emit_runs(void *ctx, yame_emit_fn emit, void *ec) {
   return 0;
 }
 
+/* One run whose length wraps when added to its start. */
+static int emit_overflow(void *ctx, yame_emit_fn emit, void *ec) {
+  uint64_t n = *(uint64_t *) ctx;
+  (void) n;
+  emit(ec, 0, 1, UINT64_MAX, 0);
+  return 0;
+}
+
 int main(void) {
   uint64_t n = 40000;
   cdata_t q = make_q3(n, 4242);
@@ -75,6 +83,53 @@ int main(void) {
     if (acc[s].n_o) nonzero++;
   }
   CHECK(nonzero > NM, "only %" PRIu64 " of %u slots got any overlap", nonzero, n_acc);
+
+  /* A run past the last row is clipped, not counted, and does not corrupt the
+   * slot it names. The header promises this; nothing else checks it. */
+  {
+    yame_acc_t one = {0};
+    struct { uint64_t n; } c1 = { n };
+    (void) c1;
+    cdata_t qq = q;
+    yame_acc_t ref1 = {0};
+    cdata_t mm = {0}; mm.fmt='0'; mm.n=n; mm.unit=1; mm.s=calloc((n+7)/8,1);
+    for (uint64_t i = n - 5; i < n; ++i) mm.s[i>>3] |= 1u << (i&7);
+    CHECK(yame_summarize_multi_cx(&qq, &mm, 1, &ref1, NULL) == 0, "tail mask refused");
+    CHECK(ref1.n_m == 5, "tail mask claimed %" PRIu64 " rows, want 5", ref1.n_m);
+    free(mm.s); (void) one;
+  }
+
+  /* ---- the preconditions the header now states ---------------------------
+   * Each of these was a real out-of-bounds read before, found by review with
+   * valgrind, and each is reachable only through this API rather than through
+   * `yame summary`. */
+  {
+    /* A run whose length WRAPS start + len. len == UINT64_MAX made end 0, the
+     * clamp never fired, n_m underflowed and the sweep indexed about 2^58 words
+     * past the bitmap -- a guaranteed crash. */
+    yame_acc_t w = {0};
+    uint64_t nn = n;
+    CHECK(yame_summarize_multi(&q, emit_overflow, &nn, 1, NULL, &w, 1, NULL) == 0,
+          "the wrapping run was not handled");
+    CHECK(w.n_m <= n, "a wrapping run claimed %" PRIu64 " rows of %" PRIu64, w.n_m, n);
+  }
+  {
+    /* A COMPRESSED query: n counts bytes, not rows, so row i at unit 8 reads
+     * eight times past the buffer. Must be refused, not read. */
+    cdata_t cq = q; cq.compressed = 1;
+    yame_qbits_t qb;
+    CHECK(yame_qbits_build(&cq, &qb) == -1, "a compressed query was accepted");
+  }
+  {
+    /* Format 1 inflated is a BYTE per row, not a bit. Read as bits it stays in
+     * bounds and answers zero, which is worse than refusing. */
+    cdata_t m1 = {0}; m1.fmt='1'; m1.n=n; m1.unit=1; m1.s=calloc(n,1);
+    for (uint64_t i = 0; i < n; i += 2) m1.s[i] = 1;
+    yame_acc_t a1 = {0};
+    CHECK(yame_summarize_multi_cx(&q, &m1, 1, &a1, NULL) == -1,
+          "a format 1 mask was accepted; it would have answered n_m=%" PRIu64, a1.n_m);
+    free(m1.s);
+  }
 
   for (uint32_t s = 0; s < n_acc; ++s) free(m[s].s);
   free(m); free(acc); free(ref); free(q.s);
