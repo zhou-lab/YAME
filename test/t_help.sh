@@ -32,3 +32,26 @@ printf '%s\n' "$banner" | grep 'v[0-9]\+\.[0-9]\+' >/dev/null ||
 if "$YAME" definitely-not-a-subcommand </dev/null >/dev/null 2>&1; then
   echo "an unknown subcommand exited 0"; exit 1
 fi
+
+## ---- the version, and a terminal-safe default -----------------------------
+## `yame --version` was "unrecognized command": the version only appeared in
+## the bare banner, which goes to stderr and exits 1, so no packaging check or
+## script could read it. Reported by a reader, 2026-09-17.
+for f in --version -V -v version; do
+  out=$("$YAME" $f </dev/null 2>/dev/null) || { echo "yame $f exited nonzero"; exit 1; }
+  printf '%s\n' "$out" | grep -E '^yame v[0-9]+\.[0-9]+' >/dev/null ||
+    { echo "yame $f printed [$out], want a version on stdout"; exit 1; }
+done
+## it must be on STDOUT, not stderr, or `$(yame --version)` is empty
+[ -n "$("$YAME" --version </dev/null 2>/dev/null)" ] ||
+  { echo "yame --version wrote nothing to stdout"; exit 1; }
+
+## --help reaches the same banner as a bare yame
+h=$("$YAME" --help </dev/null 2>&1) || true
+printf '%s\n' "$h" | grep 'Yet Another Methylation Encoder' >/dev/null ||
+  { echo "yame --help is not the banner"; exit 1; }
+
+## an unknown command still fails, and says where to look
+if "$YAME" nosuchcmd </dev/null >/dev/null 2>&1; then
+  echo "an unknown command exited 0"; exit 1
+fi

@@ -346,7 +346,7 @@ int main_dsample(int argc, char *argv[]) {
   char *fname = argv[optind];
   BGZF* fp_out;
   if (fname_out) fp_out = bgzf_open2(fname_out, "wb");
-  else fp_out = bgzf_dopen(fileno(stdout), "wb");
+  else fp_out = yame_bgzf_stdout("wb", "dsample");
 
   if (fp_out == NULL) {
     fprintf(stderr, "[%s:%d] Error opening file for writing: %s\n",

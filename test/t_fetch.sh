@@ -390,4 +390,28 @@ if "$YAME" fetch -l "$scope/nope.cm" </dev/null >/dev/null 2>&1; then
   echo "-l of a nonexistent file name succeeded"; exit 1
 fi
 
+## ---- 15. an option AFTER a name, which is what the docs promise ----------
+## GNU getopt permutes arguments; BSD getopt, which macOS has, stops at the
+## first non-option and hands the rest over as names. So `fetch <name> -g X`
+## worked on Linux and failed on macOS with "nothing in the catalogue is
+## called -g", and no test passed an option after a name so CI never saw it.
+## POSIXLY_CORRECT=1 makes glibc behave like BSD, so this runs the macOS case
+## here.
+for pc in 0 1; do
+  if [ "$pc" = 1 ]; then export POSIXLY_CORRECT=1; else unset POSIXLY_CORRECT; fi
+  a=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n "$scope" -g Blacklist </dev/null 2>&1) || true
+  b=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n -g Blacklist "$scope" </dev/null 2>&1) || true
+  [ "$a" = "$b" ] ||
+    { echo "POSIXLY_CORRECT=$pc: an option after the name differs from before it"
+      echo "  after:  $a"; echo "  before: $b"; exit 1; }
+  printf '%s\n' "$a" | grep 'Blacklist' >/dev/null ||
+    { echo "POSIXLY_CORRECT=$pc: the filter did not apply"; printf '%s\n' "$a"; exit 1; }
+done
+unset POSIXLY_CORRECT
+
+## a name that really does start with a dash is still an error, not a flag
+if YAME_DATA_HOME="$empty" "$YAME" fetch -n -- -nosuch </dev/null >/dev/null 2>&1; then
+  echo "a nonexistent name after -- was accepted"; exit 1
+fi
+
 echo "ok: t_fetch"

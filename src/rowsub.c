@@ -595,7 +595,7 @@ int main_rowsub(int argc, char *argv[]) {
   }
 
   cfile_t cf = open_cfile(fname);
-  BGZF *fp_out = bgzf_dopen(fileno(stdout), "w");
+  BGZF *fp_out = yame_bgzf_stdout("w", "rowsub");
   if (fp_out == NULL) {
     fprintf(stderr, "[%s:%d] Cannot open output stream.\n", __func__, __LINE__);
     fflush(stderr);

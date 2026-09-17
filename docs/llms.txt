@@ -156,6 +156,9 @@ Inspect and index
         One file per record. Same raw copy as subset when the input is indexed
         and its records are block-aligned; -v says which path ran.
   hprint [-r reg | -R ref] [-c] [-g] [-l W] [-t N] [-w N] <in.cx>
+        -c never colour. Colour is on only when stdout is a TERMINAL, and
+        NO_COLOR or TERM=dumb turns it off as well, so redirecting or piping
+        gives plain text without asking.
         -r chr16 or chr16:10000000-10100000, reference inferred from the row
         count; -R gives the whole-genome window view; neither = full-dataset
         dump, one glyph per row with no windowing (fmt0/3/4/6, fmt6 keeping

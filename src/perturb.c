@@ -82,7 +82,7 @@ int main_perturb(int argc, char *argv[]) {
 
   BGZF *fp_out;
   if (fname_out) fp_out = bgzf_open2(fname_out, "wb");
-  else           fp_out = bgzf_dopen(fileno(stdout), "wb");
+  else           fp_out = yame_bgzf_stdout("wb", "perturb");
   if (!fp_out) {
     fprintf(stderr, "[%s:%d] Error opening output: %s\n",
             __func__, __LINE__, fname_out ? fname_out : "<stdout>");

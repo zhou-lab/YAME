@@ -132,7 +132,7 @@ int main_binarize(int argc, char *argv[]) {
 
   BGZF *fp_out;
   if (fname_out) fp_out = bgzf_open2(fname_out, "w");
-  else fp_out = bgzf_dopen(fileno(stdout), "w");
+  else fp_out = yame_bgzf_stdout("w", "binarize");
   if (fp_out == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);

@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include "cfile.h"
+#include <unistd.h>
 
 /**
  * Read one record, distinguishing END OF STREAM from A BROKEN ONE -- and from
@@ -411,7 +412,7 @@ void cdata_write(char *fname_out, cdata_t *c, const char *mode, int verbose) {
   if (!c->compressed) cdata_compress(c);  
   BGZF* fp;
   if (fname_out) fp = bgzf_open2(fname_out, mode);
-  else fp = bgzf_dopen(fileno(stdout), mode);
+  else fp = yame_bgzf_stdout(mode, "yame");
   
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
@@ -424,4 +425,15 @@ void cdata_write(char *fname_out, cdata_t *c, const char *mode, int verbose) {
     fprintf(stderr, "[%s:%d] Stored as Format %c\n", __func__, __LINE__, c->fmt);
     fflush(stderr);
   }
+}
+
+BGZF *yame_bgzf_stdout(const char *mode, const char *cmd) {
+  if (isatty(STDOUT_FILENO)) {
+    fprintf(stderr,
+            "[%s] refusing to write compressed binary to the terminal.\n"
+            "  Give -o <out.cx>, or redirect: yame %s ... > out.cx\n",
+            cmd ? cmd : "yame", cmd ? cmd : "yame");
+    exit(1);
+  }
+  return bgzf_dopen(fileno(stdout), mode);
 }

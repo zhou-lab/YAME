@@ -127,7 +127,7 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out,
   BGZF *fp;
   char wmode[8]; write_mode(wmode, sizeof(wmode), level);
   if (fname_out) fp = bgzf_open2(fname_out, wmode);
-  else fp = bgzf_dopen(fileno(stdout), wmode);
+  else fp = yame_bgzf_stdout(wmode, "subset");
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);
@@ -388,7 +388,7 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
   BGZF *fp;
   char wmode[8]; write_mode(wmode, sizeof(wmode), level);
   if (fname_out) fp = bgzf_open2(fname_out, wmode);
-  else fp = bgzf_dopen(fileno(stdout), wmode);
+  else fp = yame_bgzf_stdout(wmode, "subset");
   if (fp == NULL) {
     fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
     exit(1);

@@ -231,4 +231,16 @@ void cdata_write1(BGZF *fp, cdata_t *c);
  */
 void cdata_write(char *fname_out, cdata_t *c, const char *mode, int verbose);
 
+/**
+ * stdout as a BGZF writer, refusing a terminal.
+ *
+ * Every command that writes a CX stream with no -o sends it here. Written to a
+ * terminal it is compressed binary: it garbles the display and can leave the
+ * terminal in a state the user has to reset. A reader copying
+ * `yame pairwise -H 1 -c 5 -d 0.2 a.cg b.cg` off the documentation hit exactly
+ * that. Redirected or piped it behaves as before, because then the bytes have
+ * somewhere to go.
+ */
+BGZF *yame_bgzf_stdout(const char *mode, const char *cmd);
+
 #endif

@@ -157,6 +157,20 @@ int main(int argc, char *argv[]) {
   yame_set_default_fetch_cfg(&yame_cfg);   /* before any subcommand runs */
   int ret;
   if (argc < 2) return usage();
+
+  /* --version / -V / version, on stdout and exiting 0, because that is what
+   * every packaging check and every script expects. The bare banner carries
+   * the version too, but it goes to stderr and exits 1, so `yame --version`
+   * was "unrecognized command" -- reported by a reader, 2026-09-17. */
+  if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0 ||
+      strcmp(argv[1], "-v") == 0 ||
+      strcmp(argv[1], "version") == 0) {
+    printf("yame %s\n", YAME_VERSION);
+    return 0;
+  }
+  /* -h and --help reach the same banner as a bare `yame`. */
+  if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) return usage();
+
   if (strcmp(argv[1], "pack") == 0) ret = main_pack(argc-1, argv+1);
   else if (strcmp(argv[1], "unpack") == 0) ret = main_unpack(argc-1, argv+1);
   else if (strcmp(argv[1], "hprint") == 0) ret = main_hprint(argc-1, argv+1);
@@ -177,6 +191,7 @@ int main(int argc, char *argv[]) {
   else if (strcmp(argv[1], "fetch") == 0) ret = main_fetch(argc-1, argv+1);
   else {
     fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
+    fprintf(stderr, "  Run `yame` for the command list, or `yame --version`.\n");
     return 1;
   }
 

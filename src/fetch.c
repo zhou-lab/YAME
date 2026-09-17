@@ -2454,6 +2454,48 @@ static int resolve_args(int argc, char *argv[], int first, const char *tag_overr
   return 0;
 }
 
+/*
+ * Move the option arguments in front of the names, so `fetch hg38/KYCG -g CGI`
+ * means what `fetch -g CGI hg38/KYCG` means.
+ *
+ * GNU getopt does this permutation itself, which is why the form the docs
+ * promise -- "options may come before or after the names" -- worked on Linux
+ * and failed on macOS, where BSD getopt stops at the first non-option and the
+ * rest arrive as names. `-g` then read as a catalogue name nobody has. Our own
+ * macOS CI leg never caught it because no test passed an option after a name;
+ * POSIXLY_CORRECT=1 reproduces the BSD behaviour on Linux, and one now does.
+ *
+ * `optstring` says which options take an argument, so `-g CGI` travels as a
+ * pair. Everything after a bare `--` is a name, whatever it looks like.
+ */
+static void permute_opts(int argc, char **argv, const char *optstring) {
+  char **opts = wzmalloc((size_t)argc * sizeof(char *));
+  char **names = wzmalloc((size_t)argc * sizeof(char *));
+  int n_opt = 0, n_name = 0, i = 1, done = 0;
+
+  for (; i < argc; ++i) {
+    char *a = argv[i];
+    if (!done && a[0] == '-' && a[1] == '-' && a[2] == '\0') {
+      done = 1;                     /* keep the -- itself, where it was */
+      opts[n_opt++] = a;
+      continue;
+    }
+    if (done || a[0] != '-' || a[1] == '\0') { names[n_name++] = a; continue; }
+
+    opts[n_opt++] = a;
+    /* Does the LAST letter of this cluster take an argument? -qg CGI does. */
+    char last = a[strlen(a) - 1];
+    const char *p = strchr(optstring, last);
+    if (p && p[1] == ':' && strlen(a) == 2 && i + 1 < argc)
+      opts[n_opt++] = argv[++i];
+  }
+
+  int k = 1;
+  for (i = 0; i < n_opt; ++i)  argv[k++] = opts[i];
+  for (i = 0; i < n_name; ++i) argv[k++] = names[i];
+  free(opts); free(names);
+}
+
 int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   cfg_ = cfg;
   optind = 1;                       /* a library entry: never trust the caller's */
@@ -2464,6 +2506,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   const char *filter = NULL;
   int c;
 
+  permute_opts(argc, argv, "cd:t:kflqu:s:o:yng:h");
   while ((c = getopt(argc, argv, "cd:t:kflqu:s:o:yng:h")) >= 0) {
     switch (c) {
     case 'c': here = 1; break;

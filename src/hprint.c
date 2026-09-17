@@ -20,6 +20,7 @@
 
 #include <string.h>
 #include "yame_ui.h"
+#include <unistd.h>
 #include "cfile.h"
 #include "assets.h"
 
@@ -60,7 +61,9 @@ static int usage(void) {
   yame_usage_cont("alone is usually enough.");
   yame_usage_text("(neither)         Full-dataset dump: every row, no windowing. fmt0/3/4/6.");
   yame_usage_sec("Options:");
-  yame_usage_opt("-c", "Disable ANSI color output (default: color on)");
+  yame_usage_opt("-c", "Never colour. Colour is on only when stdout is a "
+                 "terminal, and NO_COLOR or TERM=dumb turns it off too, so a "
+                 "redirect or a pipe is plain text already.");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
   yame_usage_opt("-R <ref.cr|name>", "Reference coordinates (format 7).");
   yame_usage_cont("OPTIONAL with -r -- inferred from the row count.");
@@ -564,7 +567,15 @@ static char *infer_ref(uint64_t rows) {
 
 int main_hprint(int argc, char *argv[]) {
   int c;
-  int color = 1, label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
+  /* Colour follows the OUTPUT, not a fixed default. Piped or redirected there
+   * is no terminal to colour, and the escapes land in the file: `hprint x.cg
+   * > panel.txt` produced a file full of \x1b[34m, and NO_COLOR was ignored
+   * outright. Reported by a reader, 2026-09-17. -c still forces it off. */
+  const char *term_env = getenv("TERM");
+  int color = isatty(STDOUT_FILENO)
+           && !getenv("NO_COLOR")
+           && !(term_env && strcmp(term_env, "dumb") == 0);
+  int label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
   char *fname_cr = NULL, *region = NULL;
 
   while ((c = getopt(argc, argv, "cgR:r:l:t:w:h")) >= 0) {
