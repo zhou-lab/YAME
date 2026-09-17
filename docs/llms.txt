@@ -71,6 +71,9 @@ the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or
 agent fetch of a folder needs `-y` (or `-n` to plan only). A name that picks out
 one file is its own confirmation and runs as it stands. `-l` prints ten columns: target,
 source, tag, store_path, file, bytes, sha256, dir_state, local, description.
+`-l` takes the same names a fetch does, one or several, file or directory, and
+lists exactly what fetching them would take, so it is the offline dry run for
+any fetch command. It reaches no network: the registry is compiled in.
 
 Downloads verify the pinned `SHA256SUMS` anchor and each file digest; `.part`
 files are renamed only after verification. `-c` writes to cwd without a
@@ -88,8 +91,14 @@ Nothing else is retried. Under `YAME_ASSETS_MIRROR` the URL in the message is
 the mirror's, so a mirror that is down is named rather than the upstream.
 
 Models are in the shared registry (`yame fetch hg38/models` or `mm10/models`).
-`hg38_wg.updecx` is a stable filename, not a stable model version: cite
-`zhou-lab/methscope@v4` plus SHA-256, or YAME v1.35, which pins the bytes.
+`hg38_wg.updecx` is a stable filename, not a stable model version — its bytes
+changed again at model tag v10 — so cite `zhou-lab/methscope@v10` plus SHA-256,
+or the YAME version that pins them, v1.45. A model can also be WITHDRAWN: v10
+dropped the two routing-tree classifiers (`hg38_celltype.clfx`,
+`mm10_celltype_brain.clfx`) in favour of the bank classifiers published at v9.
+A store filled at an earlier tag keeps those files and nothing deletes them;
+they simply stop being listed, and `yame_store_state` reports them as
+NOT_LISTED rather than current.
 
 ## Formats
 
