@@ -1,25 +1,38 @@
-/* summary_multi.h -- accumulate N masks in ONE pass over a query record.
+/* summary_multi.h -- summary accumulation that reads the query ONCE.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * summarize1() takes one mask per call, so scoring a query against N masks
- * walks the query N times. The walk decompresses; the accumulation is a few
- * adds. Measured on a 29.4M-row methylome of 9 samples: 1 mask 1.6 s, 4 masks
- * 4.8 s, 16 masks 16.8 s -- linear in the mask count, which for a 178-set bank
- * is about half a minute per cell.
+ * WHAT THE OLD PATH COSTS. summarize1() takes one mask per call, so N masks
+ * walk the query N times. Measured on the TFBS knowledgebase against a
+ * 29.4M-row methylome, machine idle: 147 ms per set, of which about half is the
+ * query walk. One query pass alone is 300 ms.
  *
- * THE MASK SIDE IS AN ENUMERATOR, NOT A RECORD. A caller that already holds
- * membership as runs -- methscope walks them inside a model file and never
- * materialises a .cm -- feeds them straight in. Requiring cdata_t would have
- * cost that caller a conversion it measured at 0.86 s per set, minutes on a
- * bank, and it would have kept its own copy instead. yame_summarize_multi_cx()
- * is the wrapper that feeds the same kernel from records, which is what
- * `yame summary -m` uses.
+ * WHAT IS SAVED, AND HOW. Two separate things:
  *
- * The result is bit-identical to summarize1(), not approximately equal: within
- * each mask the rows are still accumulated in increasing order, so the same
- * doubles are added in the same sequence. Only the interleaving across masks
- * is new.
+ *   1. The query is read once. A bitmap of its covered rows is built in one
+ *      pass and reused for every mask. That is the saving the request was
+ *      about, and it is about half the per-mask cost.
+ *
+ *   2. The mask is read 64 rows at a time. The first version of this kernel
+ *      tested one bit per row, which left the other half of the cost in place
+ *      and capped the gain at about 2x. Word-wise, the claimed count is a
+ *      popcount of the mask words, the overlap count is a popcount of the mask
+ *      AND the query bitmap, and only the surviving bits are turned back into
+ *      row numbers. 460 thousand words per mask instead of 29 million rows.
+ *
+ * ONE MASK AT A TIME. Because the query bitmap is what carries state between
+ * masks, nothing has to hold N masks in memory: `summary` streams them as it
+ * always did and still reads the query once. The first version needed every
+ * mask resident, which put a 5 GB floor under the full 1359-set TFBS set and
+ * confined the speedup to -M.
+ *
+ * THE MASK SIDE CAN BE AN ENUMERATOR. A caller that holds membership as runs --
+ * methscope walks them inside a model file and never materialises a .cm --
+ * feeds runs rather than records. Requiring cdata_t would have cost it a
+ * conversion it measured at 0.86 s per set, minutes on a 178-set bank.
+ *
+ * BIT-IDENTICAL, not approximately equal. Rows are still visited in increasing
+ * order within a mask, so the same doubles are added in the same sequence.
  */
 #ifndef _YAME_SUMMARY_MULTI_H
 #define _YAME_SUMMARY_MULTI_H
@@ -31,9 +44,8 @@
 extern "C" {
 #endif
 
-/* One mask's totals over one query record. n_u and n_q do not appear: the
- * universe is the query length and the covered count is the same for every
- * mask, so both are returned once by the call rather than N times. */
+/* One mask's totals over one query record. The universe is the query length
+ * and the covered count is the same for every mask, so neither appears here. */
 typedef struct {
   uint64_t n_m;        /* rows this mask claims, whatever the query holds */
   uint64_t n_o;        /* rows this mask claims AND the query covers       */
@@ -41,29 +53,46 @@ typedef struct {
   double   sum_beta;   /* summed beta over those rows                      */
 } yame_acc_t;
 
-/* A membership run: rows [start, start+len) of mask `mask`, in state `state`.
- * A binary mask emits state 0 for every run; a state mask emits the term. */
+/* The query, read once: which rows it covers, as a bitmap, plus the record
+ * itself for the values. Built per query record and reused for every mask. */
+typedef struct {
+  const cdata_t *q;
+  uint64_t *cov;       /* bit i set when row i is covered */
+  uint64_t  n_words;
+  uint64_t  n_q;       /* covered rows, counted during the build */
+} yame_qbits_t;
+
+/* 0 on success, -1 for a query format this does not cover.
+ *
+ * Format 3 only. A format 6 QUERY counts its own universe, restricts the mask
+ * count to that universe, and derives beta as n_o/n_m rather than as a mean of
+ * betas, so the same machinery would quietly give different numbers. It is a
+ * separate kernel, not a branch of this one. */
+int  yame_qbits_build(const cdata_t *query, yame_qbits_t *out);
+void yame_qbits_free(yame_qbits_t *qb);
+
+/* One mask against that bitmap, word-wise. Binary (fmt 0/1) and set+universe
+ * (fmt 6) masks; -1 for anything else, or for a length that disagrees with the
+ * query, so the caller falls back and the old path reports it in its own
+ * words. `acc` is added to, not reset. */
+int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc);
+
+/* --------------------------------------------- the enumerator entry point -- */
+
+/* Rows [start, start+len) of mask `mask` are members, in state `state`. A
+ * binary mask emits state 0. */
 typedef void (*yame_emit_fn)(void *emit_ctx, uint32_t mask,
                              uint64_t start, uint64_t len, uint32_t state);
 
-/* Called once. It must emit every run of every mask; order does not matter,
- * the kernel sorts. */
+/* Called once; must emit every run of every mask. Order does not matter. */
 typedef int (*yame_runs_fn)(void *ctx, yame_emit_fn emit, void *emit_ctx);
 
 /*
- * Accumulate `n_acc` accumulators over one query record in a single pass.
+ * N masks from runs, in one pass over the query.
  *
- * `acc` is indexed by the (mask, state) slot the caller chose when emitting:
- * a caller with one state per mask passes n_acc == n_masks and emits state 0;
- * a caller with states passes n_acc == sum of states and emits the flat slot.
- * The kernel does not interpret `state` beyond adding it to `mask`'s base,
- * which the caller gives in `state_base` (NULL means one slot per mask).
- *
- * Returns 0, or -1 when the query format is one the kernel does not cover.
- * Format 3 today: the M/U methylome, which is where the cost is and what both
- * callers measured. A format 6 QUERY counts a different universe and derives
- * beta differently, so it needs its own kernel rather than a branch of this
- * one; a caller that gets -1 falls back to summarize1() per mask.
+ * `acc` is indexed by the slot the caller chose when emitting: with one state
+ * per mask pass n_acc == n_masks and emit state 0; with states pass the flat
+ * total and give `state_base`, the first slot of each mask.
  *
  * `n_q_out` receives the covered-row count, computed once.
  */
@@ -73,10 +102,9 @@ int yame_summarize_multi(const cdata_t *query,
                          yame_acc_t *acc, uint32_t n_acc,
                          uint64_t *n_q_out);
 
-/* The same kernel, fed from mask RECORDS rather than from runs. Binary and
- * set+universe masks; returns -1 for anything else, or for a mask whose length
- * disagrees with the query, so the caller falls back to the per-mask path and
- * that path reports the mismatch in its own words. */
+/* The same, fed from mask RECORDS. Kept for callers that already hold an array
+ * of masks; `summary` uses yame_summarize_one_cx() in a loop instead, so it
+ * never has to hold them all. */
 int yame_summarize_multi_cx(const cdata_t *query, cdata_t *masks,
                             uint32_t n_masks, yame_acc_t *acc,
                             uint64_t *n_q_out);

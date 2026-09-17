@@ -204,17 +204,16 @@ Compare and summarize
         N_query N_mask N_overlap Log2OddsRatio Beta Depth.
         -V meth (all records must be fmt6): QFile Query MFile Mask N_covered
         N_meth N_covered_in_mask N_meth_in_mask Log2OddsRatio Beta Beta_bg.
-        -M preload masks AND accumulate them in one pass over the query
-        instead of one walk per mask. Identical numbers. On TFBS against a
-        29.4M-row methylome: 32 sets 12.9s -> 2.5s, 128 sets 20.0s -> 8.5s --
-        the factor SHRINKS with the set count, since the walk is saved once
-        and the membership work is not, so it pays most on sparse masks. fmt3
-        queries only. NOT the default because an inflated mask is n/8 bytes:
-        128 sets of 29.4M rows held 546 MB, and all 1359 TFBS sets would want
-        about 5 GB,
-        -H no header, -F full paths, -T always name states,
+        -M preload masks (for a mask file on slow IO; it does not change
+        speed -- see below), -H no header, -F full paths, -T always name states,
         -s <list> rename query samples, -q <name> names a stdin query,
         -6 deprecated alias for -V 2bit.
+        A query with N masks reads the query ONCE, not N times: one bitmap of
+        its covered rows is built and every mask is measured against it 64 rows
+        at a time. Against the 1359-set TFBS knowledgebase on a 29.4M-row
+        methylome that is 198 s -> 7.1 s, byte-identical output, peak memory
+        unchanged at 45 MB. fmt3 queries with binary or fmt6 masks; anything
+        else takes the old per-mask path, which gives the same numbers.
         Name resolution for -m (and -R elsewhere) takes exactly three forms: a
         real filesystem path, the row space's own name (`hg38` -> its .cr), or
         a BARE filename searched in the directories that row space owns —

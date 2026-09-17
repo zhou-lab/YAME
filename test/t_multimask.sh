@@ -1,10 +1,14 @@
 #!/bin/bash
 ## The multi-mask kernel: identical to summarize1(), and faster.
 ##
-## summarize1() takes ONE mask per call, so N masks walk the query N times.
-## Measured before the kernel, on a 29.4M-row methylome of 9 samples: 1 mask
-## 1.6 s, 4 masks 4.8 s, 16 masks 16.8 s. The walk decompresses; the
-## accumulation is a few adds. A 178-set bank is about half a minute per cell.
+## summarize1() takes ONE mask per call, so N masks walk the query N times, and
+## about half the per-mask cost was that walk. The kernel reads the query once
+## into a bitmap of covered rows, then measures each mask against it 64 rows at
+## a time. Against the full 1359-set TFBS knowledgebase on a 29.4M-row
+## methylome: 198 s -> 7.1 s, byte-identical, peak memory unchanged at 45 MB.
+##
+## Word-wise is half the point. A first version walked runs row by row and was
+## only 2x, and at 128 overlapping sets it was SLOWER than the loop it replaced.
 ##
 ## Requested by methscope, which ships its own copy of the arithmetic and asked
 ## for the mask side to be an ENUMERATOR rather than records, because it walks
@@ -49,9 +53,9 @@ cat m3.cg m7.cg m101.cg > multi.cm
 printf 'dense\nmid\nsparse\n' > mnames.txt
 "$YAME" index -s mnames.txt multi.cm >/dev/null 2>&1
 
-## -M is what switches the kernel on: it needs every mask in hand at once.
-## Without it masks are streamed and the per-mask path runs, so BOTH are
-## checked here and both must give the same table.
+## Both paths: -M loads the masks, the default streams them, and the kernel is
+## used either way. The two tables must be identical, and identical to what the
+## per-mask path produced before the kernel existed.
 "$YAME" summary -M -m multi.cm q.cg > got.txt 2>/dev/null
 "$YAME" summary -m multi.cm q.cg > got_stream.txt 2>/dev/null
 diff got.txt got_stream.txt ||

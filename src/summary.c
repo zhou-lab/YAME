@@ -144,17 +144,9 @@ static int usage(void) {
   yame_usage_cont("opens at the query's own row space.");
   yame_usage_cont("If provided, every query sample is summarized against every");
   yame_usage_cont("mask sample (cartesian product).");
-  yame_usage_opt("-M", "Load all masks into memory. Also switches on the");
-  yame_usage_cont("one-pass kernel: the query is walked ONCE and every mask");
-  yame_usage_cont("accumulates together, instead of one walk per mask. On the");
-  yame_usage_cont("TFBS knowledgebase against a 29.4M-row methylome: 32 sets");
-  yame_usage_cont("12.9s -> 2.5s, 128 sets 20.0s -> 8.5s. Identical numbers.");
-  yame_usage_cont("The factor SHRINKS as sets are added, because the walk is");
-  yame_usage_cont("saved once but the membership work is not, so it pays most");
-  yame_usage_cont("where masks are sparse. Memory is the reason it is not the");
-  yame_usage_cont("default: an inflated mask is n/8 bytes, so 128 sets of");
-  yame_usage_cont("29.4M rows held 546 MB and all 1359 TFBS sets would need");
-  yame_usage_cont("about 5 GB. A format 6 query still walks per mask.");
+  yame_usage_opt("-M", "Load all masks into memory, for a mask file on slow IO.");
+  yame_usage_cont("It no longer affects SPEED: a query is read once whatever");
+  yame_usage_cont("this says, and the masks stream either way.");
   yame_usage_cont("Also auto-enabled when the mask stream is unseekable.");
   yame_usage_sec("Naming / output formatting:");
   yame_usage_opt("-H", "Suppress the header line.");
@@ -195,6 +187,7 @@ stats_t* summarize1_queryfmt3(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char 
 stats_t* summarize1_queryfmt4(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 stats_t* summarize1_queryfmt6(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
 stats_t* summarize1_queryfmt7(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config);
+
 
 stats_t* summarize1(cdata_t *c, cdata_t *c_mask, uint64_t *n_st, char *sm, char *sq, config_t *config) {
 
@@ -286,6 +279,29 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
     free(st);
   }
 }
+
+/* One accumulator into one printed row. The per-mask path builds its stats_t
+ * inside summarize1(); the kernel returns counts, so the naming and the derived
+ * beta happen here -- once, rather than in each of the two call sites. */
+static void emit_acc(const yame_acc_t *a, uint64_t n_q, const cdata_t *q,
+                     const char *mask_name, uint64_t km,
+                     const char *sq, const char *fname_qry, config_t *config) {
+  stats_t *st = wzcalloc(1, sizeof(stats_t));
+  st[0].n_u = q->n;
+  st[0].n_q = n_q;
+  st[0].n_m = a->n_m;
+  st[0].n_o = a->n_o;
+  st[0].sum_depth = a->sum_depth;
+  st[0].sum_beta  = a->sum_beta;
+  /* Inf when nothing overlapped, which is what the per-mask path prints too. */
+  st[0].beta = a->sum_beta / a->n_o;
+  if (mask_name) st[0].sm = wzstrdup(mask_name);
+  else { kstring_t t = {0}; ksprintf(&t, "%"PRIu64"", km+1);
+         st[0].sm = wzstrdup(t.s); free(t.s); }
+  st[0].sq = wzstrdup(sq ? sq : "");
+  format_stats_and_clean(st, 1, fname_qry, config);
+}
+
 
 void prepare_mask(cdata_t *c) {
   if (c->fmt < '2') {
@@ -512,6 +528,7 @@ int main_summary(int argc, char *argv[]) {
       if (snames_qry.n) kputs(snames_qry.s[kq], &sq);
       else ksprintf(&sq, "%"PRIu64"", kq+1);
       prepare_mask(&c_qry);
+      yame_qbits_t qb;
 
       if (config.fname_mask) {   /* apply any mask? */
         if (c_masks_n) {        /* in memory or unseekable */
@@ -522,33 +539,18 @@ int main_summary(int argc, char *argv[]) {
            * a mask both add the same doubles in the same row order. The kernel
            * declines what it does not cover and the loop below runs instead. */
           int multi_done = 0;
-          if (c_masks_n > 1 && config.f6_view == F6_VIEW_SET) {
-            yame_acc_t *acc = wzcalloc(c_masks_n, sizeof(yame_acc_t));
-            uint64_t n_q = 0;
-            if (yame_summarize_multi_cx(&c_qry, c_masks, (uint32_t) c_masks_n,
-                                        acc, &n_q) == 0) {
-              for (uint64_t km = 0; km < c_masks_n; ++km) {
-                stats_t *st = wzcalloc(1, sizeof(stats_t));
-                st[0].n_u = c_qry.n;
-                st[0].n_q = n_q;
-                st[0].n_m = acc[km].n_m;
-                st[0].n_o = acc[km].n_o;
-                st[0].sum_depth = acc[km].sum_depth;
-                st[0].sum_beta  = acc[km].sum_beta;
-                st[0].beta = acc[km].sum_beta / acc[km].n_o;  /* Inf when n_o == 0,
-                                                               * as the per-mask
-                                                               * path also gives */
-                kstring_t sm = {0};
-                if (snames_mask.n) kputs(snames_mask.s[km], &sm);
-                else ksprintf(&sm, "%"PRIu64"", km+1);
-                st[0].sm = wzstrdup(sm.s ? sm.s : "");
-                st[0].sq = wzstrdup(sq.s ? sq.s : "");
-                free(sm.s);
-                format_stats_and_clean(st, 1, fname_qry, &config);
+          if (c_masks_n > 1 && config.f6_view == F6_VIEW_SET &&
+              yame_qbits_build(&c_qry, &qb) == 0) {
+            multi_done = 1;
+            for (uint64_t km = 0; km < c_masks_n && multi_done; ++km) {
+              yame_acc_t a = {0};
+              if (yame_summarize_one_cx(&qb, &c_masks[km], &a) != 0) {
+                multi_done = 0; break;    /* a mask it cannot take: fall back */
               }
-              multi_done = 1;
+              emit_acc(&a, qb.n_q, &c_qry, snames_mask.n ? snames_mask.s[km] : NULL,
+                       km, sq.s, fname_qry, &config);
             }
-            free(acc);
+            yame_qbits_free(&qb);
           }
           for (uint64_t km=0; !multi_done && km<c_masks_n; ++km) {
             cdata_t c_mask = c_masks[km];
@@ -566,11 +568,27 @@ int main_summary(int argc, char *argv[]) {
             fflush(stderr);
             exit(1);
           }
+          /* The query bitmap is built ONCE here and every streamed mask is
+           * measured against it, so the default path gets the saving too and
+           * still holds one mask at a time. `have_qb` stays 0 for a query the
+           * kernel does not cover, and then this is the old loop exactly. */
+          int have_qb = (config.f6_view == F6_VIEW_SET &&
+                         yame_qbits_build(&c_qry, &qb) == 0);
           for (uint64_t km=0;;++km) {
             cdata_t c_mask = read_cdata1(&cf_mask);
             if (c_mask.n == 0) break;
             prepare_mask(&c_mask);
 
+            if (have_qb) {
+              yame_acc_t a = {0};
+              if (yame_summarize_one_cx(&qb, &c_mask, &a) == 0) {
+                emit_acc(&a, qb.n_q, &c_qry,
+                         snames_mask.n ? snames_mask.s[km] : NULL,
+                         km, sq.s, fname_qry, &config);
+                free_cdata(&c_mask);
+                continue;
+              }
+            }
             kstring_t sm = {0};
             if (snames_mask.n) kputs(snames_mask.s[km], &sm);
             else ksprintf(&sm, "%"PRIu64"", km+1);
@@ -580,6 +598,7 @@ int main_summary(int argc, char *argv[]) {
             free(sm.s);
             free_cdata(&c_mask);
           }
+          if (have_qb) yame_qbits_free(&qb);
         }
       } else {                  /* whole dataset summary if missing mask */
         kstring_t sm = {0}; cdata_t c_mask = {0};
