@@ -70,40 +70,114 @@ static inline uint64_t tail_mask(uint64_t n, uint64_t word) {
 
 int yame_qbits_build(const cdata_t *query, yame_qbits_t *out) {
   if (!query || !out) return -1;
-  if (query->fmt != '3') return -1;
+  if (query->fmt != '3' && query->fmt != '6') return -1;
 
   memset(out, 0, sizeof *out);
   out->q = query;
   out->n_words = nwords(query->n);
-  out->cov = wzcalloc(out->n_words ? out->n_words : 1, sizeof(uint64_t));
+  uint64_t alloc = out->n_words ? out->n_words : 1;
+  out->cov = wzcalloc(alloc, sizeof(uint64_t));
 
-  /* The one pass over the query. Row order is irrelevant here -- this counts
-   * and marks, it does not sum -- so nothing about bit-identity depends on it. */
-  for (uint64_t i = 0; i < query->n; ++i)
-    if (f3_get_mu((cdata_t *) query, i)) {
-      out->cov[i / WBITS] |= (uint64_t) 1 << (i % WBITS);
-      out->n_q++;
+  /* The one pass over the query. Row order is irrelevant here -- this marks and
+   * counts, it does not sum -- so nothing about bit-identity depends on it. */
+  if (query->fmt == '3') {
+    for (uint64_t i = 0; i < query->n; ++i)
+      if (f3_get_mu((cdata_t *) query, i)) {
+        out->cov[i / WBITS] |= (uint64_t) 1 << (i % WBITS);
+        out->n_q++;
+      }
+  } else {
+    /* Both bitmaps: the universe decides which rows count at all, and the set
+     * is what is being measured inside it. Neither follows from the other. */
+    out->qset = wzcalloc(alloc, sizeof(uint64_t));
+    for (uint64_t i = 0; i < query->n; ++i) {
+      if (FMT6_IN_UNI(*query, i)) out->cov[i / WBITS]  |= (uint64_t) 1 << (i % WBITS);
+      if (FMT6_IN_SET(*query, i)) out->qset[i / WBITS] |= (uint64_t) 1 << (i % WBITS);
     }
+    /* n_q is per-mask here, since a format 6 mask narrows the universe. */
+  }
   return 0;
 }
 
 void yame_qbits_free(yame_qbits_t *qb) {
   if (!qb) return;
-  free(qb->cov); qb->cov = NULL; qb->n_words = 0;
+  free(qb->cov);  qb->cov  = NULL;
+  free(qb->qset); qb->qset = NULL;
+  qb->n_words = 0;
 }
 
-int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc) {
-  if (!qb || !qb->cov || !mask || !acc) return -1;
-  if (mask->fmt != '0' && mask->fmt != '1' && mask->fmt != '6') return -1;
-  if (mask->n != qb->q->n) return -1;
+/* The mask's universe, for a format 6 mask: the odd bits of each pair. A binary
+ * mask has none, and every row it covers is in scope. */
+static inline uint64_t load6_uni(const uint8_t *s, uint64_t nb, uint64_t base_row) {
+  uint64_t w = 0;
+  for (int k = 0; k < 16; ++k) {
+    uint64_t byte = (base_row >> 2) + (uint64_t) k;
+    if (byte >= nb) break;
+    uint8_t b = (uint8_t) (s[byte] >> 1);            /* universe at bits 1,3,5,7 */
+    uint8_t m = (uint8_t) (b & 0x55);
+    uint64_t nib = (uint64_t) ((m & 1) | ((m >> 1) & 2) | ((m >> 2) & 4) | ((m >> 3) & 8));
+    w |= nib << (k * 4);
+  }
+  return w;
+}
 
+/* The mask's SET bits alone, without ANDing in its universe. */
+static inline uint64_t load6_set(const uint8_t *s, uint64_t nb, uint64_t base_row) {
+  uint64_t w = 0;
+  for (int k = 0; k < 16; ++k) {
+    uint64_t byte = (base_row >> 2) + (uint64_t) k;
+    if (byte >= nb) break;
+    uint8_t m = (uint8_t) (s[byte] & 0x55);          /* set at bits 0,2,4,6 */
+    uint64_t nib = (uint64_t) ((m & 1) | ((m >> 1) & 2) | ((m >> 2) & 4) | ((m >> 3) & 8));
+    w |= nib << (k * 4);
+  }
+  return w;
+}
+
+
+/* The mask, however the caller holds it.
+ *
+ * A record is read 64 rows at a time by the loads above. A caller that came in
+ * through the enumerator has already built a bitmap, and that bitmap is WORDS:
+ * reading it as a format 0 record would only line up on a little-endian
+ * machine, since FMT0_IN_SET addresses bytes. So both shapes go through this
+ * instead of one pretending to be the other.
+ */
+typedef struct {
+  const uint64_t *bm;       /* non-NULL: already a bitmap, one word per 64 rows */
+  cdata_t        *cx;       /* else: a record */
+  uint64_t        nb;       /* bytes of that record's payload */
+  int             is6;      /* the record is format 6 */
+} mview_t;
+
+static inline uint64_t mv_member(const mview_t *v, uint64_t w, uint64_t base) {
+  if (v->bm) return v->bm[w];
+  return v->is6 ? load6(v->cx->s, v->nb, base) : load0(v->cx->s, v->nb, base / 8);
+}
+/* A bitmap and a binary record carry no universe of their own: every row is in
+ * scope, and the query's universe is the only one that narrows anything. */
+static inline uint64_t mv_uni(const mview_t *v, uint64_t w, uint64_t base) {
+  (void) w;
+  if (v->bm || !v->is6) return ~(uint64_t) 0;
+  return load6_uni(v->cx->s, v->nb, base);
+}
+static inline uint64_t mv_set(const mview_t *v, uint64_t w, uint64_t base) {
+  if (v->bm) return v->bm[w];
+  return v->is6 ? load6_set(v->cx->s, v->nb, base) : load0(v->cx->s, v->nb, base / 8);
+}
+
+/* A format 3 query: the universe is every row, the mask count is unrestricted,
+ * and beta is the MEAN of the per-row betas -- so the values have to be read,
+ * at the overlapping rows only. */
+static int one_q3(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) {
   uint64_t n = qb->q->n;
-  uint64_t nb = mask->fmt == '6' ? (n + 3) / 4 : (n + 7) / 8;
+
+  acc->n_u = n;
+  acc->n_q = qb->n_q;
 
   for (uint64_t w = 0; w < qb->n_words; ++w) {
     uint64_t base = w * WBITS;
-    uint64_t mw = (mask->fmt == '6') ? load6(mask->s, nb, base)
-                                     : load0(mask->s, nb, base / 8);
+    uint64_t mw = mv_member(mv, w, base);
     mw &= tail_mask(n, w);
     if (!mw) continue;
 
@@ -124,7 +198,53 @@ int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc
       ov &= ov - 1;
     }
   }
+  acc->beta = acc->sum_beta / acc->n_o;     /* Inf at zero overlap, as before */
   return 0;
+}
+
+/* A format 6 query: every count is taken INSIDE a universe, and beta is the
+ * overlap over the mask count. No value is read at all -- four popcounts a
+ * word, which is why this is cheaper than the format 3 path rather than dearer.
+ */
+static int one_q6(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) {
+  uint64_t n = qb->q->n;
+
+  for (uint64_t w = 0; w < qb->n_words; ++w) {
+    uint64_t base = w * WBITS, keep = tail_mask(n, w);
+    /* The universe: the query's, narrowed by the mask's when it has one. */
+    uint64_t uni = qb->cov[w] & keep & mv_uni(mv, w, base);
+    uint64_t mset = mv_set(mv, w, base);
+    if (!uni) continue;
+
+    uint64_t qs = qb->qset[w] & uni;
+    uint64_t ms = mset & uni;
+    acc->n_u += (uint64_t) pc64(uni);
+    acc->n_q += (uint64_t) pc64(qs);
+    acc->n_m += (uint64_t) pc64(ms);
+    acc->n_o += (uint64_t) pc64(qs & ms);
+  }
+  acc->beta = (double) acc->n_o / acc->n_m; /* Inf at an empty mask, as before */
+  return 0;
+}
+
+static int one_view(const yame_qbits_t *qb, const mview_t *mv, yame_acc_t *acc) {
+  memset(acc, 0, sizeof *acc);
+  if (qb->q->fmt == '3') return one_q3(qb, mv, acc);
+  if (qb->q->fmt == '6' && qb->qset) return one_q6(qb, mv, acc);
+  return -1;
+}
+
+int yame_summarize_one_cx(const yame_qbits_t *qb, cdata_t *mask, yame_acc_t *acc) {
+  if (!qb || !qb->cov || !mask || !acc) return -1;
+  if (mask->fmt != '0' && mask->fmt != '1' && mask->fmt != '6') return -1;
+  if (mask->n != qb->q->n) return -1;
+
+  mview_t mv;
+  mv.bm  = NULL;
+  mv.cx  = mask;
+  mv.is6 = (mask->fmt == '6');
+  mv.nb  = mv.is6 ? (qb->q->n + 3) / 4 : (qb->q->n + 7) / 8;
+  return one_view(qb, &mv, acc);
 }
 
 /* ------------------------------------------------------------- record form -- */
@@ -206,23 +326,15 @@ int yame_summarize_multi(const cdata_t *query,
     return -1;
   }
 
+  /* The same per-mask code as `summary -m` runs here, over the bitmap the runs
+   * built: one definition of the arithmetic, not two. */
   for (uint32_t s = 0; s < n_acc; ++s) {
     if (!b.bm[s]) continue;
-    for (uint64_t w = 0; w < qb.n_words; ++w) {
-      uint64_t mw = b.bm[s][w] & tail_mask(query->n, w);
-      if (!mw) continue;
-      acc[s].n_m += (uint64_t) pc64(mw);
-      uint64_t ov = mw & qb.cov[w];
-      if (!ov) continue;
-      acc[s].n_o += (uint64_t) pc64(ov);
-      uint64_t base = w * WBITS;
-      while (ov) {
-        int bit = ctz64(ov);
-        uint64_t mu = f3_get_mu((cdata_t *) query, base + (uint64_t) bit);
-        acc[s].sum_depth += MU2cov(mu);
-        acc[s].sum_beta  += MU2beta(mu);
-        ov &= ov - 1;
-      }
+    mview_t mv; mv.bm = b.bm[s]; mv.cx = NULL; mv.nb = 0; mv.is6 = 0;
+    if (one_view(&qb, &mv, &acc[s]) != 0) {
+      for (uint32_t t = s; t < n_acc; ++t) free(b.bm[t]);
+      free(b.bm); yame_qbits_free(&qb);
+      return -1;
     }
     free(b.bm[s]);
   }

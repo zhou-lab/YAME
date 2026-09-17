@@ -5,7 +5,10 @@
 ## about half the per-mask cost was that walk. The kernel reads the query once
 ## into a bitmap of covered rows, then measures each mask against it 64 rows at
 ## a time. Against the full 1359-set TFBS knowledgebase on a 29.4M-row
-## methylome: 198 s -> 7.1 s, byte-identical, peak memory unchanged at 45 MB.
+## methylome: 198 s -> 7.1 s for a fmt3 query, 111 s -> 5.8 s for a fmt6 one,
+## byte-identical either way, peak memory unchanged at 45 MB. The fmt6 path is
+## the faster of the two because it never reads a value: every count is a
+## popcount of two or three bitmaps.
 ##
 ## Word-wise is half the point. A first version walked runs row by row and was
 ## only 2x, and at 128 overlapping sets it was SLOWER than the loop it replaced.

@@ -286,15 +286,18 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
 static void emit_acc(const yame_acc_t *a, uint64_t n_q, const cdata_t *q,
                      const char *mask_name, uint64_t km,
                      const char *sq, const char *fname_qry, config_t *config) {
+  (void) n_q; (void) q;
   stats_t *st = wzcalloc(1, sizeof(stats_t));
-  st[0].n_u = q->n;
-  st[0].n_q = n_q;
+  /* The universe, the query count and beta all come from the accumulator, not
+   * from the query record: a format 6 query takes its universe from the query
+   * AND the mask, so all three are per-mask there. */
+  st[0].n_u = a->n_u;
+  st[0].n_q = a->n_q;
   st[0].n_m = a->n_m;
   st[0].n_o = a->n_o;
   st[0].sum_depth = a->sum_depth;
   st[0].sum_beta  = a->sum_beta;
-  /* Inf when nothing overlapped, which is what the per-mask path prints too. */
-  st[0].beta = a->sum_beta / a->n_o;
+  st[0].beta = a->beta;
   if (mask_name) st[0].sm = wzstrdup(mask_name);
   else { kstring_t t = {0}; ksprintf(&t, "%"PRIu64"", km+1);
          st[0].sm = wzstrdup(t.s); free(t.s); }

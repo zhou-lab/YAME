@@ -35,6 +35,23 @@ static cdata_t make_q3(uint64_t n, unsigned seed) {
   return c;
 }
 
+/* A format 6 record: two bits a row, universe at the odd bit and set at the
+ * even one, with some rows outside the universe so the restriction is exercised. */
+static cdata_t make_q6(uint64_t n, unsigned seed) {
+  uint64_t nb = (n + 3) / 4;
+  uint8_t *s = calloc(nb, 1);
+  for (uint64_t i = 0; i < n; ++i) {
+    unsigned r = (seed + (unsigned) i * 2246822519u);
+    int uni = ((r >> 5) % 4) != 0;            /* a quarter outside the universe */
+    int set = uni && ((r >> 9) % 3) == 0;
+    if (set) s[i >> 2] |= (uint8_t) (1u << ((i & 3) * 2));
+    if (uni) s[i >> 2] |= (uint8_t) (1u << ((i & 3) * 2 + 1));
+  }
+  cdata_t c = {0};
+  c.fmt = '6'; c.n = n; c.unit = 2; c.compressed = 0; c.s = s;
+  return c;
+}
+
 /* A binary mask over the same rows, `every`-th row a member, offset by phase,
  * which gives runs rather than single rows. */
 static cdata_t make_mask0(uint64_t n, int every, int phase, int runlen) {
@@ -89,6 +106,52 @@ int main(void) {
     CHECK(n_q == ref[j].n_q, "n_q %" PRIu64 " vs mask %u's %" PRIu64,
           n_q, j, ref[j].n_q);
   }
+
+  /* ---- a format 6 QUERY, which measures something else entirely ----------
+   * Its universe is the query's own, narrowed further by a format 6 mask's;
+   * every count is taken inside it; and beta is the overlap over the mask
+   * count, not a mean of betas. Getting that wrong would print plausible
+   * numbers, so it is checked against summarize1() the same way. */
+  cdata_t q6 = make_q6(N, 999);   /* seeded so the mix of in and out of universe is fixed */
+  yame_acc_t a6[6]; memset(a6, 0, sizeof a6);
+  uint64_t nq6 = 0;
+  CHECK(yame_summarize_multi_cx(&q6, m, NM, a6, &nq6) == 0,
+        "the kernel refused a format 6 query");
+  for (uint32_t j = 0; j < NM; ++j) {
+    uint64_t n_st = 0;
+    stats_t *st = summarize1(&q6, &m[j], &n_st, (char *)"m", (char *)"q", &cfg);
+    CHECK(a6[j].n_u == st[0].n_u, "fmt6 mask %u n_u %" PRIu64 " vs %" PRIu64,
+          j, a6[j].n_u, st[0].n_u);
+    CHECK(a6[j].n_q == st[0].n_q, "fmt6 mask %u n_q %" PRIu64 " vs %" PRIu64,
+          j, a6[j].n_q, st[0].n_q);
+    CHECK(a6[j].n_m == st[0].n_m, "fmt6 mask %u n_m %" PRIu64 " vs %" PRIu64,
+          j, a6[j].n_m, st[0].n_m);
+    CHECK(a6[j].n_o == st[0].n_o, "fmt6 mask %u n_o %" PRIu64 " vs %" PRIu64,
+          j, a6[j].n_o, st[0].n_o);
+    CHECK(a6[j].beta == st[0].beta, "fmt6 mask %u beta %.17g vs %.17g",
+          j, a6[j].beta, st[0].beta);
+    free(st[0].sm); free(st[0].sq); free(st);
+  }
+
+  /* a format 6 MASK against that query narrows the universe again */
+  cdata_t m6 = make_q6(N, 4242);
+  yame_acc_t am6 = {0};
+  CHECK(yame_summarize_multi_cx(&q6, &m6, 1, &am6, NULL) == 0,
+        "the kernel refused a format 6 mask");
+  {
+    uint64_t n_st = 0;
+    stats_t *st = summarize1(&q6, &m6, &n_st, (char *)"m", (char *)"q", &cfg);
+    CHECK(am6.n_u == st[0].n_u, "fmt6 mask narrowing: n_u %" PRIu64 " vs %" PRIu64,
+          am6.n_u, st[0].n_u);
+    CHECK(am6.n_m == st[0].n_m, "fmt6 mask narrowing: n_m %" PRIu64 " vs %" PRIu64,
+          am6.n_m, st[0].n_m);
+    CHECK(am6.n_o == st[0].n_o, "fmt6 mask narrowing: n_o %" PRIu64 " vs %" PRIu64,
+          am6.n_o, st[0].n_o);
+    CHECK(am6.beta == st[0].beta, "fmt6 mask narrowing: beta %.17g vs %.17g",
+          am6.beta, st[0].beta);
+    free(st[0].sm); free(st[0].sq); free(st);
+  }
+  free(m6.s); free(q6.s);
 
   /* a format the kernel does not cover must be refused, not guessed at */
   cdata_t q4 = q; q4.fmt = '4';
