@@ -29,6 +29,7 @@
 #include "assets.h"
 #include "snames.h"
 #include "summary.h"
+#include "summary_multi.h"
 
 /**
  * yame summary
@@ -143,7 +144,17 @@ static int usage(void) {
   yame_usage_cont("opens at the query's own row space.");
   yame_usage_cont("If provided, every query sample is summarized against every");
   yame_usage_cont("mask sample (cartesian product).");
-  yame_usage_opt("-M", "Load all masks into memory (faster when mask file is on slow IO).");
+  yame_usage_opt("-M", "Load all masks into memory. Also switches on the");
+  yame_usage_cont("one-pass kernel: the query is walked ONCE and every mask");
+  yame_usage_cont("accumulates together, instead of one walk per mask. On the");
+  yame_usage_cont("TFBS knowledgebase against a 29.4M-row methylome: 32 sets");
+  yame_usage_cont("12.9s -> 2.5s, 128 sets 20.0s -> 8.5s. Identical numbers.");
+  yame_usage_cont("The factor SHRINKS as sets are added, because the walk is");
+  yame_usage_cont("saved once but the membership work is not, so it pays most");
+  yame_usage_cont("where masks are sparse. Memory is the reason it is not the");
+  yame_usage_cont("default: an inflated mask is n/8 bytes, so 128 sets of");
+  yame_usage_cont("29.4M rows held 546 MB and all 1359 TFBS sets would need");
+  yame_usage_cont("about 5 GB. A format 6 query still walks per mask.");
   yame_usage_cont("Also auto-enabled when the mask stream is unseekable.");
   yame_usage_sec("Naming / output formatting:");
   yame_usage_opt("-H", "Suppress the header line.");
@@ -504,7 +515,42 @@ int main_summary(int argc, char *argv[]) {
 
       if (config.fname_mask) {   /* apply any mask? */
         if (c_masks_n) {        /* in memory or unseekable */
-          for (uint64_t km=0;km<c_masks_n;++km) {
+          /* Every mask in ONE pass when the kernel covers this query. It walks
+           * the record once and scatters into N accumulators; the loop below
+           * walks it once PER MASK, which on a 29.4M-row methylome cost 1.6 s
+           * for one mask and 16.8 s for sixteen. Bit-identical, because within
+           * a mask both add the same doubles in the same row order. The kernel
+           * declines what it does not cover and the loop below runs instead. */
+          int multi_done = 0;
+          if (c_masks_n > 1 && config.f6_view == F6_VIEW_SET) {
+            yame_acc_t *acc = wzcalloc(c_masks_n, sizeof(yame_acc_t));
+            uint64_t n_q = 0;
+            if (yame_summarize_multi_cx(&c_qry, c_masks, (uint32_t) c_masks_n,
+                                        acc, &n_q) == 0) {
+              for (uint64_t km = 0; km < c_masks_n; ++km) {
+                stats_t *st = wzcalloc(1, sizeof(stats_t));
+                st[0].n_u = c_qry.n;
+                st[0].n_q = n_q;
+                st[0].n_m = acc[km].n_m;
+                st[0].n_o = acc[km].n_o;
+                st[0].sum_depth = acc[km].sum_depth;
+                st[0].sum_beta  = acc[km].sum_beta;
+                st[0].beta = acc[km].sum_beta / acc[km].n_o;  /* Inf when n_o == 0,
+                                                               * as the per-mask
+                                                               * path also gives */
+                kstring_t sm = {0};
+                if (snames_mask.n) kputs(snames_mask.s[km], &sm);
+                else ksprintf(&sm, "%"PRIu64"", km+1);
+                st[0].sm = wzstrdup(sm.s ? sm.s : "");
+                st[0].sq = wzstrdup(sq.s ? sq.s : "");
+                free(sm.s);
+                format_stats_and_clean(st, 1, fname_qry, &config);
+              }
+              multi_done = 1;
+            }
+            free(acc);
+          }
+          for (uint64_t km=0; !multi_done && km<c_masks_n; ++km) {
             cdata_t c_mask = c_masks[km];
             kstring_t sm = {0};
             if (snames_mask.n) kputs(snames_mask.s[km], &sm);

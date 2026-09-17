@@ -204,7 +204,15 @@ Compare and summarize
         N_query N_mask N_overlap Log2OddsRatio Beta Depth.
         -V meth (all records must be fmt6): QFile Query MFile Mask N_covered
         N_meth N_covered_in_mask N_meth_in_mask Log2OddsRatio Beta Beta_bg.
-        -M preload masks, -H no header, -F full paths, -T always name states,
+        -M preload masks AND accumulate them in one pass over the query
+        instead of one walk per mask. Identical numbers. On TFBS against a
+        29.4M-row methylome: 32 sets 12.9s -> 2.5s, 128 sets 20.0s -> 8.5s --
+        the factor SHRINKS with the set count, since the walk is saved once
+        and the membership work is not, so it pays most on sparse masks. fmt3
+        queries only. NOT the default because an inflated mask is n/8 bytes:
+        128 sets of 29.4M rows held 546 MB, and all 1359 TFBS sets would want
+        about 5 GB,
+        -H no header, -F full paths, -T always name states,
         -s <list> rename query samples, -q <name> names a stdin query,
         -6 deprecated alias for -V 2bit.
         Name resolution for -m (and -R elsewhere) takes exactly three forms: a
