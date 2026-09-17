@@ -143,7 +143,7 @@ void f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U) {
 }
 
 // note this function generate uin32_t not uint64_t. Please fix.
-uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
+uint64_t f3_get_mu_wide(cdata_t *c, uint64_t i) {
   uint8_t *data = c->s + (c->unit*i);
   uint64_t mu = 0;
   for (uint8_t j=0; j<c->unit; ++j) {

@@ -137,7 +137,7 @@
  *   • Caller must ensure 0 ≤ i < c->n.
  *   • Works uniformly regardless of underlying integer width.
  */
-uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
+uint64_t f2_get_uint64_wide(cdata_t *c, uint64_t i) {
   assert(!c->compressed);
   if (!c->aux) fmt2_set_aux(c);
   f2_aux_t *aux = (f2_aux_t*) c->aux;

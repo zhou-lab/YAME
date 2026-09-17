@@ -201,11 +201,41 @@ void fmt2_set_aux(cdata_t *c);
 uint8_t* fmt2_get_data(const cdata_t *c);
 uint64_t fmt2_get_keys_n(const cdata_t *c);
 uint64_t fmt2_get_keys_nbytes(const cdata_t *c);
-uint64_t f2_get_uint64(cdata_t *c, uint64_t i);
 char* f2_get_string(cdata_t *c, uint64_t i);
 
 void     f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
-uint64_t f3_get_mu(cdata_t *c, uint64_t i);
+
+/*
+ * The two per-row readers, inlined, with a one-byte fast path.
+ *
+ * Both used to be plain calls that looped over `unit` whatever its width. At
+ * genome scale that loop IS the measurement: over 29.4M rows, reading every
+ * state code cost 85 ms through the accessor and 16 ms as a direct byte, and
+ * reading every M/U value cost another 85 ms. A state-mask summary spent 233 ms
+ * of its 460 in the accumulation, and most of that was here.
+ *
+ * unit == 1 is the common case and the only one worth special-casing: a format 3
+ * record at unit 1 carries M and U in four bits each, and every state mask in
+ * the knowledgebase fits its terms in a byte -- 101 of them do. Wider records go
+ * to the out-of-line form, which is the original code unchanged.
+ */
+uint64_t f2_get_uint64_wide(cdata_t *c, uint64_t i);
+uint64_t f3_get_mu_wide(cdata_t *c, uint64_t i);
+
+static inline uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
+  if (c->unit == 1) {
+    uint64_t b = c->s[i];
+    return ((b >> 4) << 32) | (b & 0xf);
+  }
+  return f3_get_mu_wide(c, i);
+}
+
+/* The fast path needs aux, which fmt2_set_aux() builds and which also asserts
+ * the record is inflated. A record without it falls through and gets both. */
+static inline uint64_t f2_get_uint64(cdata_t *c, uint64_t i) {
+  if (c->unit == 1 && c->aux) return ((f2_aux_t *) c->aux)->data[i];
+  return f2_get_uint64_wide(c, i);
+}
 #define MU2beta(mu) (double) ((mu)>>32) / (((mu)>>32) + ((mu)&0xffffffff))
 #define MU2cov(mu) (((mu)>>32) + ((mu)&0xffffffff))
 
