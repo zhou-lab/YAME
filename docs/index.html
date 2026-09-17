@@ -468,6 +468,12 @@ human_hg38_test.cg      1  CGI.20220904.cm  Island    29000    23857    2168    
   hg38/KYCG/CGI</code> fails, because the slashes make it look for a file of
   that literal name. The block above uses both, one line apart, and that is the
   asymmetry most likely to cost you an afternoon.</p>
+  <p><b>Many masks cost little more than one.</b> The query is read once and every
+  mask is measured against it 64 rows at a time, so a whole knowledgebase is one
+  pass rather than one per set: the 1359-set TFBS collection against a 29.4M-row
+  methylome takes 6 s where it used to take 193, with the same numbers and the
+  same 45 MB. <code class='inl'>YAME_SUMMARY_PATH=1</code> reports on stderr how
+  many masks took that path, since the output cannot tell you.</p>
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_immune_mixture.cg
 yame <span class="sub">fetch</span> -c hg38/data/human_hg38_40_celltypes_chr20.cg
