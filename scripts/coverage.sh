@@ -30,6 +30,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 cp -r src htslib test Makefile yame-config.in "$work/"
 [ -d tools ] && cp -r tools "$work/"
+## docs too: t_docs_consistency.sh reads docs/llms.txt and fails outright
+## without it, and t_docs.sh reads both pages. Left out, the coverage run
+## reported one failed test that the ordinary suite passed.
+[ -d docs ] && cp -r docs "$work/"
 
 # -O0 so line numbers map 1:1; optimisation merges and elides lines and the
 # annotation stops meaning anything. The flags ride on CC because the Makefile

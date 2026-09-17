@@ -44,7 +44,7 @@ read -r wu wq wm wo < vset.want
 
 ## ---- 2. -V meth: universe is coverage, set is methylated ------------------
 "$YAME" summary -V meth -m m.cg q.cg > vmeth.txt 2>/dev/null
-head -1 vmeth.txt | grep -q 'N_covered' ||
+head -1 vmeth.txt | grep 'N_covered' >/dev/null ||
   { echo "-V meth did not switch the column names"; head -1 vmeth.txt; exit 1; }
 read -r nc nmeth ncm nmm <<<"$(tail -1 vmeth.txt | cut -f5-8 | tr '\t' ' ')"
 [ "$nc" = "$wu" ] || { echo "-V meth N_covered is $nc, want $wu"; exit 1; }

@@ -11,6 +11,13 @@
 ## class, which no other test can reach.
 set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
+## The browser is driven through a pty, so it is the one test whose result
+## depends on TIMING rather than on output. Run under load it reads keys late
+## and a swallowed one changes what the next key means. The release tests run
+## it ONCE, alone, after the build lanes finish, and set this in the lanes.
+if [ -n "${YAME_SKIP_UI:-}" ]; then
+  echo "skip: t_ui runs alone (YAME_SKIP_UI set)"; exit 0
+fi
 command -v python3 >/dev/null || { echo "skip: no python3 for the pty" >&2; exit 0; }
 
 d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
@@ -22,7 +29,17 @@ import os, pty, sys, time, select, signal
 YAME = sys.argv[1]
 fails = 0
 
-def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
+## Quiet-detection thresholds. A finished frame goes quiet in a few ms on an
+## idle box, but the release tests run six lanes on four cores, and there a
+## frame can stall mid-draw for longer than the old 25 ms. The pump then
+## returned early, the next key went out before the browser had finished
+## reading the last one, and a swallowed `/` turned the following Enter into
+## "open the info pane". Scaled by YAME_UI_SLOW for a loaded machine.
+_SLOW = float(os.environ.get("YAME_UI_SLOW", "1"))
+QUIET = 0.08 * _SLOW
+SETTLE = 1.0 * _SLOW
+
+def drive(args, keys, label, want_exit=0, settle=SETTLE, timeout=15.0):
     """Run yame under a pty, feed keys with a pause between them, collect
     everything it draws, and return (exit status, output)."""
     global fails
@@ -33,7 +50,7 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         os.environ.pop("NO_COLOR", None)  # NO_COLOR or TERM=dumb means "plain
         os.execv(YAME, ["yame"] + args)    # terminal": a table, not the browser
     out = b""
-    def pump(t, quiet=0.025):
+    def pump(t, quiet=QUIET):
         """Read until the output has been quiet for `quiet` seconds, or `t`
         has elapsed -- whichever is first. A finished frame goes quiet in a
         few milliseconds, so this is the wait a keypress actually needs; a
@@ -47,13 +64,13 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
                 except OSError: return False
             elif time.time() - last >= quiet and out: return True
         return True
-    pump(2.0)                              # first frame, however long it takes
+    pump(2.0 * _SLOW)                      # first frame, however long it takes
     alive = True
     for k in keys:
         if not alive: break
         try: os.write(fd, k)
         except OSError: alive = False; break
-        alive = pump(settle, quiet=0.025)
+        alive = pump(settle, quiet=QUIET)
         ## A bare ESC is told apart from the start of an escape sequence by a
         ## 40 ms poll for a following byte (read_key in src/ui.c). A key that
         ## lands inside that window is taken for the sequence's tail and
@@ -89,7 +106,7 @@ def drive(args, keys, label, want_exit=0, settle=0.5, timeout=8.0):
         fails += 1
     return code, out
 
-def settle(fd, t=2.0, quiet=0.025):
+def settle(fd, t=2.0 * _SLOW, quiet=QUIET):
     """Read from fd until it has been quiet for `quiet` s or `t` s pass; return
     the bytes. The wait every interactive check needs: it ends when the frame
     is finished, not on a timer."""

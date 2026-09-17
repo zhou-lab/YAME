@@ -27,7 +27,7 @@ done
 
 ## The bare banner carries the compiled-in version, and an unknown subcommand
 ## is an error rather than a silent no-op.
-printf '%s\n' "$banner" | grep -q 'v[0-9]\+\.[0-9]\+' ||
+printf '%s\n' "$banner" | grep 'v[0-9]\+\.[0-9]\+' >/dev/null ||
   { echo "banner has no version"; exit 1; }
 if "$YAME" definitely-not-a-subcommand </dev/null >/dev/null 2>&1; then
   echo "an unknown subcommand exited 0"; exit 1

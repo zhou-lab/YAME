@@ -2,14 +2,16 @@
 ## The release tests: the suite run every way a release needs, unattended and
 ## all at once. Step 3 of the release SOP in one command.
 ##
-## Four of the five lanes run the SAME suite (test/run.sh). They differ only in
+## Four of the six lanes run the SAME suite (test/run.sh). They differ only in
 ## how the binary was built, or which shell runs them. The first lane adds the
 ## one check that is not a test: the coverage number in the badge against the
 ## number the suite actually measures.
 ##
-## Three build lanes, plus two that reuse the in-tree binary:
+## Three build lanes, plus three that reuse the in-tree binary:
 ##
-##   tree     the in-tree build: suite, then the coverage badge check
+##   tree     the in-tree build and the suite
+##   cov      the coverage badge against what the suite measures; runs LAST
+##            and ALONE, because it measures the whole suite including t_ui
 ##   ndebug   -O3 -DNDEBUG, which is what conda-forge compiles and what
 ##            deletes every assert(); three seeks once vanished that way
 ##   ubtrap   -fsanitize=undefined -fsanitize-undefined-trap-on-error, the
@@ -18,10 +20,15 @@
 ##            is what macOS ships and the one dialect CI cannot show us early
 ##   layer5   t_store_info.sh against the real shared store (needs network or
 ##            a populated YAME_DATA_HOME); skips cleanly without one
+##   ui       t_ui.sh, the browser through a pty. Runs LAST and ALONE: it is
+##            the one test whose result depends on timing, not on output.
+##   docs     t_docs.sh: every command docs/llms.txt and docs/index.html show,
+##            actually run. Same fixtures as layer5, and it copies them out of
+##            the caller's store rather than downloading them again.
 ##
 ## On a 4-core box the lanes mostly trade CPU rather than add throughput -- the
 ## suite already runs its tests JOBS-wide -- so the win here is that all five
-## run from one command instead of five, and that none is forgotten. JOBS is
+## run from one command instead of six, and that none is forgotten. JOBS is
 ## split across the lanes so they do not oversubscribe.
 ##
 ## Usage: bash scripts/release-tests.sh [-q]   (-q: only the summary)
@@ -33,6 +40,10 @@ quiet=0
 [ "${1:-}" = "-q" ] && quiet=1
 
 ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+## t_ui drives the browser through a pty, so its result depends on timing.
+## Six lanes on four cores made it read keys late, and a swallowed key changed
+## what the next one meant. The lanes skip it; it runs once, alone, at the end.
+export YAME_SKIP_UI=1
 ## Three build lanes share the cores; at least 1 apiece.
 lane_jobs=$(( ncpu / 3 )); [ "$lane_jobs" -lt 1 ] && lane_jobs=1
 B32=${B32:-$HOME/tmp/yame/bash32/bash-3.2/bash}
@@ -82,8 +93,7 @@ p_ubtrap=$!
 stamp tree
 (
   make -j"$lane_jobs" && make lib &&
-  JOBS="$lane_jobs" YAME="$root/yame" bash test/run.sh &&
-  ./scripts/coverage.sh --check
+  JOBS="$lane_jobs" YAME="$root/yame" bash test/run.sh
 ) > "$logs/tree" 2>&1
 rc_tree=$?; elapsed tree
 
@@ -110,16 +120,37 @@ p_bash32=$!
   rc=$?; elapsed layer5; exit $rc ) > "$logs/layer5" 2>&1 &
 p_layer5=$!
 
+stamp docs
+( YAME_TEST_DOCS=1 YAME="$root/yame" bash test/t_docs.sh
+  rc=$?; elapsed docs; exit $rc ) > "$logs/docs" 2>&1 &
+p_docs=$!
+
 wait $p_ndebug; rc_ndebug=$?
 wait $p_ubtrap; rc_ubtrap=$?
 wait $p_bash32; rc_bash32=$?
 wait $p_layer5; rc_layer5=$?
+wait $p_docs;   rc_docs=$?
+
+## ---- and now, with the machine to itself ---------------------------------
+## Both of these want an idle box. t_ui because it reads keys on a timer, and
+## the coverage check because it measures the WHOLE suite -- with the browser
+## test skipped it came out 2.7 points low and failed against its own badge.
+stamp ui
+( YAME_SKIP_UI= YAME="$root/yame" bash test/t_ui.sh
+  rc=$?; elapsed ui; exit $rc ) > "$logs/ui" 2>&1
+rc_ui=$?
+
+stamp cov
+( YAME_SKIP_UI= ./scripts/coverage.sh --check
+  rc=$?; elapsed cov; exit $rc ) > "$logs/cov" 2>&1
+rc_cov=$?
 
 ## ---- report -----------------------------------------------------------------
 fails=0; serial=0
-for g in tree ndebug ubtrap bash32 layer5; do
+for g in tree ndebug ubtrap bash32 layer5 docs ui cov; do
   eval "rc=\$rc_$g"
-  tail=$(grep -E '^[0-9]+ passed|^skip:|^ok:' "$logs/$g" | tail -1)
+  tail=$(grep -E '^[0-9]+ passed|^skip:|^ok:|^docs:|^coverage:' "$logs/$g" | tail -1)
+  [ -n "$tail" ] || tail=$(tail -1 "$logs/$g" 2>/dev/null)
   secs=$(cat "$logs/$g.s" 2>/dev/null || echo 0)
   serial=$((serial + secs))
   if [ "$rc" = 0 ]; then
@@ -130,13 +161,17 @@ for g in tree ndebug ubtrap bash32 layer5; do
     ## The suite prints "FAIL <name>" followed by that test's own output, and
     ## it can be anywhere in the log -- a plain tail showed the end of a green
     ## run and named nothing. Show those lines first, then the tail.
-    if grep -q '^FAIL ' "$logs/$g"; then
+    ## Keep the log: the temp tree goes at exit, and a lane that fails once in
+    ## a while is only diagnosable from the run that failed.
+    keep=${TMPDIR:-/tmp}/release-tests-$g.$$.log
+    cp "$logs/$g" "$keep" 2>/dev/null && echo "          (full log: $keep)"
+    if grep '^FAIL ' "$logs/$g" >/dev/null; then
       grep -A12 '^FAIL ' "$logs/$g" | sed 's/^/          /'
     else
       sed 's/^/          /' "$logs/$g" | tail -25
     fi
   fi
 done
-printf '%d of 5 lanes passed in %d s; one after another they would be %d s\n' \
-  $((5 - fails)) $(( $(date +%s) - t_start )) "$serial"
+printf '%d of 8 lanes passed in %d s; one after another they would be %d s\n' \
+  $((8 - fails)) $(( $(date +%s) - t_start )) "$serial"
 [ "$fails" = 0 ]

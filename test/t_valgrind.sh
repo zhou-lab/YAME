@@ -10,7 +10,9 @@ set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
 
 command -v valgrind >/dev/null || { echo "skip: no valgrind" >&2; exit 0; }
-if strings "$YAME" 2>/dev/null | grep -q '__asan_'; then
+## grep without -q: `grep -q` exits at the first match and `strings` then dies
+## on SIGPIPE, which under pipefail turns a FOUND pattern into a failed test.
+if strings "$YAME" 2>/dev/null | grep '__asan_' >/dev/null; then
   echo "skip: binary is ASan-instrumented; CI covers that leg" >&2; exit 0
 fi
 

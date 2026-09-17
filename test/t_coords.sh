@@ -109,7 +109,7 @@ wide=$("$YAME" hprint -c -g -R ref.cr -r chr2 -w 100 two.cg 2>/dev/null | sed -n
 narrow=$("$YAME" hprint -c -g -R ref.cr -r chr2 -w 4 two.cg 2>/dev/null | sed -n 2p | wc -c)
 [ "$narrow" -lt "$wide" ] ||
   { echo "-w 4 did not narrow the data row ($narrow vs $wide)"; exit 1; }
-"$YAME" hprint -c -g -R ref.cr -r chr2 -w 4 two.cg 2>/dev/null | head -1 | grep -q 'win=' ||
+"$YAME" hprint -c -g -R ref.cr -r chr2 -w 4 two.cg 2>/dev/null | head -1 | grep 'win=' >/dev/null ||
   { echo "a window-averaged view does not say so in its title"; exit 1; }
 
 ## A format-3 region is streamed compressed; every other format is inflated
@@ -124,7 +124,7 @@ cat b1.cg b2.cg > beta.cg
 for extra in "" "-g"; do
   "$YAME" hprint -c $extra -R ref.cr -r chr2 -w 3 beta.cg 2>/dev/null > bw.txt
   [ -s bw.txt ] || { echo "windowed fmt4 region view ($extra) printed nothing"; exit 1; }
-  head -1 bw.txt | grep -q 'win=' ||
+  head -1 bw.txt | grep 'win=' >/dev/null ||
     { echo "windowed fmt4 region ($extra) did not say win= in its title"; head -1 bw.txt; exit 1; }
 done
 ## and a format-6 record through the same printer

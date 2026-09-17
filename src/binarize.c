@@ -170,6 +170,19 @@ int main_binarize(int argc, char *argv[]) {
     free_cdata(&c);
   }
 
+  /* Close the output BEFORE reading it back. The index below opens fname_out
+   * and walks it for the BGZF offset of each record, and until this close the
+   * last record is still sitting in the write buffer, with no BGZF end-of-file
+   * block after it. So the read hit a truncated record, called wzfatal, and
+   * exited without ever flushing -- leaving a SHORT file on disk and an empty
+   * index. `yame binarize -t 0.5 -c 3 -o calls.cg <indexed input>`, the
+   * documented example, wrote 8 of its 9 records that way.
+   *
+   * The write loop flushes before each record, not after, which is what left
+   * exactly the last one behind. dsample.c already had this order right. */
+  bgzf_close(fp_out);
+  fp_out = NULL;
+
   if (idx && fname_out) {              // output index
     int npairs = 0;
     index_pair_t *pairs = index_pairs(idx, &npairs);
@@ -199,7 +212,6 @@ int main_binarize(int argc, char *argv[]) {
   }
 
   if (fname_out) free(fname_out);
-  bgzf_close(fp_out);
   bgzf_close(cf.fh);
 
   return 0;

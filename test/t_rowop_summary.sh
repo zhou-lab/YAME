@@ -55,7 +55,7 @@ diff ms.want ms.got || { echo "rowop musum is not the column-wise sum"; exit 1; 
 ## and check the header names the columns the docs promise.
 ## -d defaults to 6 decimals; the recount below matches that width.
 "$YAME" rowop -o stat four.cg > st.txt 2>/dev/null
-head -1 st.txt | grep -q 'count.*mean_beta.*delta_beta' ||
+head -1 st.txt | grep 'count.*mean_beta.*delta_beta' >/dev/null ||
   { echo "rowop stat header changed"; head -1 st.txt; exit 1; }
 tail -n +2 st.txt | cut -f1,2 > st.got
 paste s1.txt s2.txt s3.txt s4.txt |
@@ -81,7 +81,7 @@ awk 'BEGIN { for (i = 0; i < 12; i++) print (i < 5) ? 1 : 0 }' > m.txt
 "$YAME" pack -f b m.txt > m.cg
 "$YAME" summary -m m.cg s1.cg > sm.txt 2>/dev/null
 [ -s sm.txt ] || { echo "summary produced nothing"; exit 1; }
-head -1 sm.txt | grep -qi 'query\|qfile\|mask' ||
+head -1 sm.txt | grep -i 'query\|qfile\|mask' >/dev/null ||
   { echo "summary header is not recognisable"; head -1 sm.txt; exit 1; }
 ## the same query with no mask must still produce a line per record
 "$YAME" summary four.cg > sm4.txt 2>/dev/null

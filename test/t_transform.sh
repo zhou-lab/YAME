@@ -25,6 +25,38 @@ awk -F'\t' '{ cov = $1 + $2
               else print ($1 / cov >= 0.5) ? 1 : 0 }' mu.txt > bin.want
 diff bin.want bin.got || { echo "binarize -t 0.5 disagrees with the beta rule"; exit 1; }
 
+## ---- 1b. binarize -o on an INDEXED input: every record, and an index -----
+## The documented example is `binarize -t 0.5 -c 3 -o calls.cg <indexed>`, and
+## until v1.45 it wrote the file SHORT. binarize read its own output back to
+## learn each record's BGZF offset, and did that while the output was still
+## open with the last record in the buffer. The read hit a truncated record and
+## exited, so the buffer never reached disk. The stdout form was fine, and
+## every test here used it, which is why nothing caught this.
+"$YAME" pack -f m mu.txt > one.cg
+cat one.cg one.cg one.cg > three.cg
+printf 'sA\nsB\nsC\n' > three.names
+"$YAME" index -s three.names three.cg >/dev/null 2>&1
+[ -s three.cg.idx ] || { echo "fixture: index -s wrote nothing"; exit 1; }
+
+"$YAME" binarize -t 0.5 -c 1 -o bo.cg three.cg 2>bo.err || {
+  echo "binarize -o failed on an indexed input"; cat bo.err; exit 1; }
+
+n=$("$YAME" info bo.cg 2>/dev/null | tail -n +2 | grep -c .)
+[ "$n" -eq 3 ] || { echo "binarize -o wrote $n records, want 3"; exit 1; }
+
+## the index must name all three, and each name must resolve
+[ "$(grep -c . bo.cg.idx)" -eq 3 ] ||
+  { echo "binarize -o wrote $(grep -c . bo.cg.idx) index rows, want 3"; cat bo.cg.idx; exit 1; }
+for nm in sA sB sC; do
+  "$YAME" subset bo.cg "$nm" > sub.cg 2>/dev/null
+  [ -s sub.cg ] || { echo "the index binarize wrote does not resolve $nm"; exit 1; }
+done
+
+## -o and the stdout form must produce the same bytes
+"$YAME" binarize -t 0.5 -c 1 three.cg > bstdout.cg 2>/dev/null
+cmp -s bo.cg bstdout.cg ||
+  { echo "binarize -o differs from the stdout form"; ls -la bo.cg bstdout.cg; exit 1; }
+
 ## the threshold actually moves the calls
 "$YAME" binarize -t 0.9 mu.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null > bin9.got
 [ "$(grep -c '^1$' bin9.got)" -lt "$(grep -c '^1$' bin.got)" ] ||

@@ -15,7 +15,7 @@ root=$(cd "$here/.." && pwd)
 
 command -v python3 >/dev/null || { echo "skip: no python3 for the mirror" >&2; exit 0; }
 help=$("$YAME" fetch -h </dev/null 2>&1) || true
-printf '%s\n' "$help" | grep -q 'fetch available' ||
+printf '%s\n' "$help" | grep 'fetch available' >/dev/null ||
   { echo "skip: built without libcurl" >&2; exit 0; }
 
 d=$(mktemp -d); trap 'kill $srv 2>/dev/null || true; rm -rf "$d"' EXIT

@@ -23,7 +23,7 @@ diff -q "$root/src/registry.h" "$d/yame.h" >/dev/null ||
 
 ## ---- 2. the methscope projection: same shape, its sources only --------------
 wait $gen_ms || { echo "--tool=methscope failed"; exit 1; }
-head -1 "$d/ms.h" | grep -q -- '--tool=methscope' ||
+head -1 "$d/ms.h" | grep -- '--tool=methscope' >/dev/null ||
   { echo "the header does not carry its own regenerate line"; head -1 "$d/ms.h"; exit 1; }
 for want in '"methscope", "hg38/data"' '"methscope", "hg38/models"' '"methscope", "mm10/models"'; do
   grep -q "$want" "$d/ms.h" || { echo "methscope registry lacks $want"; exit 1; }
@@ -55,6 +55,6 @@ export METHSCOPE_DATA_HOME="$d/store"; mkdir -p "$METHSCOPE_DATA_HOME"
 n=$(tail -n +2 "$d/l.txt" | wc -l)
 want=$("$YAME" fetch -l </dev/null 2>/dev/null | /usr/bin/awk -F'\t' '$2 == "methscope"' | wc -l)
 [ "$n" -eq "$want" ] || { echo "methscope fetch -l lists $n files; yame lists $want for that source"; exit 1; }
-tail -n +2 "$d/l.txt" | cut -f2 | sort -u | grep -qvx methscope && { echo "methscope fetch -l lists another source"; exit 1; }
+tail -n +2 "$d/l.txt" | cut -f2 | sort -u | grep -vx methscope >/dev/null && { echo "methscope fetch -l lists another source"; exit 1; }
 help=$("$d/ms" -h </dev/null 2>&1) || true          # -h exits 1 by convention
-printf '%s\n' "$help" | grep -q '^  methscope fetch ' || { echo "the usage is not in methscope's voice"; exit 1; }
+printf '%s\n' "$help" | grep '^  methscope fetch ' >/dev/null || { echo "the usage is not in methscope's voice"; exit 1; }

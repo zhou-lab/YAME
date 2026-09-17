@@ -16,7 +16,7 @@ command -v python3 >/dev/null || { echo "skip: no python3 for the mirror" >&2; e
 ## -h exits 1 by convention, so capture first: piping it straight into grep
 ## would fail the pipeline under `set -o pipefail` whatever grep found.
 help=$("$YAME" fetch -h </dev/null 2>&1) || true
-printf '%s\n' "$help" | grep -q 'fetch available' ||
+printf '%s\n' "$help" | grep 'fetch available' >/dev/null ||
   { echo "skip: built without libcurl" >&2; exit 0; }
 
 d=$(mktemp -d); trap 'kill $srv 2>/dev/null; rm -rf "$d"' EXIT
@@ -110,13 +110,13 @@ after=$(grep -c 'Blacklist.20220304.cm' server.log || true)
 
 ## -l is a TSV dump: a header and one row per file, no network at all.
 "$YAME" fetch -l </dev/null > tsv.txt 2>&1
-head -1 tsv.txt | grep -q 'target' || { echo "fetch -l header is not the TSV header"; head -1 tsv.txt; exit 1; }
+head -1 tsv.txt | grep 'target' >/dev/null || { echo "fetch -l header is not the TSV header"; head -1 tsv.txt; exit 1; }
 [ "$(wc -l < tsv.txt)" -gt 100 ] || { echo "fetch -l listed only $(wc -l < tsv.txt) rows"; exit 1; }
 
 ## -g filters that listing by term, and every term must match.
 "$YAME" fetch -l -g KYCG </dev/null > g1.txt 2>&1
 [ "$(wc -l < g1.txt)" -lt "$(wc -l < tsv.txt)" ] || { echo "-g KYCG did not narrow the listing"; exit 1; }
-tail -n +2 g1.txt | grep -qv 'KYCG' && { echo "-g KYCG returned a row without KYCG"; exit 1; }
+tail -n +2 g1.txt | grep -v 'KYCG' >/dev/null && { echo "-g KYCG returned a row without KYCG"; exit 1; }
 "$YAME" fetch -l -g KYCG,EPIC </dev/null > g2.txt 2>&1
 [ "$(wc -l < g2.txt)" -le "$(wc -l < g1.txt)" ] || { echo "a second -g term widened the listing"; exit 1; }
 ## a term nothing matches
@@ -353,11 +353,11 @@ for order in "Blacklist.20220304.cm ProbeType.cm" "ProbeType.cm Blacklist.202203
   plan=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n "$scope/$1" "$scope/$2" \
            </dev/null 2>&1) || true
   for want in "$1" "$2"; do
-    printf '%s\n' "$plan" | grep -q "  *$want " ||
+    printf '%s\n' "$plan" | grep "  *$want " >/dev/null ||
       { echo "two files from one directory: $want missing from the plan ($order)"
         printf '%s\n' "$plan"; exit 1; }
   done
-  printf '%s\n' "$plan" | grep -q '2 files in 1 directory' ||
+  printf '%s\n' "$plan" | grep '2 files in 1 directory' >/dev/null ||
     { echo "two files from one directory did not plan as 2 ($order)"
       printf '%s\n' "$plan"; exit 1; }
 done
@@ -366,7 +366,7 @@ done
 ## the result is the whole directory rather than the one file
 for order in "$scope $scope/ProbeType.cm" "$scope/ProbeType.cm $scope"; do
   whole=$(YAME_DATA_HOME="$empty" "$YAME" fetch -n $order </dev/null 2>&1) || true
-  printf '%s\n' "$whole" | grep -qE '2[0-9] files in 1 directory' ||
+  printf '%s\n' "$whole" | grep -E '2[0-9] files in 1 directory' >/dev/null ||
     { echo "a directory named with one of its files did not take the directory ($order)"; printf '%s\n' "$whole"; exit 1; }
 done
 
@@ -376,7 +376,7 @@ done
 one_row=$("$YAME" fetch -l "$scope/Blacklist.20220304.cm" </dev/null 2>/dev/null | tail -n +2)
 [ "$(printf '%s\n' "$one_row" | grep -c .)" -eq 1 ] ||
   { echo "-l of one file name listed $(printf '%s\n' "$one_row" | grep -c .) rows, want 1"; exit 1; }
-printf '%s\n' "$one_row" | cut -f5 | grep -qx 'Blacklist.20220304.cm' ||
+printf '%s\n' "$one_row" | cut -f5 | grep -x 'Blacklist.20220304.cm' >/dev/null ||
   { echo "-l of one file name listed the wrong file"; printf '%s\n' "$one_row" | cut -f5; exit 1; }
 
 ## -l takes several names too, which it used to ignore past the first
