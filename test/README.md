@@ -21,6 +21,21 @@ permanent home, moved out of `tmp/` once the work landed. What exists:
   at 0% is correct (obsolete, decodable but not packable).
 - The methscope docs harness now scores every command in a block (`set -e`),
   not only the last -- the gap a zero-byte `upscale` shipped through.
+- `t_store_kb.sh` (layer 5, the `kb` release lane) runs all 32 hg38
+  knowledgebase masks -- binary and state, one record and many (the
+  1,359-record files as their first 16), sparse and claiming every row --
+  against a dense methylome, a seeded single cell and a fmt6 call store,
+  through the per-mask path, the one-pass kernel and, on the multi-record
+  masks, the inverted index. The tables must be byte-identical, the path
+  counters must say the fast path ran, and each run's seconds and peak RSS
+  are checked against `fixtures/kb_baseline.tsv` at 2x + 0.5 s and 1.5x +
+  50 MB, with one retry before a run counts as slower. Every table is also
+  checked byte for byte against `fixtures/kb_expected.tsv`, the committed
+  ground truth (the 29,511-window Win100k tables as a hash plus every 200th
+  row), so a change all three paths share is caught too. 210 runs, about two
+  minutes of yame time, 340 MB. `YAME_KB_REBASE=1` rewrites both files;
+  `YAME_KB_REF=<older yame>` runs that binary too and requires the same
+  bytes (v1.45 against v1.48: 96 of 96 identical, TFBS 199 s -> 7 s).
 - `t_multimask.sh` + `probe_multi.c` / `probe_runs.c` / `probe_index.c` cover
   the summary kernels (the walk and the inverted index, `summary -I`), and
   `t_mrmp_fixture.sh` checks runs against records on a `.cm` methscope
@@ -74,7 +89,10 @@ test/
   t_corrupt.sh        layer 3, adversarial input
   probe.c             layer 4, built by run.sh against libyame.a
   t_probe.sh          runs the probe
-  t_store_*.sh        layer 5, skipped unless YAME_DATA_HOME is set
+  t_store_*.sh        layer 5, skipped unless YAME_DATA_HOME is set;
+                      t_store_kb.sh is the knowledgebase regression: every
+                      hg38 mask through every summary path, byte-identical,
+                      timed and sized against fixtures/kb_baseline.tsv
   data/               gitignored; registry fetch target for layer 5
   fixtures/           committed inputs a test cannot make itself (small):
                       one real mask; mrmp_export/, a .cm exported from a

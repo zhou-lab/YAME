@@ -301,6 +301,15 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
  * the TFBS knowledgebase. This is how a test asserts the fast path is alive. */
 static uint64_t path_kernel = 0, path_fallback = 0, path_index = 0;
 
+/* YAME_SUMMARY_KERNEL=0 sends every mask down the per-mask path, summarize1(),
+ * which is the original arithmetic and the oracle the other two paths are
+ * checked against. The knowledgebase regression (t_store_kb.sh) runs all
+ * three over every real mask and requires byte-identical tables. */
+static int kernel_off(void) {
+  const char *e = getenv("YAME_SUMMARY_KERNEL");
+  return e && *e == '0';
+}
+
 static void emit_acc(const yame_acc_t *a, uint64_t n_q, const cdata_t *q,
                      const char *mask_name, uint64_t km,
                      const char *sq, const char *fname_qry, config_t *config) {
@@ -616,7 +625,7 @@ int main_summary(int argc, char *argv[]) {
            * already taken a SECOND time: `-M -m <binary><state>` gave five rows
            * where four were right. A mask the kernel declines now falls back on
            * its own, exactly as the streamed branch below does. */
-          int have_qb = (config.f6_view == F6_VIEW_SET &&
+          int have_qb = (config.f6_view == F6_VIEW_SET && !kernel_off() &&
                          yame_qbits_build(&c_qry, &qb) == 0);
           for (uint64_t km=0; km<c_masks_n; ++km) {
             if (have_qb) {
@@ -653,7 +662,7 @@ int main_summary(int argc, char *argv[]) {
            * measured against it, so the default path gets the saving too and
            * still holds one mask at a time. `have_qb` stays 0 for a query the
            * kernel does not cover, and then this is the old loop exactly. */
-          int have_qb = (config.f6_view == F6_VIEW_SET &&
+          int have_qb = (config.f6_view == F6_VIEW_SET && !kernel_off() &&
                          yame_qbits_build(&c_qry, &qb) == 0);
           for (uint64_t km=0;;++km) {
             cdata_t c_mask = read_cdata1(&cf_mask);

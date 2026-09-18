@@ -20,6 +20,10 @@
 ##            is what macOS ships and the one dialect CI cannot show us early
 ##   layer5   t_store_info.sh against the real shared store (needs network or
 ##            a populated YAME_DATA_HOME); skips cleanly without one
+##   kb       t_store_kb.sh: every mask in the hg38 knowledgebase through every
+##            summary path, byte-identical, timed and sized against a committed
+##            baseline. Big masks as 16-record subsets: ~2 min of yame time,
+##            340 MB, and it overlaps the build lanes
 ##   ui       t_ui.sh, the browser through a pty. Runs LAST and ALONE: it is
 ##            the one test whose result depends on timing, not on output.
 ##   docs     t_docs.sh: every command docs/llms.txt and docs/index.html show,
@@ -120,6 +124,15 @@ p_bash32=$!
   rc=$?; elapsed layer5; exit $rc ) > "$logs/layer5" 2>&1 &
 p_layer5=$!
 
+## The knowledgebase regression: every real mask through every summary path,
+## byte-identical, timed against a baseline. Its own lane, since it is the
+## one that reads the store and its timings should not share a core with a
+## build.
+stamp kb
+( YAME_TEST_LAYER5=1 YAME="$root/yame" bash test/t_store_kb.sh
+  rc=$?; elapsed kb; exit $rc ) > "$logs/kb" 2>&1 &
+p_kb=$!
+
 stamp docs
 ( YAME_TEST_DOCS=1 YAME="$root/yame" bash test/t_docs.sh
   rc=$?; elapsed docs; exit $rc ) > "$logs/docs" 2>&1 &
@@ -129,6 +142,7 @@ wait $p_ndebug; rc_ndebug=$?
 wait $p_ubtrap; rc_ubtrap=$?
 wait $p_bash32; rc_bash32=$?
 wait $p_layer5; rc_layer5=$?
+wait $p_kb; rc_kb=$?
 wait $p_docs;   rc_docs=$?
 
 ## ---- and now, with the machine to itself ---------------------------------
@@ -147,7 +161,7 @@ rc_cov=$?
 
 ## ---- report -----------------------------------------------------------------
 fails=0; serial=0
-for g in tree ndebug ubtrap bash32 layer5 docs ui cov; do
+for g in tree ndebug ubtrap bash32 layer5 kb docs ui cov; do
   eval "rc=\$rc_$g"
   tail=$(grep -E '^[0-9]+ passed|^skip:|^ok:|^docs:|^coverage:' "$logs/$g" | tail -1)
   [ -n "$tail" ] || tail=$(tail -1 "$logs/$g" 2>/dev/null)
@@ -172,6 +186,6 @@ for g in tree ndebug ubtrap bash32 layer5 docs ui cov; do
     fi
   fi
 done
-printf '%d of 8 lanes passed in %d s; one after another they would be %d s\n' \
-  $((8 - fails)) $(( $(date +%s) - t_start )) "$serial"
+printf '%d of 9 lanes passed in %d s; one after another they would be %d s\n' \
+  $((9 - fails)) $(( $(date +%s) - t_start )) "$serial"
 [ "$fails" = 0 ]
