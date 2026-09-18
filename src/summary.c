@@ -30,6 +30,7 @@
 #include "snames.h"
 #include "summary.h"
 #include "summary_multi.h"
+#include "summary_index.h"
 
 /**
  * yame summary
@@ -148,6 +149,14 @@ static int usage(void) {
   yame_usage_cont("It no longer affects SPEED: a query is read once whatever");
   yame_usage_cont("this says, and the masks stream either way.");
   yame_usage_cont("Also auto-enabled when the mask stream is unseekable.");
+  yame_usage_opt("-I", "Invert the mask file into an index keyed by row, built once");
+  yame_usage_cont("and reused for every query record. Pays a build about as");
+  yame_usage_cont("long as four record walks, then almost nothing per record,");
+  yame_usage_cont("and holds 4 bytes per row plus 2 per membership (855 MB for");
+  yame_usage_cont("TFBS). Worth it for many records against many masks; the");
+  yame_usage_cont("default walk is right for a few. Format 3 queries and");
+  yame_usage_cont("binary masks; anything else walks. Declines and walks past");
+  yame_usage_cont("YAME_SUMMARY_INDEX_MB (default 2048), saying what it needed.");
   yame_usage_sec("Naming / output formatting:");
   yame_usage_opt("-H", "Suppress the header line.");
   yame_usage_opt("-F", "Use full paths in QFile/MFile (default: basename only).");
@@ -290,7 +299,7 @@ static void format_stats_and_clean(stats_t *st, uint64_t n_st, const char *fname
  * the point. So when a guard I added silently sent every mask to the fallback,
  * all 29 tests still passed and only a stopwatch noticed -- 6 s became 107 s on
  * the TFBS knowledgebase. This is how a test asserts the fast path is alive. */
-static uint64_t path_kernel = 0, path_fallback = 0;
+static uint64_t path_kernel = 0, path_fallback = 0, path_index = 0;
 
 static void emit_acc(const yame_acc_t *a, uint64_t n_q, const cdata_t *q,
                      const char *mask_name, uint64_t km,
@@ -376,11 +385,12 @@ int main_summary(int argc, char *argv[]) {
   int browse = 0;
   int c;
   config_t config = {0};
-  while ((c = getopt(argc, argv, "bm:u:MHFTs:V:6q:h"))>=0) {
+  while ((c = getopt(argc, argv, "bm:u:MIHFTs:V:6q:h"))>=0) {
     switch (c) {
     case 'b': browse = 1; break;
     case 'm': config.fname_mask = wzstrdup(optarg); break;
     case 'M': config.in_memory = 1; break;
+    case 'I': config.use_index = 1; break;
     case 'V':
       if (strcmp(optarg, "set") == 0) config.f6_view = F6_VIEW_SET;
       else if (strcmp(optarg, "meth") == 0) config.f6_view = F6_VIEW_METH;
@@ -459,6 +469,7 @@ int main_summary(int argc, char *argv[]) {
   cfile_t cf_mask; int unseekable = 0;
   snames_t snames_mask = {0};
   cdata_t *c_masks = NULL; uint64_t c_masks_n = 0;
+  yame_index_t *ix = NULL; int ix_tried = 0;                 /* -I */
   if (config.fname_mask) {
     cf_mask = open_cfile(config.fname_mask);
     unseekable = bgzf_seek(cf_mask.fh, 0, SEEK_SET);
@@ -541,6 +552,47 @@ int main_summary(int argc, char *argv[]) {
       else ksprintf(&sq, "%"PRIu64"", kq+1);
       prepare_mask(&c_qry);
       yame_qbits_t qb;
+
+      /* -I: the mask file inverted into an index keyed by row, built at the
+       * first format 3 query and reused for every record after it. The build
+       * declines (a state mask, a row mismatch, the budget) and says why,
+       * once; the walk below then runs as if -I had not been given. A record
+       * the index does not cover -- a format 6 query, or other rows -- walks
+       * too, so both paths can be seen in the YAME_SUMMARY_PATH counters. */
+      if (config.use_index && config.fname_mask && c_qry.fmt == '3' && !ix_tried) {
+        ix_tried = 1;
+        if (unseekable)
+          fprintf(stderr, "[summary] -I needs to read the mask file twice, and "
+                          "this one cannot be reopened; walking\n");
+        else {
+          uint64_t budget = YAME_INDEX_BUDGET_DEFAULT;
+          const char *e = getenv("YAME_SUMMARY_INDEX_MB");   /* may be fractional */
+          if (e && atof(e) > 0) budget = (uint64_t) (atof(e) * 1048576.0);
+          char why[256];
+          ix = yame_index_build(config.fname_mask, c_qry.n, budget, why, sizeof why);
+          if (ix)
+            fprintf(stderr, "[summary] -I: %u masks, %u memberships, %.2f MB, "
+                            "built in %.1f s\n", ix->n_slots, ix->off[ix->n_rows],
+                    ix->bytes / 1048576.0, ix->t_build);
+          else
+            fprintf(stderr, "[summary] -I declined: %s; walking\n", why);
+        }
+      }
+      if (ix && config.fname_mask && c_qry.fmt == '3') {
+        yame_acc_t *acc = wzcalloc(ix->n_slots, sizeof(yame_acc_t));
+        if (yame_index_apply(ix, &c_qry, acc) == 0) {
+          path_index += ix->n_slots;
+          for (uint64_t km = 0; km < ix->n_slots; ++km)
+            emit_acc(&acc[km], acc[km].n_q, &c_qry,
+                     km < (uint64_t) snames_mask.n ? snames_mask.s[km] : NULL,
+                     km, sq.s, fname_qry, &config);
+          free(acc);
+          free(sq.s);
+          free_cdata(&c_qry); c_qry.s = NULL;
+          continue;
+        }
+        free(acc);
+      }
 
       if (config.fname_mask) {   /* apply any mask? */
         if (c_masks_n) {        /* in memory or unseekable */
@@ -648,13 +700,14 @@ int main_summary(int argc, char *argv[]) {
     free(c_masks);
     c_masks = NULL; c_masks_n = 0;
   }
+  if (ix) yame_index_free(ix);
   if (config.fname_snames) free(config.fname_snames);
   if (config.fname_mask) bgzf_close(cf_mask.fh);
   if (config.fname_mask) free(config.fname_mask);
   cleanSampleNames2(snames_mask);
   if (getenv("YAME_SUMMARY_PATH"))
-    fprintf(stderr, "[summary] one-pass %"PRIu64", per-mask %"PRIu64"\n",
-            path_kernel, path_fallback);
+    fprintf(stderr, "[summary] one-pass %"PRIu64", per-mask %"PRIu64", "
+            "inverted-index %"PRIu64"\n", path_kernel, path_fallback, path_index);
   
   return 0;
 }

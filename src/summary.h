@@ -54,6 +54,7 @@ typedef struct config_t {
   int full_name;
   int section_name;
   int in_memory;
+  int use_index;              // -I: invert the mask file, see summary_index.h
   int no_header;
   f6_view_t f6_view;            // how to read format 6 (-V)
   char *fname_mask;

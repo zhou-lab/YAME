@@ -473,7 +473,12 @@ human_hg38_test.cg      1  CGI.20220904.cm  Island    29000    23857    2168    
   pass rather than one per set: the 1359-set TFBS collection against a 29.4M-row
   methylome takes 6 s where it used to take 193, with the same numbers and the
   same 45 MB. <code class='inl'>YAME_SUMMARY_PATH=1</code> reports on stderr how
-  many masks took that path, since the output cannot tell you.</p>
+  many masks took that path, since the output cannot tell you. With many
+  records against many masks, <code class='inl'>-I</code> inverts the mask file
+  into an index keyed by row instead: a build worth about four record walks and
+  855 MB on TFBS, then almost nothing per record. The walk stays the default
+  because the break-even, about four records, moves with the machine, and the
+  wrong index costs a gigabyte where the wrong walk costs seconds.</p>
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_immune_mixture.cg
 yame <span class="sub">fetch</span> -c hg38/data/human_hg38_40_celltypes_chr20.cg

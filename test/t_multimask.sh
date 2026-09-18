@@ -44,6 +44,15 @@ ${CC:-cc} -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe_runs "$here/probe_runs.c
   $("$cfg" --libs) 2>cc2.err || { echo "probe_runs did not build"; cat cc2.err; exit 1; }
 ./probe_runs || { echo "the enumerator path disagrees with the record path"; exit 1; }
 
+## The INVERTED INDEX, the other shape of the same sum (summary_index.h): keyed
+## by row rather than by mask, built once and reused for every query record.
+## It is what methscope's featurizer uses, so it is fed from the same runs and
+## must give the kernel's numbers bit for bit, refuse what it cannot hold, and
+## say what it would have needed.
+${CC:-cc} -O1 -g -std=gnu99 $("$cfg" --cflags) -o probe_index "$here/probe_index.c" \
+  $("$cfg" --libs) 2>cc3.err || { echo "probe_index did not build"; cat cc3.err; exit 1; }
+./probe_index || { echo "the inverted index disagrees with the kernel"; exit 1; }
+
 ## ---- and through the CLI, where the numbers must not move -----------------
 ## A mask of several records against one query: the printed table has to be the
 ## same whether the kernel ran or the per-mask path did.
@@ -148,5 +157,58 @@ p=$(YAME_SUMMARY_PATH=1 "$YAME" summary -m state.cg q.cg 2>&1 >/dev/null |
     grep 'one-pass' | tail -1)
 printf '%s\n' "$p" | grep 'one-pass 0, per-mask 1' >/dev/null ||
   { echo "a state mask did not fall back: $p"; exit 1; }
+
+## ---- -I: the index through the CLI ------------------------------------------
+## Same table as the walk, records-fed this time, and the counters say the
+## index ran. Two query files, so the index built at the first record serves
+## the second file too.
+diff <("$YAME" summary -I -m multi.cm q.cg q2.cg 2>/dev/null) \
+     <("$YAME" summary -m multi.cm q.cg q2.cg 2>/dev/null) ||
+  { echo "-I and the walk disagree"; exit 1; }
+p=$(YAME_SUMMARY_PATH=1 "$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null |
+    grep 'one-pass' | tail -1)
+printf '%s\n' "$p" | grep 'one-pass 0, per-mask 0, inverted-index 6' >/dev/null ||
+  { echo "-I did not take the index for 3 masks x 2 records: $p"; exit 1; }
+## the build reports itself once: masks, memberships, size
+"$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null |
+  grep -q '^\[summary\] -I: 3 masks, [0-9]* memberships, [0-9.]* MB, built in' ||
+  { echo "-I did not report its build"; "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null; exit 1; }
+[ "$("$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null | grep -c '^\[summary\] -I:')" -eq 1 ] ||
+  { echo "-I reported its build more than once"; exit 1; }
+
+## A state mask cannot be inverted (it claims every row). -I says why, once,
+## and the walk gives the same 6 rows as without -I.
+e=$("$YAME" summary -I -m mixed.cm q.cg 2>&1 >/dev/null)
+printf '%s\n' "$e" | grep -q 'declined: record [0-9]* is format 2' ||
+  { echo "-I over a state mask did not decline with the reason: $e"; exit 1; }
+diff <("$YAME" summary -I -m mixed.cm q.cg 2>/dev/null) \
+     <("$YAME" summary -m mixed.cm q.cg 2>/dev/null) ||
+  { echo "-I declined but its output differs from the walk"; exit 1; }
+
+## Over budget: the decline names the size it wanted and the budget, and the
+## walk still answers. 4000 rows of offsets alone is 16 KB, so a 0.02 MB
+## budget fits the offsets and the memberships push it over -- the count pass
+## runs, and the message carries the exact membership count.
+e=$(YAME_SUMMARY_INDEX_MB=0.02 "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null)
+printf '%s\n' "$e" | grep -q 'declined: index needs .* (3 masks, 4650 memberships), budget 0.02 MB; walking' ||
+  { echo "-I over a 0.02 MB budget did not decline with the size: $e"; exit 1; }
+## and below the offsets alone, before anything is read
+e=$(YAME_SUMMARY_INDEX_MB=0.01 "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null)
+printf '%s\n' "$e" | grep -q 'declined: the offsets alone need' ||
+  { echo "-I under the offsets did not decline up front: $e"; exit 1; }
+diff <(YAME_SUMMARY_INDEX_MB=0.02 "$YAME" summary -I -m multi.cm q.cg 2>/dev/null) \
+     <("$YAME" summary -m multi.cm q.cg 2>/dev/null) ||
+  { echo "-I declined for budget but its output differs from the walk"; exit 1; }
+
+## A format 6 query is not covered by the index; with -I it walks, silently
+## and correctly, and the counters show which path ran.
+"$YAME" binarize q.cg > q6.cg 2>/dev/null
+p=$(YAME_SUMMARY_PATH=1 "$YAME" summary -I -m multi.cm q6.cg 2>&1 >/dev/null |
+    grep 'one-pass' | tail -1)
+printf '%s\n' "$p" | grep 'one-pass 3, per-mask 0, inverted-index 0' >/dev/null ||
+  { echo "-I with a format 6 query did not walk: $p"; exit 1; }
+diff <("$YAME" summary -I -m multi.cm q6.cg 2>/dev/null) \
+     <("$YAME" summary -m multi.cm q6.cg 2>/dev/null) ||
+  { echo "-I with a format 6 query differs from the walk"; exit 1; }
 
 echo "ok: t_multimask"

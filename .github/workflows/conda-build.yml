@@ -99,13 +99,18 @@ jobs:
           ## declared there. It was missing until v1.45, so a change to the
           ## store contract passed this job without a word.
           ##
+          ## summary_multi.h and summary_index.h are the two shapes of the
+          ## summary sum (the walk and the inverted index); methscope calls
+          ## both from its featurizer, so their signatures are a contract too.
+          ##
           ## src/registry.h is deliberately NOT here. No downstream includes
           ## YAME's copy; each tool generates its own. It is data, not an
           ## interface, and it changes on every pin bump, so gating it would
           ## demand a commit message name each time and catch nothing.
           surface=$(python3 - <<'PY'
           import re, os
-          seen, todo = [], ["src/cdata.h", "src/cfile.h", "src/assets.h"]
+          seen, todo = [], ["src/cdata.h", "src/cfile.h", "src/assets.h",
+                            "src/summary_multi.h", "src/summary_index.h"]
           while todo:
               h = todo.pop(0)
               if h in seen or not os.path.exists(h): continue

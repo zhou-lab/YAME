@@ -220,8 +220,18 @@ Compare and summarize
         it, and derives beta as N_overlap/N_mask rather than as a mean of betas
         -- so they are separate code, not one path with a branch. Setting
         YAME_SUMMARY_PATH=1 reports on stderr how many masks took the one-pass
-        kernel and how many fell back; both produce the same numbers, so that
-        line is the only way to tell which ran.
+        kernel, how many fell back and how many took the index; all produce
+        the same numbers, so that line is the only way to tell which ran.
+        -I inverts the mask file instead: an index keyed by row (which masks
+        claim it), built once and reused for every query record. The build
+        costs about four record walks (22 s on TFBS) and holds 4 bytes per row
+        plus 2 per membership (855 MB on TFBS); each record then costs almost
+        nothing (0.2 s). So the walk wins up to about 4 records and the index
+        past that, and the break-even moves with the machine, which is why
+        there is no automatic choice: the walk is the default, -I is yours
+        to ask for. Format 3 queries and binary masks; anything else walks. Past
+        YAME_SUMMARY_INDEX_MB (default 2048, may be fractional) it declines,
+        says what it needed, and walks.
         Name resolution for -m (and -R elsewhere) takes exactly three forms: a
         real filesystem path, the row space's own name (`hg38` -> its .cr), or
         a BARE filename searched in the directories that row space owns —
