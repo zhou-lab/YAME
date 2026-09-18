@@ -415,6 +415,9 @@ int main_summary(int argc, char *argv[]) {
     usage(); 
     wzfatal("Please supply input file.\n"); 
   }
+  if (config.use_index && !config.fname_mask && !browse)
+    fprintf(stderr, "[summary] -I inverts the mask file, and there is no -m; "
+                    "ignored\n");
 
   /* -b: show what there is, and use what gets chosen. Needs the query first,
    * since its row space decides which collection to open at. */
@@ -559,7 +562,8 @@ int main_summary(int argc, char *argv[]) {
        * once; the walk below then runs as if -I had not been given. A record
        * the index does not cover -- a format 6 query, or other rows -- walks
        * too, so both paths can be seen in the YAME_SUMMARY_PATH counters. */
-      if (config.use_index && config.fname_mask && c_qry.fmt == '3' && !ix_tried) {
+      if (config.use_index && config.fname_mask && c_qry.fmt == '3' &&
+          config.f6_view == F6_VIEW_SET && !ix_tried) {
         ix_tried = 1;
         if (unseekable)
           fprintf(stderr, "[summary] -I needs to read the mask file twice, and "
@@ -578,9 +582,14 @@ int main_summary(int argc, char *argv[]) {
             fprintf(stderr, "[summary] -I declined: %s; walking\n", why);
         }
       }
-      if (ix && config.fname_mask && c_qry.fmt == '3') {
+      if (ix && config.fname_mask && c_qry.fmt == '3' &&
+          config.f6_view == F6_VIEW_SET) {
         yame_acc_t *acc = wzcalloc(ix->n_slots, sizeof(yame_acc_t));
-        if (yame_index_apply(ix, &c_qry, acc) == 0) {
+        if (c_qry.n != ix->n_rows)
+          fprintf(stderr, "[summary] -I: %s has %"PRIu64" rows, the index "
+                          "%"PRIu64"; walking this record\n", sq.s, c_qry.n,
+                  ix->n_rows);
+        else if (yame_index_apply(ix, &c_qry, acc) == 0) {
           path_index += ix->n_slots;
           for (uint64_t km = 0; km < ix->n_slots; ++km)
             emit_acc(&acc[km], acc[km].n_q, &c_qry,

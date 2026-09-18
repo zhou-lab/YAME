@@ -57,7 +57,8 @@ typedef struct {
 
 /* The bytes an index over n_rows rows and n_memberships memberships holds,
  * before any build. A caller with the machine in view decides here; it is the
- * number it would otherwise recompute from the struct layout. */
+ * number it would otherwise recompute from the struct layout. The build holds
+ * 4 more bytes per row while it runs, for the counts. */
 uint64_t yame_index_bytes(uint64_t n_rows, uint64_t n_memberships);
 
 /* The budget `summary -I` uses when YAME_SUMMARY_INDEX_MB is unset: 2 GB. */
@@ -109,6 +110,16 @@ void yame_index_free(yame_index_t *ix);
  * or a row count other than the index's. */
 int yame_index_apply(const yame_index_t *ix, const cdata_t *query,
                      yame_acc_t *acc);
+
+/* The same, driven by the query's coverage bitmap (yame_qbits_build, or one
+ * the caller filled from its own covered-row list). Only covered rows are
+ * visited, in ascending order, so the numbers are the ones yame_index_apply()
+ * gives and a single cell that covers a few percent of the rows costs a few
+ * percent of the loop. yame_index_apply() itself reads every row once to find
+ * the covered ones, which is what a bitmap already knows. Format 3 only; -1
+ * otherwise, or for a row count other than the index's. */
+int yame_index_apply_qb(const yame_index_t *ix, const yame_qbits_t *qb,
+                        yame_acc_t *acc);
 
 #ifdef __cplusplus
 }

@@ -214,20 +214,33 @@ void     f3_set_mu(cdata_t *c, uint64_t i, uint64_t M, uint64_t U);
  * reading every M/U value cost another 85 ms. A state-mask summary spent 233 ms
  * of its 460 in the accumulation, and most of that was here.
  *
- * unit == 1 is the common case and the only one worth special-casing: a format 3
- * record at unit 1 carries M and U in four bits each, and every state mask in
- * the knowledgebase fits its terms in a byte -- 101 of them do. Wider records go
- * to the out-of-line form, which is the original code unchanged.
+ * unit == 1 is the common case: a format 3 record at unit 1 carries M and U in
+ * four bits each, and every state mask in the knowledgebase fits its terms in a
+ * byte -- 101 of them do. Units 2, 4 and 8 are also read inline, as one
+ * unaligned load, because a caller that builds its own records holds them at
+ * unit 8 (M and U in 32 bits each), and the out-of-line call per row was the
+ * whole of a 0.3 s gap methscope measured against its own scatter over a single
+ * cell. The out-of-line form remains for any other width, the original code
+ * unchanged.
  */
 uint64_t f2_get_uint64_wide(cdata_t *c, uint64_t i);
 uint64_t f3_get_mu_wide(cdata_t *c, uint64_t i);
 
 static inline uint64_t f3_get_mu(cdata_t *c, uint64_t i) {
-  if (c->unit == 1) {
-    uint64_t b = c->s[i];
-    return ((b >> 4) << 32) | (b & 0xf);
+  switch (c->unit) {
+  case 1: { uint64_t b = c->s[i];
+            return ((b >> 4) << 32) | (b & 0xf); }
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  /* the record is little-endian on disk, so one load reads it as stored */
+  case 2: { uint16_t v; memcpy(&v, c->s + 2 * i, 2);
+            return ((uint64_t) (v >> 8) << 32) | (v & 0xff); }
+  case 4: { uint32_t v; memcpy(&v, c->s + 4 * i, 4);
+            return ((uint64_t) (v >> 16) << 32) | (v & 0xffff); }
+  case 8: { uint64_t v; memcpy(&v, c->s + 8 * i, 8);
+            return v; }                       /* already [M:32 | U:32] */
+#endif
+  default: return f3_get_mu_wide(c, i);
   }
-  return f3_get_mu_wide(c, i);
 }
 
 /* The fast path needs aux, which fmt2_set_aux() builds; a record without it

@@ -170,16 +170,16 @@ p=$(YAME_SUMMARY_PATH=1 "$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/nul
 printf '%s\n' "$p" | grep 'one-pass 0, per-mask 0, inverted-index 6' >/dev/null ||
   { echo "-I did not take the index for 3 masks x 2 records: $p"; exit 1; }
 ## the build reports itself once: masks, memberships, size
-"$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null |
-  grep -q '^\[summary\] -I: 3 masks, [0-9]* memberships, [0-9.]* MB, built in' ||
-  { echo "-I did not report its build"; "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null; exit 1; }
-[ "$("$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null | grep -c '^\[summary\] -I:')" -eq 1 ] ||
-  { echo "-I reported its build more than once"; exit 1; }
+e=$("$YAME" summary -I -m multi.cm q.cg q2.cg 2>&1 >/dev/null)
+printf '%s\n' "$e" | grep '^\[summary\] -I: 3 masks, [0-9]* memberships, [0-9.]* MB, built in' >/dev/null ||
+  { echo "-I did not report its build: $e"; exit 1; }
+[ "$(printf '%s\n' "$e" | grep -c '^\[summary\] -I:')" -eq 1 ] ||
+  { echo "-I reported its build more than once: $e"; exit 1; }
 
 ## A state mask cannot be inverted (it claims every row). -I says why, once,
 ## and the walk gives the same 6 rows as without -I.
 e=$("$YAME" summary -I -m mixed.cm q.cg 2>&1 >/dev/null)
-printf '%s\n' "$e" | grep -q 'declined: record [0-9]* is format 2' ||
+printf '%s\n' "$e" | grep 'declined: record [0-9]* is format 2' >/dev/null ||
   { echo "-I over a state mask did not decline with the reason: $e"; exit 1; }
 diff <("$YAME" summary -I -m mixed.cm q.cg 2>/dev/null) \
      <("$YAME" summary -m mixed.cm q.cg 2>/dev/null) ||
@@ -190,11 +190,11 @@ diff <("$YAME" summary -I -m mixed.cm q.cg 2>/dev/null) \
 ## budget fits the offsets and the memberships push it over -- the count pass
 ## runs, and the message carries the exact membership count.
 e=$(YAME_SUMMARY_INDEX_MB=0.02 "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null)
-printf '%s\n' "$e" | grep -q 'declined: index needs .* (3 masks, 4650 memberships), budget 0.02 MB; walking' ||
+printf '%s\n' "$e" | grep 'declined: index needs .* (3 masks, 4650 memberships), budget 0.02 MB; walking' >/dev/null ||
   { echo "-I over a 0.02 MB budget did not decline with the size: $e"; exit 1; }
 ## and below the offsets alone, before anything is read
 e=$(YAME_SUMMARY_INDEX_MB=0.01 "$YAME" summary -I -m multi.cm q.cg 2>&1 >/dev/null)
-printf '%s\n' "$e" | grep -q 'declined: the offsets alone need' ||
+printf '%s\n' "$e" | grep 'declined: the offsets alone need' >/dev/null ||
   { echo "-I under the offsets did not decline up front: $e"; exit 1; }
 diff <(YAME_SUMMARY_INDEX_MB=0.02 "$YAME" summary -I -m multi.cm q.cg 2>/dev/null) \
      <("$YAME" summary -m multi.cm q.cg 2>/dev/null) ||
@@ -210,5 +210,22 @@ printf '%s\n' "$p" | grep 'one-pass 3, per-mask 0, inverted-index 0' >/dev/null 
 diff <("$YAME" summary -I -m multi.cm q6.cg 2>/dev/null) \
      <("$YAME" summary -m multi.cm q6.cg 2>/dev/null) ||
   { echo "-I with a format 6 query differs from the walk"; exit 1; }
+
+## -V meth and -V 2bit are other measurements; -I walks them, as the kernel
+## does, rather than print set-view numbers under another header.
+diff <("$YAME" summary -I -V 2bit -m multi.cm q6.cg 2>/dev/null) \
+     <("$YAME" summary -V 2bit -m multi.cm q6.cg 2>/dev/null) ||
+  { echo "-I changed the -V 2bit output"; exit 1; }
+## a second query file of OTHER rows is handed to the walk, and -I says so;
+## the walk then refuses the length mismatch as it always has (exit 1)
+/usr/bin/awk 'BEGIN { for (i = 0; i < 3000; i++) print (i % 4) "\t" 2 }' > mu3.txt
+"$YAME" pack -f m mu3.txt > q3k.cg
+e=$("$YAME" summary -I -m multi.cm q.cg q3k.cg 2>&1 >/dev/null || true)
+printf '%s\n' "$e" | grep 'rows, the index 4000; walking this record' >/dev/null ||
+  { echo "-I with a query of other rows did not say it walked: $e"; exit 1; }
+## -I without -m is ignored, with a word
+e=$("$YAME" summary -I q.cg 2>&1 >/dev/null)
+printf '%s\n' "$e" | grep 'no -m; ignored' >/dev/null ||
+  { echo "-I without -m said nothing: $e"; exit 1; }
 
 echo "ok: t_multimask"

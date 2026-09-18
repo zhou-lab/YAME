@@ -111,6 +111,33 @@ int main(void) {
           s, acc[s].sum_beta, ref[s].sum_beta);
   }
 
+  /* ---- driven by the coverage bitmap: the same numbers, covered rows only -- */
+  {
+    yame_qbits_t qb;
+    CHECK(yame_qbits_build(&q, &qb) == 0, "qbits_build refused the query");
+    yame_acc_t *a3 = calloc(n_acc, sizeof(yame_acc_t));
+    CHECK(yame_index_apply_qb(ix, &qb, a3) == 0, "apply_qb refused");
+    for (uint32_t s = 0; s < n_acc; ++s)
+      CHECK(a3[s].n_q == acc[s].n_q && a3[s].n_o == acc[s].n_o &&
+            a3[s].sum_depth == acc[s].sum_depth && a3[s].sum_beta == acc[s].sum_beta,
+            "slot %u differs between apply and apply_qb", s);
+    /* The query above is unit 8, the width a caller's own records have. The
+     * same values at unit 1 (M and U fit four bits here) must read the same
+     * through the accessor's other fast path. */
+    cdata_t q1 = q; q1.unit = 1; q1.s = malloc(n);
+    for (uint64_t i = 0; i < n; ++i) {
+      uint64_t mu = f3_get_mu(&q, i);
+      q1.s[i] = (uint8_t) (((mu >> 32) << 4) | (mu & 0xf));
+    }
+    yame_acc_t *a1 = calloc(n_acc, sizeof(yame_acc_t));
+    CHECK(yame_index_apply(ix, &q1, a1) == 0, "apply refused unit 1");
+    for (uint32_t s = 0; s < n_acc; ++s)
+      CHECK(a1[s].sum_beta == acc[s].sum_beta && a1[s].n_o == acc[s].n_o &&
+            a1[s].sum_depth == acc[s].sum_depth,
+            "slot %u differs between unit 8 and unit 1", s);
+    free(a3); free(a1); free(q1.s); yame_qbits_free(&qb);
+  }
+
   /* ---- runs of one slot in DESCENDING order: still bit-identical ---------- */
   {
     yame_index_t *ix2 = yame_index_build_runs(emit_runs_desc, &n, n, NM, base,
@@ -145,7 +172,7 @@ int main(void) {
     CHECK(b == NULL, "a build one byte over budget went ahead");
     CHECK(strstr(why, "index needs") && strstr(why, "budget"),
           "the decline did not say what it needed: %s", why);
-    char want[64]; snprintf(want, sizeof want, "%" PRIu64 " memberships", ix->off[n]);
+    char want[64]; snprintf(want, sizeof want, "%" PRIu32 " memberships", ix->off[n]);
     CHECK(strstr(why, want) != NULL,
           "the decline's membership count is not the exact one: %s", why);
     /* exactly at budget: fits */

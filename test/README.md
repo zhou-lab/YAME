@@ -21,6 +21,10 @@ permanent home, moved out of `tmp/` once the work landed. What exists:
   at 0% is correct (obsolete, decodable but not packable).
 - The methscope docs harness now scores every command in a block (`set -e`),
   not only the last -- the gap a zero-byte `upscale` shipped through.
+- `t_multimask.sh` + `probe_multi.c` / `probe_runs.c` / `probe_index.c` cover
+  the summary kernels (the walk and the inverted index, `summary -I`), and
+  `t_mrmp_fixture.sh` checks runs against records on a `.cm` methscope
+  exported from a `.mrmp`, the one input this repo cannot generate.
 
 Still open: the remaining per-subcommand depth (`hprint` 22%, `format6` 28%,
 `rowop` 35%, `format4` 41%, `format7` 40%), and any further layer-5 members.
@@ -72,6 +76,10 @@ test/
   t_probe.sh          runs the probe
   t_store_*.sh        layer 5, skipped unless YAME_DATA_HOME is set
   data/               gitignored; registry fetch target for layer 5
+  fixtures/           committed inputs a test cannot make itself (small):
+                      one real mask; mrmp_export/, a .cm exported from a
+                      .mrmp by methscope with its expected means (7 KB),
+                      driven by t_mrmp_fixture.sh + probe_fixture.c
 ```
 
 Each `t_*.sh`: `set -euo pipefail`, `mktemp -d` with a trap, fixtures from

@@ -106,7 +106,8 @@ static inline uint64_t mask_word(const uint8_t *s, uint64_t n, uint64_t w) {
 /* One fmt0 mask, 64 rows at a time. Pass 1 (fill == 0) counts per row unless
  * the build is already over budget, in which case only the popcount is kept,
  * which is what makes the decline message exact. Pass 2 writes the slot id at
- * each row's cursor. Returns the rows claimed. */
+ * each row's cursor, and marks the build bad rather than write past a row's
+ * entries if the file has changed since pass 1. Returns the rows claimed. */
 static uint64_t walk_bits(build_t *b, const uint8_t *s, int fill, uint32_t id) {
   uint64_t n = b->n_rows, nw = (n + WBITS - 1) / WBITS, claimed = 0;
   for (uint64_t w = 0; w < nw; ++w) {
@@ -117,8 +118,9 @@ static uint64_t walk_bits(build_t *b, const uint8_t *s, int fill, uint32_t id) {
     uint64_t base = w * WBITS;
     while (x) {
       uint64_t i = base + (uint64_t) ctz64(x);
-      if (fill) b->ent[b->off[i] + b->cnt[i]++] = (uint16_t) id;
-      else ++b->cnt[i];
+        if (!fill) ++b->cnt[i];
+      else if (b->off[i] + b->cnt[i] >= b->off[i + 1]) { b->bad = 1; return claimed; }
+      else b->ent[b->off[i] + b->cnt[i]++] = (uint16_t) id;
       x &= x - 1;
     }
   }
@@ -144,13 +146,14 @@ yame_index_t *yame_index_build(const char *mask_path, uint64_t n_rows,
   /* pass 1: how many slots claim each row, and how many rows each slot claims */
   uint64_t cap = 1024, n_masks = 0;
   b.n_m = malloc(cap * sizeof(uint64_t));
+  if (!b.n_m) { say(why, why_len, "out of memory for the mask counts"); scrap(&b); return NULL; }
   cfile_t cf = open_cfile((char *) mask_path);
   for (;;) {
     cdata_t m = read_cdata1(&cf);
     if (m.n == 0) break;
     if (m.fmt > '1') {
-      say(why, why_len, "record %"PRIu64" is format %c, not a binary mask; a "
-          "state mask claims every row", n_masks + 1, m.fmt);
+      say(why, why_len, "record %"PRIu64" is format %c, not a binary mask%s",
+          n_masks + 1, m.fmt, m.fmt == '2' ? "; a state mask claims every row" : "");
       free_cdata(&m); goto decline;
     }
     prepare_mask(&m);
@@ -164,7 +167,9 @@ yame_index_t *yame_index_build(const char *mask_path, uint64_t n_rows,
       free_cdata(&m); goto decline;
     }
     if (n_masks == cap) {
-      cap *= 2; b.n_m = realloc(b.n_m, cap * sizeof(uint64_t));
+      uint64_t *grown = realloc(b.n_m, 2 * cap * sizeof(uint64_t));
+      if (!grown) { say(why, why_len, "out of memory for the mask counts"); free_cdata(&m); goto decline; }
+      b.n_m = grown; cap *= 2;
     }
     b.n_m[n_masks] = walk_bits(&b, m.s, 0, 0);
     b.total += b.n_m[n_masks];
@@ -186,16 +191,26 @@ yame_index_t *yame_index_build(const char *mask_path, uint64_t n_rows,
   }
   if (prefix(&b) != 0) { say(why, why_len, "out of memory for the index"); goto decline0; }
 
-  /* pass 2: write the slot ids grouped by row */
+  /* pass 2: write the slot ids grouped by row. The file is trusted to be what
+   * pass 1 read; if it is not (fewer records, other rows, more bits), the
+   * build fails rather than leave entries unwritten or write past a row. */
+  uint64_t k = 0;
   cf = open_cfile((char *) mask_path);
-  for (uint64_t k = 0; k < n_masks; ++k) {
+  for (; k < n_masks; ++k) {
     cdata_t m = read_cdata1(&cf);
     if (m.n == 0) break;
+    if (m.fmt > '1') { free_cdata(&m); break; }
     prepare_mask(&m);
+    if (m.n != n_rows) { free_cdata(&m); break; }
     walk_bits(&b, m.s, 1, (uint32_t) k);
     free_cdata(&m);
+    if (b.bad) break;
   }
   bgzf_close(cf.fh);
+  if (k < n_masks || b.bad) {
+    say(why, why_len, "the mask file changed between the count and the fill");
+    goto decline0;
+  }
   free(b.cnt); b.cnt = NULL;
   return finish(&b, (uint32_t) n_masks, t0);
 
@@ -300,32 +315,67 @@ void yame_index_free(yame_index_t *ix) {
 
 /* ---------------------------------------------------------------- apply -- */
 
+static void finish_acc(const yame_index_t *ix, yame_acc_t *acc, uint64_t n_q) {
+  for (uint32_t k = 0; k < ix->n_slots; ++k) {
+    acc[k].n_u = ix->n_rows;
+    acc[k].n_q = n_q;
+    acc[k].n_m = ix->n_m[k];
+    acc[k].beta = acc[k].sum_beta / acc[k].n_o;   /* NaN at zero overlap, as
+                                                   * the walk; both print NA */
+  }
+}
+
+/* One covered row into every slot that claims it. */
+static inline void add_row(const yame_index_t *ix, const cdata_t *q, uint64_t i,
+                           uint64_t mu, yame_acc_t *acc) {
+  uint32_t e = ix->off[i], e1 = ix->off[i + 1];
+  if (e == e1) return;                        /* no slot claims this row */
+  (void) q;
+  double b = MU2beta(mu);
+  uint64_t d = MU2cov(mu);
+  for (; e < e1; ++e) {
+    yame_acc_t *a = &acc[ix->ent[e]];
+    ++a->n_o; a->sum_beta += b; a->sum_depth += d;
+  }
+}
+
+int yame_index_apply_qb(const yame_index_t *ix, const yame_qbits_t *qb,
+                        yame_acc_t *acc) {
+  if (!qb || !qb->q || !qb->cov) return -1;
+  const cdata_t *q = qb->q;
+  if (q->fmt != '3' || q->compressed || q->n != ix->n_rows) return -1;
+  memset(acc, 0, (size_t) ix->n_slots * sizeof(yame_acc_t));
+  uint64_t n_q = 0;
+  for (uint64_t w = 0; w < qb->n_words; ++w) {
+    uint64_t x = qb->cov[w];
+    if (!x) continue;
+    uint64_t base = w * WBITS;
+    while (x) {                               /* lowest bit first: row order */
+      uint64_t i = base + (uint64_t) ctz64(x);
+      x &= x - 1;
+      if (i >= ix->n_rows) break;
+      uint64_t mu = f3_get_mu((cdata_t *) q, i);
+      if (!mu) continue;                      /* a bitmap that overstates */
+      ++n_q;
+      add_row(ix, q, i, mu, acc);
+    }
+  }
+  finish_acc(ix, acc, n_q);
+  return 0;
+}
+
 int yame_index_apply(const yame_index_t *ix, const cdata_t *query,
                      yame_acc_t *acc) {
   if (query->fmt != '3' || query->compressed || query->n != ix->n_rows) return -1;
   memset(acc, 0, (size_t) ix->n_slots * sizeof(yame_acc_t));
 
   uint64_t n_q = 0;
-  const uint32_t *off = ix->off;
-  const uint16_t *ent = ix->ent;
   for (uint64_t i = 0; i < ix->n_rows; ++i) {
     uint64_t mu = f3_get_mu((cdata_t *) query, i);
     if (!mu) continue;
     ++n_q;
-    uint32_t e = off[i], e1 = off[i + 1];
-    if (e == e1) continue;                    /* no slot claims this row */
-    double b = MU2beta(mu);
-    uint64_t d = MU2cov(mu);
-    for (; e < e1; ++e) {
-      yame_acc_t *a = &acc[ent[e]];
-      ++a->n_o; a->sum_beta += b; a->sum_depth += d;
-    }
+    add_row(ix, query, i, mu, acc);
   }
-  for (uint32_t k = 0; k < ix->n_slots; ++k) {
-    acc[k].n_u = ix->n_rows;
-    acc[k].n_q = n_q;
-    acc[k].n_m = ix->n_m[k];
-    acc[k].beta = acc[k].sum_beta / acc[k].n_o;
-  }
+  finish_acc(ix, acc, n_q);
   return 0;
 }
