@@ -339,6 +339,25 @@ static inline void add_row(const yame_index_t *ix, const cdata_t *q, uint64_t i,
   }
 }
 
+int yame_index_apply_rows(const yame_index_t *ix, const cdata_t *q,
+                          const uint32_t *rows, uint64_t n, yame_acc_t *acc) {
+  if (!q || (!rows && n)) return -1;
+  if (q->fmt != '3' || q->compressed || q->n != ix->n_rows) return -1;
+  memset(acc, 0, (size_t) ix->n_slots * sizeof(yame_acc_t));
+  uint64_t n_q = 0;
+  for (uint64_t k = 0; k < n; ++k) {
+    uint64_t i = rows[k];
+    if (i >= ix->n_rows) return -1;
+    if (k && i <= rows[k - 1]) return -1;     /* not ascending, or a repeat */
+    uint64_t mu = f3_get_mu((cdata_t *) q, i);
+    if (!mu) continue;                        /* a list that overstates */
+    ++n_q;
+    add_row(ix, q, i, mu, acc);
+  }
+  finish_acc(ix, acc, n_q);
+  return 0;
+}
+
 int yame_index_apply_qb(const yame_index_t *ix, const yame_qbits_t *qb,
                         yame_acc_t *acc) {
   if (!qb || !qb->q || !qb->cov) return -1;

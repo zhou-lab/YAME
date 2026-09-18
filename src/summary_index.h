@@ -121,6 +121,23 @@ int yame_index_apply(const yame_index_t *ix, const cdata_t *query,
 int yame_index_apply_qb(const yame_index_t *ix, const yame_qbits_t *qb,
                         yame_acc_t *acc);
 
+/* The same, driven by the caller's own covered-row LIST: rows[0..n) are the
+ * rows to visit, each read for its M/U value as yame_index_apply() reads it.
+ * For a caller that walked its record once and kept the covered rows -- an
+ * MRMP featurizer draws its coverage ladder from such a list -- this is the
+ * scatter with nothing in between: no second scan over the rows, and no
+ * bitmap packed from the list only to be unpacked back into rows. A row with
+ * no coverage in the record is skipped, not counted, so a list that
+ * overstates still sums the truth.
+ *
+ * The list must be ASCENDING and DISTINCT, and that IS checked: a repeat
+ * would count a row twice and a wrong order would add the doubles in another
+ * sequence, so the sums would silently stop being bit-identical to the walk.
+ * -1 for either, for a row at or past the index, or for a query this does
+ * not cover (not format 3, compressed, other rows). */
+int yame_index_apply_rows(const yame_index_t *ix, const cdata_t *query,
+                          const uint32_t *rows, uint64_t n, yame_acc_t *acc);
+
 #ifdef __cplusplus
 }
 #endif
