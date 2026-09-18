@@ -464,6 +464,7 @@ static const yame_asset_file_t YAME_FILES_methscope_models_mm10_models[] = {
     { "mm10_wg.updecx", "f25cc5317a892105a121300fef009e29e96677f9a43fd02c3b47a59bf64cd482", 2057125237, NULL },
     { "mm10_brain_full.clfx", "02e60d0ee29362ee0fc4f6a93f6122445658af77d153c0614fb4584dc81ef9c1", 67613805, NULL },
     { "mm10_brain_lite.clfx", "58df24503facfdb7a65d8862918b4f553e359ceb4191b4e2fd395c719c125047", 13917982, NULL },
+    { "mm10_41celltypes.msdref", "04ebd2341d48507f6ae271fc51464116efec72c786a243eba5682fc7b0da68a6", 581825095, NULL },
     { NULL, NULL, 0, NULL }
 };
 
@@ -473,6 +474,7 @@ static const yame_pin_prior_t YAME_PRIOR_methscope_hg38_data[] = {
 
 static const yame_pin_prior_t YAME_PRIOR_methscope_models_hg38_models[] = {
     { "v1", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5" },
+    { "v10", "312398ef131cc7686e013a8659207cccc641d007aae5965c947b15a00f095337" },
     { "v2", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7" },
     { "v3", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d" },
     { "v4", "d605a8265c107c5a5aa0d005eed32955b5ddeff54cfa55359fd952a52abb5dad" },
@@ -485,6 +487,7 @@ static const yame_pin_prior_t YAME_PRIOR_methscope_models_hg38_models[] = {
 
 static const yame_pin_prior_t YAME_PRIOR_methscope_models_mm10_models[] = {
     { "v1", "6d1c5db5a545ffef909b734a9e9eeb1fed3922630aa0e026e063c8969ae32de5" },
+    { "v10", "312398ef131cc7686e013a8659207cccc641d007aae5965c947b15a00f095337" },
     { "v2", "219d549b9020bb418199bb7f3c4884798bf68c65f82659495493c2fff8ade6e7" },
     { "v3", "88a4933866332ff63d95b08457fcb2ca772a6302e172b7f8c681c25ed8be0b6d" },
     { "v4", "d605a8265c107c5a5aa0d005eed32955b5ddeff54cfa55359fd952a52abb5dad" },
@@ -517,8 +520,8 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10), NULL, 0 },
     { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39), NULL, 0 },
     { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v4", "test", "hg38/data", "25e22ae2c215bad9b1018da37675b7fea5b275189d8022db9d2b90fcba14290c", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data), YAME_PRIOR_methscope_hg38_data, YAME_NPRIOR(YAME_PRIOR_methscope_hg38_data) },
-    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v10", "", "hg38/models", "312398ef131cc7686e013a8659207cccc641d007aae5965c947b15a00f095337", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
-    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v10", "", "mm10/models", "312398ef131cc7686e013a8659207cccc641d007aae5965c947b15a00f095337", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
+    { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v11", "", "hg38/models", "c46daaa43888ebe9280972561c05ef8e519645806f4761f19677d46a756eb172", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
+    { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v11", "", "mm10/models", "c46daaa43888ebe9280972561c05ef8e519645806f4761f19677d46a756eb172", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 0 }
 };
 

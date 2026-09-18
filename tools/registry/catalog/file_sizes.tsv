@@ -353,6 +353,7 @@ methscope/models	hg38_celltype_full.clfx	161323256
 methscope/models	hg38_celltype_lite.clfx	22205304
 methscope/models	hg38_sex.clfx	30931
 methscope/models	hg38_wg.updecx	2866632834
+methscope/models	mm10_41celltypes.msdref	581825095
 methscope/models	mm10_brain_full.clfx	67613805
 methscope/models	mm10_brain_lite.clfx	13917982
 methscope/models	mm10_celltype_brain.clfx	105823329
