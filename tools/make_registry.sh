@@ -93,78 +93,79 @@ prior_ref() {   ## slug source tag subpath
 
 # --------------------------------------------------------------- refresh mode
 
+## One manifest from upstream into the cache, or the cached copy left alone.
+## Downloads beside the target and moves into place only on 200, so a
+## transient failure never deletes a manifest that was fine a moment ago --
+## the old `curl || rm -f` did exactly that on a flaky link. 429 and 503 are
+## "come back later" and get two more tries after a wait (HuggingFace answered
+## 429 during the v10 bump); anything else will not improve by asking again.
+fetch_manifest() {   ## url dest
+  local url=$1 dest=$2 code try
+  mkdir -p "$(dirname "$dest")"
+  for try in 1 2 3; do
+    code=$(curl -sL -o "$dest.part" -w '%{http_code}' "$url" || echo 000)
+    if [ "$code" = 200 ]; then mv "$dest.part" "$dest"; return 0; fi
+    rm -f "$dest.part"
+    case $code in
+      429|503) echo "  HTTP $code from $url; waiting 45 s (try $try of 3)" >&2
+               sleep 45 ;;
+      *)       break ;;
+    esac
+  done
+  echo "  MISS $url (HTTP $code)" >&2
+  return 1
+}
+
 if [ "$refresh" = 1 ]; then
   ia_tag=${new_tag:-$(tag_of InfiniumAnnotation)}
   ia_base=$(base_of InfiniumAnnotation)
   echo "refreshing InfiniumAnnotation @ $ia_tag" >&2
   for p in $(rows_of "$cat_dir/InfiniumAnnotation.tsv" | cut -f1); do
     for sub in "$p" "$p/KYCG"; do
-      d=$sums_dir/InfiniumAnnotation/$ia_tag/$sub
-      mkdir -p "$d"
-      curl -sfL -o "$d/SHA256SUMS" "$ia_base/$ia_tag/$sub/SHA256SUMS" \
-        || { echo "  MISS $sub" >&2; rm -f "$d/SHA256SUMS"; }
+      fetch_manifest "$ia_base/$ia_tag/$sub/SHA256SUMS" \
+                     "$sums_dir/InfiniumAnnotation/$ia_tag/$sub/SHA256SUMS" || true
     done
   done
 
   g_tag=$(tag_of genomes); g_base=$(base_of genomes)
   echo "refreshing genomes @ $g_tag" >&2
   for g in $(rows_of "$cat_dir/genomes.tsv" | cut -f1); do
-    d=$sums_dir/genomes/$g_tag/$g; mkdir -p "$d"
-    curl -sfL -o "$d/SHA256SUMS" "$g_base/$g_tag/$g/SHA256SUMS" \
-      || { echo "  MISS $g" >&2; rm -f "$d/SHA256SUMS"; }
+    fetch_manifest "$g_base/$g_tag/$g/SHA256SUMS" \
+                   "$sums_dir/genomes/$g_tag/$g/SHA256SUMS" || true
   done
 
   kb_tag=$(tag_of KYCGKB); kb_base=$(base_of KYCGKB)
   echo "refreshing KYCGKB @ $kb_tag" >&2
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
-    d=$sums_dir/KYCGKB/$kb_tag/$g; mkdir -p "$d"
-    curl -sfL -o "$d/SHA256SUMS" "$kb_base/$repo/$kb_tag/SHA256SUMS" \
-      || { echo "  MISS $g" >&2; rm -f "$d/SHA256SUMS"; }
+    fetch_manifest "$kb_base/$repo/$kb_tag/SHA256SUMS" \
+                   "$sums_dir/KYCGKB/$kb_tag/$g/SHA256SUMS" || true
   done
 
   ms_tag=$(tag_of methscope); ms_base=$(base_of methscope)
   echo "refreshing methscope @ $ms_tag" >&2
   rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r _g sub; do
-    d=$sums_dir/methscope/$ms_tag/$sub; mkdir -p "$d"
-    curl -sfL -o "$d/SHA256SUMS" "$ms_base/$ms_tag/$sub/SHA256SUMS"
+    fetch_manifest "$ms_base/$ms_tag/$sub/SHA256SUMS" \
+                   "$sums_dir/methscope/$ms_tag/$sub/SHA256SUMS" || true
   done
 
   msm_tag=$(tag_of methscope_models); msm_base=$(base_of methscope_models)
   echo "refreshing methscope_models @ $msm_tag" >&2
-  ## One manifest at the repo root serves every row, so fetch it ONCE rather
-  ## than per row, and fail loudly. This used to be a bare curl inside the row
-  ## loop with no status check: HuggingFace answered 429 during the v10 bump,
-  ## the line above still said "refreshing", and the failure only surfaced
-  ## later as "No such file or directory" from the emit step.
-  msm_d=$sums_dir/methscope_models/$msm_tag
-  mkdir -p "$msm_d"
+  ## One manifest at the repo root serves every row, so fetch it ONCE, and
+  ## fail the run: a missing models manifest surfaces later as "No such file"
+  ## from the emit step, which is the wrong place to learn about a 429.
   msm_url="$msm_base/$msm_tag/SHA256SUMS"
-  msm_ok=0
-  for try in 1 2 3; do
-    code=$(curl -sL -o "$msm_d/SHA256SUMS.part" -w '%{http_code}' "$msm_url" || echo 000)
-    if [ "$code" = 200 ]; then
-      mv "$msm_d/SHA256SUMS.part" "$msm_d/SHA256SUMS"; msm_ok=1; break
-    fi
-    rm -f "$msm_d/SHA256SUMS.part"
-    ## 429 and 503 are "come back later" and are worth a wait; anything else
-    ## will not improve by asking again.
-    case $code in
-      429|503) echo "  HTTP $code from $msm_url; waiting 45 s (try $try of 3)" >&2
-               sleep 45 ;;
-      *)       break ;;
-    esac
-  done
-  if [ "$msm_ok" != 1 ]; then
-    echo "make_registry.sh: cannot fetch $msm_url (HTTP $code)." >&2
+  fetch_manifest "$msm_url" "$sums_dir/methscope_models/$msm_tag/SHA256SUMS" || {
+    echo "make_registry.sh: cannot fetch $msm_url." >&2
     echo "  The pin in TAGS is $msm_tag. Check the tag exists, then re-run;" >&2
     echo "  a 429 is HuggingFace rate-limiting and clears on its own." >&2
     exit 1
-  fi
+  }
 
-  ## File sizes: the GitHub contents API is the only source, so this is the one
-  ## part of the catalog that cannot be rebuilt from a manifest. Every source,
-  ## because a browser that shows a size for some files and not others reads as
-  ## if the others were free.
+  ## File sizes: no manifest carries them, so this is the one part of the
+  ## catalog that comes from an API -- GitHub's contents API for the git
+  ## sources, HuggingFace's tree API for the models. Every source, because a
+  ## browser that shows a size for some files and not others reads as if the
+  ## others were free.
   echo "refreshing file sizes" >&2
 
   ## The API rate limit is 60/hour unauthenticated and this walks ~20
@@ -192,10 +193,10 @@ for f in sorted(d, key=lambda x: x['name']):
   tmp=$(mktemp)
   {
     echo "# Published file sizes, for display only -- nothing depends on them,"
-    echo "# so a file added upstream needs no rebuild. Refreshed from the GitHub"
-    echo "# contents API (the one fact in this catalog that no manifest carries);"
-    echo "# ASCII-sorted by name within a scope, the order the emitted tables"
-    echo "# must keep."
+    echo "# so a file added upstream needs no rebuild. Refreshed by --refresh from"
+    echo "# the GitHub contents API and the HuggingFace tree API (the one fact in"
+    echo "# this catalog that no manifest carries); ASCII-sorted by name within a"
+    echo "# scope, the order the emitted tables must keep."
     echo "#"
     echo "# scope is <source>/<subpath>: the directory the file lives in."
     echo "#"
@@ -214,6 +215,22 @@ for f in sorted(d, key=lambda x: x['name']):
     rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
       sizes_of "methscope/$g" methscope_data "$sub" "$ms_tag"
     done
+    ## The models live on HuggingFace. Its tree API lists a revision with
+    ## sizes; the repo comes from TAGS, so it is still named in one place.
+    hf_repo=${msm_base#https://huggingface.co/}; hf_repo=${hf_repo%/resolve}
+    curl -sfL "https://huggingface.co/api/models/$hf_repo/tree/$msm_tag" |
+      python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(d, list): sys.exit(0)
+for f in sorted(d, key=lambda x: x['path']):
+    if f.get('type') != 'file': continue
+    if f['path'] in ('.gitattributes', 'README.md', 'SHA256SUMS'): continue
+    print('methscope/models\t%s\t%d' % (f['path'], f['size']))
+"
   } > "$tmp"
   mv "$tmp" "$cat_dir/file_sizes.tsv"
   echo "done; review the diff under tools/registry/ before committing" >&2

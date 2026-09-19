@@ -1,8 +1,8 @@
 # Published file sizes, for display only -- nothing depends on them,
-# so a file added upstream needs no rebuild. Refreshed from the GitHub
-# contents API (the one fact in this catalog that no manifest carries);
-# ASCII-sorted by name within a scope, the order the emitted tables
-# must keep.
+# so a file added upstream needs no rebuild. Refreshed by --refresh from
+# the GitHub contents API and the HuggingFace tree API (the one fact in
+# this catalog that no manifest carries); ASCII-sorted by name within a
+# scope, the order the emitted tables must keep.
 #
 # scope is <source>/<subpath>: the directory the file lives in.
 #
@@ -348,7 +348,6 @@ methscope/hg38/data	human_hg38_test.truth.cg	1944547
 methscope/models	hg38_10k1.updecx	29075778
 methscope/models	hg38_33celltypes.msdref	554067669
 methscope/models	hg38_62celltypes.msdref	1510181179
-methscope/models	hg38_celltype.clfx	13998591
 methscope/models	hg38_celltype_full.clfx	161323256
 methscope/models	hg38_celltype_lite.clfx	22205304
 methscope/models	hg38_sex.clfx	30931
@@ -356,5 +355,4 @@ methscope/models	hg38_wg.updecx	2866632834
 methscope/models	mm10_41celltypes.msdref	581825095
 methscope/models	mm10_brain_full.clfx	67613805
 methscope/models	mm10_brain_lite.clfx	13917982
-methscope/models	mm10_celltype_brain.clfx	105823329
 methscope/models	mm10_wg.updecx	2057125237
