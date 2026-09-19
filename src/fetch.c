@@ -232,8 +232,10 @@ static const unit_t *find_unit(const char *dir) {
 }
 
 /* The pre-1.50 address, <source>/<target>: InfiniumAnnotation/EPICv2,
- * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted for one release
- * so documented commands keep working; the address is the store path now.
+ * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted in 1.50 only,
+ * so documented commands keep working for one release while each tool
+ * rewrites its advice; 1.51 removes this function. The address is the
+ * store path now.
  * Every old target was the store directory, except KYCGKB's, which named the
  * genome while the sets live under <genome>/KYCG. */
 static const unit_t *find_asset(const char *source, const char *target) {
