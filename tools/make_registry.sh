@@ -259,14 +259,18 @@ fi
 ## browser offer individual files instead of whole directories. Sizes come from
 ## catalog/file_sizes.tsv (the contents API); 0 means "not published", and
 ## nothing depends on it.
-emit_file_table() {   ## slug source tag subpath scope [prefix] [name:slot]
-  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} lift=${7:-}
+emit_file_table() {   ## slug source tag subpath scope [prefix] [name:slot] [skip]
+  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} lift=${7:-} skip=${8:-}
   local p; p=$(sums_path "$src" "$tg" "$sub")
   printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
   while read -r sha name; do
     [ -n "${name:-}" ] || continue
     ## One upstream directory can back several entries; take only this one's.
     case "$name" in "$pfx"*) ;; *) continue ;; esac
+    ## A file this directory publishes but another source owns. It stays in
+    ## the upstream manifest -- we do not control that repo -- but listing it
+    ## here too would fetch the same bytes twice into the same store slot.
+    [ -n "$skip" ] && [ "$name" = "$skip" ] && continue
     local size=0
     if [ -n "$scope" ]; then
       size=$(rows_of "$cat_dir/file_sizes.tsv" |
@@ -355,7 +359,7 @@ EOF
   if wants KYCGKB; then
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
     emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
-                    "" "cpg_nocontig.cr:$g"
+                    "" "" "cpg_nocontig.cr"
   done
   fi
   if wants genomes; then
@@ -364,15 +368,18 @@ EOF
   done
   fi
   ## The coordinate stream ALONE, for a tool that needs to read its own output
-  ## against CpG positions but has no use for a knowledgebase. It comes from
-  ## the KYCGKB manifest and keeps the store path yame gives it, <genome>/, so
-  ## the two tools share one copy of a 23-30 MB file rather than fetching it
-  ## twice into different places. Requested by methscope, 2026-09-17.
+  ## against CpG positions but has no use for a knowledgebase. Requested by
+  ## methscope, 2026-09-17.
+  ##
+  ## It comes from zhou-lab/genomes, which is where the file is published as of
+  ## genomes v4. Before that it could only be had from the KYCGKB repo, so a
+  ## coordinates fetch dragged a knowledgebase's manifest along and the file
+  ## had to be LIFTED out of <genome>/KYCG/ into <genome>/. Now the directory
+  ## that publishes it is the directory it belongs in, and the same bytes serve
+  ## the genomes unit and this one.
   if wants coordinates; then
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    ## No lift: the row below already stores under <genome>/, which is where
-    ## yame's lift puts this same file. Both tools land it in one place.
-    emit_file_table "coordinates_$g" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
+  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
+    emit_file_table "coordinates_$g" genomes "$g_tag" "$g" "genomes/$g" \
                     "cpg_nocontig.cr"
   done
   fi
@@ -410,8 +417,8 @@ EOF
   done
   fi
   if wants coordinates; then
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    emit_prior_table "coordinates_$g" KYCGKB "$kb_tag" "$g"
+  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
+    emit_prior_table "coordinates_$g" genomes "$g_tag" "$g"
   done
   fi
   if wants methscope; then
@@ -447,12 +454,13 @@ EOF
   ## The coordinate stream on its own. Target and store_sub are <genome>, the
   ## same spelling and the same place yame uses, so `methscope fetch
   ## hg38/cpg_nocontig.cr` and `yame fetch hg38/cpg_nocontig.cr` are the same
-  ## command over the same file.
+  ## command over the same file -- and the same one the genomes unit below
+  ## writes, so fetching both costs one download.
   if wants coordinates; then
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _tools repo _rest; do
-    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "%s", "%s", YAME_FILES_coordinates_%s, YAME_NFILES(YAME_FILES_coordinates_%s), %s },\n' \
-      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$g" "$g" \
-      "$(prior_ref "coordinates_$g" KYCGKB "$kb_tag" "$g")"
+  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g _tools; do
+    printf '    { "genomes", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_coordinates_%s, YAME_NFILES(YAME_FILES_coordinates_%s), %s },\n' \
+      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")" "$g" "$g" \
+      "$(prior_ref "coordinates_$g" genomes "$g_tag" "$g")"
   done
   fi
 

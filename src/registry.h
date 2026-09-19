@@ -352,7 +352,6 @@ static const yame_asset_file_t YAME_FILES_KYCGKB_hg38[] = {
     { "Win100k.20220228.cm", "585a9a0651029500cb1978d001069189b1fe368949715c99ad09fd91cb28e09a", 169101, NULL },
     { "XCILinkedWGBS.20221121.cm", "3bb5f15cf2da91c88e47ae021b6e75fdf9c3eb2b05aedfd0b6c479639b903864", 12552, NULL },
     { "XCILinkedWGBSSorted.20221121.cm", "89a38ce3ebc823e99aaed42ab6b9c9cb475bc069a41a8f43aedcef529a4f151b", 16744, NULL },
-    { "cpg_nocontig.cr", "83cc96061b61ad3f7a83097705708b898b749ff0d00f9790b1f91a236a1298cd", 30318472, "hg38" },
     { "nFlankCG.20220321.cm", "a147624564e424b2ceabefe3da3263873e1a180ff8dba446adc794b96a110541", 11529528, NULL },
     { "nFlankCG100.20231025.cm", "d5744f66f94082836c8558c023f1ae98d809f935f6b2b00891673d546489f78b", 10120992, NULL },
     { "nFlankCG50.20231025.cm", "576d1b87764dec5511dcabad2a0342b1fbcbd0a9ccc2b771d7aa427e495ca116", 7572753, NULL },
@@ -392,7 +391,6 @@ static const yame_asset_file_t YAME_FILES_KYCGKB_mm10[] = {
     { "Win100k.20220228.cm", "83349a6c2888e98a34f20706f4904d4ac0973d447f7003ef1439f60cf0a1f912", 154709, NULL },
     { "Win1m.20230709.cm", "534f4a2cba8ef98e66f2b330878c7829a0556a5c8dd2a4ef6d6bd54af339f126", 16962, NULL },
     { "Win30k.20220228.cm", "e2ac4cfc01d9ed7099f3fb27226ddf7e65ff5a6ea1be7911c243efe7e2d4b00d", 513471, NULL },
-    { "cpg_nocontig.cr", "bef068ffeb6293acf16449f986df89005b0dfc2f0cec8fae53fd57cbd8fc8224", 23825886, "mm10" },
     { "kmer10.20231109.cm", "8d3dd1d6581f125679732d3c3be89feba51499e7a5747e12514c212f42b79854", 52445331, NULL },
     { "nFlankCG.20220321.cm", "2c53fe47e2d7b3c01b2a7eadb97a17da75f8bb74a2ea19dd14383e990928a2a4", 7763796, NULL },
     { "nFlankCG100.20231025.cm", "fdc1fcc9b9c8e88fbc0ad0ab3e3d671fa4023a355c15d28676c492add3152205", 6787893, NULL },
@@ -406,7 +404,6 @@ static const yame_asset_file_t YAME_FILES_KYCGKB_mm10[] = {
 
 static const yame_asset_file_t YAME_FILES_KYCGKB_mm39[] = {
     { "ChromHMM.20250102.cm", "237d39c512c81c5e6f2d543b034ae16999219fb594b9d9e83abdb63c5971fdff", 882311, NULL },
-    { "cpg_nocontig.cr", "67b183a53a820a13303a4e793465d8012b106baed0f0098bf480f623b4bfe75d", 23857084, "mm39" },
     { NULL, NULL, 0, NULL }
 };
 
@@ -416,6 +413,7 @@ static const yame_asset_file_t YAME_FILES_genomes_hg38[] = {
     { "cytoband.tsv.gz", "a49a0cf26294e04d12cf073edcf2bd512f231c2f30607105c2fc4157b6c149f1", 9645, NULL },
     { "genes.bed.gz", "0ec51c895e05475cafdce90e83ef72beae2eee06b3fbe5544821ebd56bb1d423", 10708528, NULL },
     { "genes.bed.gz.tbi", "fa4064aed5e8f89db296cdcea7f5b131f8c6c53b5e213614b27e386a8f30b8d8", 192014, NULL },
+    { "cpg_nocontig.cr", "83cc96061b61ad3f7a83097705708b898b749ff0d00f9790b1f91a236a1298cd", 30318472, NULL },
     { NULL, NULL, 0, NULL }
 };
 
@@ -425,6 +423,7 @@ static const yame_asset_file_t YAME_FILES_genomes_mm10[] = {
     { "cytoband.tsv.gz", "a7bb429fb76b97a37654fde43ced186d6bff49f4564faef1650b4e12af12566a", 4129, NULL },
     { "genes.bed.gz", "0e4497a94a8830a2d386f66836f6fec7d0669fdf3ee8ec62f06196117d23e14e", 6823722, NULL },
     { "genes.bed.gz.tbi", "5f6b4acadd9e2badf5b6b91bf9f5cb8ce864553362d34044188e1a2ecd923ff6", 202003, NULL },
+    { "cpg_nocontig.cr", "bef068ffeb6293acf16449f986df89005b0dfc2f0cec8fae53fd57cbd8fc8224", 23825886, NULL },
     { NULL, NULL, 0, NULL }
 };
 
@@ -434,6 +433,7 @@ static const yame_asset_file_t YAME_FILES_genomes_mm39[] = {
     { "cytoband.tsv.gz", "20f66bce778c2d07c08362673f1c75dadf6290925182dbb099d693a8bc183634", 757, NULL },
     { "genes.bed.gz", "ce6c63a5ab350fd40e4b75ea1b5295745f70114cb19d5717e938a39f02b96ca2", 7047902, NULL },
     { "genes.bed.gz.tbi", "6002f81994af23a84d6df8c8aba152bb507ed88b0a66532a3d1ebee1f9192f10", 203709, NULL },
+    { "cpg_nocontig.cr", "67b183a53a820a13303a4e793465d8012b106baed0f0098bf480f623b4bfe75d", 23857084, NULL },
     { NULL, NULL, 0, NULL }
 };
 
@@ -466,6 +466,18 @@ static const yame_asset_file_t YAME_FILES_methscope_models_mm10_models[] = {
     { "mm10_brain_lite.clfx", "58df24503facfdb7a65d8862918b4f553e359ceb4191b4e2fd395c719c125047", 13917982, NULL },
     { "mm10_41celltypes.msdref", "04ebd2341d48507f6ae271fc51464116efec72c786a243eba5682fc7b0da68a6", 581825095, NULL },
     { NULL, NULL, 0, NULL }
+};
+
+static const yame_pin_prior_t YAME_PRIOR_genomes_hg38[] = {
+    { "v3", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507" },
+};
+
+static const yame_pin_prior_t YAME_PRIOR_genomes_mm10[] = {
+    { "v3", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539" },
+};
+
+static const yame_pin_prior_t YAME_PRIOR_genomes_mm39[] = {
+    { "v3", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727" },
 };
 
 static const yame_pin_prior_t YAME_PRIOR_methscope_hg38_data[] = {
@@ -516,9 +528,9 @@ static const yame_asset_reg_t YAME_ASSETS[] = {
     { "KYCGKB", "hg38", "https://github.com/zhou-lab/KYCGKB_hg38/raw", "v2", "", "hg38/KYCG", "8e0594ade2936a7b837306cec8e4d29bb9028a6a3be5b2cdbd372af7c16f650a", YAME_FILES_KYCGKB_hg38, YAME_NFILES(YAME_FILES_KYCGKB_hg38), NULL, 0 },
     { "KYCGKB", "mm10", "https://github.com/zhou-lab/KYCGKB_mm10/raw", "v2", "", "mm10/KYCG", "fbb75f8198a731f3ea2de7d2fb65e92c84f4e0f0e2ff335b9ff2e2000606f289", YAME_FILES_KYCGKB_mm10, YAME_NFILES(YAME_FILES_KYCGKB_mm10), NULL, 0 },
     { "KYCGKB", "mm39", "https://github.com/zhou-lab/KYCGKB_mm39/raw", "v2", "", "mm39/KYCG", "0dfa2114daa79c8c5fabae2d4795d250266d48f7e941fd99e81cf459e72ead64", YAME_FILES_KYCGKB_mm39, YAME_NFILES(YAME_FILES_KYCGKB_mm39), NULL, 0 },
-    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v3", "hg38", "hg38", "1d3cd57e1e6a5bfd504730b925d167ccd444d051ea004e0d09853618fa770507", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38), NULL, 0 },
-    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v3", "mm10", "mm10", "0f3ea46ec5ed2408eb9e0579db074fce1f6aba60049b8d11e6e0ab37d5a1c539", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10), NULL, 0 },
-    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v3", "mm39", "mm39", "50c5eb9a405d110182c75edfd87d5fff40345888cd86bd4bf5166573efac9727", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39), NULL, 0 },
+    { "genomes", "hg38", "https://github.com/zhou-lab/genomes/raw", "v4", "hg38", "hg38", "4f05879f25a109b99f783d34e5f8144fc7dff206677560ef75a311c78aa16ef7", YAME_FILES_genomes_hg38, YAME_NFILES(YAME_FILES_genomes_hg38), YAME_PRIOR_genomes_hg38, YAME_NPRIOR(YAME_PRIOR_genomes_hg38) },
+    { "genomes", "mm10", "https://github.com/zhou-lab/genomes/raw", "v4", "mm10", "mm10", "3e38c026a48c733e72f87f55cb0b8101f437b9b651ec2f4793031c49af73e86a", YAME_FILES_genomes_mm10, YAME_NFILES(YAME_FILES_genomes_mm10), YAME_PRIOR_genomes_mm10, YAME_NPRIOR(YAME_PRIOR_genomes_mm10) },
+    { "genomes", "mm39", "https://github.com/zhou-lab/genomes/raw", "v4", "mm39", "mm39", "9e75fd99c24397dbe7b019fecc3280f8b70cae3aef392a6e70e7683c71660e94", YAME_FILES_genomes_mm39, YAME_NFILES(YAME_FILES_genomes_mm39), YAME_PRIOR_genomes_mm39, YAME_NPRIOR(YAME_PRIOR_genomes_mm39) },
     { "methscope", "hg38/data", "https://raw.githubusercontent.com/zhou-lab/methscope_data", "v4", "test", "hg38/data", "25e22ae2c215bad9b1018da37675b7fea5b275189d8022db9d2b90fcba14290c", YAME_FILES_methscope_hg38_data, YAME_NFILES(YAME_FILES_methscope_hg38_data), YAME_PRIOR_methscope_hg38_data, YAME_NPRIOR(YAME_PRIOR_methscope_hg38_data) },
     { "methscope", "hg38/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v11", "", "hg38/models", "c46daaa43888ebe9280972561c05ef8e519645806f4761f19677d46a756eb172", YAME_FILES_methscope_models_hg38_models, YAME_NFILES(YAME_FILES_methscope_models_hg38_models), YAME_PRIOR_methscope_models_hg38_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_hg38_models) },
     { "methscope", "mm10/models", "https://huggingface.co/zhou-lab/methscope/resolve", "v11", "", "mm10/models", "c46daaa43888ebe9280972561c05ef8e519645806f4761f19677d46a756eb172", YAME_FILES_methscope_models_mm10_models, YAME_NFILES(YAME_FILES_methscope_models_mm10_models), YAME_PRIOR_methscope_models_mm10_models, YAME_NPRIOR(YAME_PRIOR_methscope_models_mm10_models) },
