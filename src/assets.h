@@ -232,18 +232,11 @@ const char *yame_assets_pin_prior_tag(const char *dir,
 
 /* ---------------------------------------------------- the registry's rows */
 /* One file a directory publishes, with the digest it must have.
- *
- * store_sub is normally the unit's, and NULL says so. It is set only where a
- * file belongs somewhere else in the store than the directory that publishes
- * it: a genome's cpg_nocontig.cr comes from the KYCGKB repo but is the
- * genome's index, so it lands at <genome>/ rather than <genome>/KYCG/. The
- * browser renders a file wherever this puts it, so the tree and the store
- * cannot drift apart. */
+ */
 typedef struct {
     const char *name;
     const char *sha256;
     uint64_t    size;        /* 0 when upstream does not publish one */
-    const char *store_sub;   /* NULL: the unit's own store_sub */
 } yame_asset_file_t;
 
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)

@@ -72,7 +72,7 @@ sed -n '3p' "$d/lib.out" | grep -Eq '^[0-9]+$' ||
 ## ---- 5. this repo's own registry still says what it should -----------------
 ## The coordinate stream is published at <genome>/ by the genomes unit, with no
 ## lift, and the knowledgebase no longer offers a second copy of it.
-grep -q 'cpg_nocontig.cr", "[0-9a-f]*", [0-9]*, NULL }' "$root/src/registry.h" ||
+grep -q 'cpg_nocontig.cr", "[0-9a-f]*", [0-9]* }' "$root/src/registry.h" ||
   { echo "yame no longer publishes the coordinate stream at <genome>/"; exit 1; }
 grep 'YAME_FILES_KYCGKB_hg38' -A 40 "$root/src/registry.h" |
   sed -n '/^};/q;p' | grep -q 'cpg_nocontig.cr' &&

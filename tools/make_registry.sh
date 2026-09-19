@@ -227,8 +227,8 @@ fi
 ## browser offer individual files instead of whole directories. Sizes come from
 ## catalog/file_sizes.tsv (the contents API); 0 means "not published", and
 ## nothing depends on it.
-emit_file_table() {   ## slug source tag subpath scope [prefix] [name:slot] [skip]
-  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} lift=${7:-} skip=${8:-}
+emit_file_table() {   ## slug source tag subpath scope [prefix] [skip]
+  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} skip=${7:-}
   local p; p=$(sums_path "$src" "$tg" "$sub")
   printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
   while read -r sha name; do
@@ -246,15 +246,9 @@ emit_file_table() {   ## slug source tag subpath scope [prefix] [name:slot] [ski
                           '$1==g && $2==n {print $3}')
       [ -n "$size" ] || size=0
     fi
-    ## A file that belongs elsewhere in the store than the directory
-    ## publishing it, given as name:slot.
-    local slot=NULL
-    if [ -n "$lift" ] && [ "$name" = "${lift%%:*}" ]; then
-      slot="\"${lift#*:}\""
-    fi
-    printf '    { "%s", "%s", %s, %s },\n' "$name" "$sha" "$size" "$slot"
+    printf '    { "%s", "%s", %s },\n' "$name" "$sha" "$size"
   done < "$p"
-  printf '    { NULL, NULL, 0, NULL }\n};\n\n'
+  printf '    { NULL, NULL, 0 }\n};\n\n'
 }
 
 ## A C identifier for "<source>/<target>".
@@ -321,7 +315,7 @@ EOF
   done
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
     emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
-                    "" "" "cpg_nocontig.cr"
+                    "" "cpg_nocontig.cr"
   done
   rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g; do
     emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g" "genomes/$g"
