@@ -1,7 +1,7 @@
 /* A downstream tool, in eighteen lines: `fetch` over ITS OWN registry, under
  * its own name and its own store variable, by linking libyame.a and handing
  * yame_fetch_main() a yame_fetch_cfg_t. This is what methscope does with the
- * registry make_registry.sh --tool=methscope generates. Nothing here is
+ * registry a downstream tool's own generator produces. Nothing here is
  * yame's catalogue; if fetch.o were still bound to it, this could not link
  * with a different one. */
 #include <stdio.h>

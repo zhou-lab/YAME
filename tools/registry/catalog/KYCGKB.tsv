@@ -10,11 +10,7 @@
 #           former publishes a SHA256SUMS. Kept because the Zenodo record is
 #           what a paper cites.
 #
-# methscope-cli already fetches cpg_nocontig.cr out of KYCGKB_hg38 at this same
-# tag, so this row is the one place in the suite where cross-tool reuse is
-# already proven rather than prospective.
-#
-# genome	tools	repo	rows	record	doi
-hg38	kycg	KYCGKB_hg38	29401795	18175838	10.5281/zenodo.18175837
-mm10	kycg	KYCGKB_mm10	21867837	18175656	10.5281/zenodo.18175655
-mm39	kycg	KYCGKB_mm39	21889506	-	-
+# genome	repo	rows	record	doi
+hg38	KYCGKB_hg38	29401795	18175838	10.5281/zenodo.18175837
+mm10	KYCGKB_mm10	21867837	18175656	10.5281/zenodo.18175655
+mm39	KYCGKB_mm39	21889506	-	-

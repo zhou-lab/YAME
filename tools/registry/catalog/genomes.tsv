@@ -7,7 +7,7 @@
 # for plotting. Same names, different repos, tags, content and anchors --
 # merging the two tables is the easiest mistake to make here.
 #
-# genome	tools
-hg38	sesame
-mm10	sesame
-mm39	sesame
+# genome
+hg38
+mm10
+mm39

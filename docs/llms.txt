@@ -380,7 +380,8 @@ Reference data
 
   cd ~/repo/YAME && make
   ./yame <command> -h
-  ./tools/make_registry.sh --tool=yame -o src/registry.h
+  ./tools/make_registry.sh              # writes src/registry.h
+  ./tools/make_registry.sh --check      # verify it matches the catalog
   ./tools/make_assetinfo.sh -o src/assetinfo.h
 
 `src/registry.h` and `src/assetinfo.h` are generated: edit catalog/source
