@@ -203,6 +203,10 @@ typedef struct {
     const char *citation;
 } yame_asset_file_t;
 
+/* The array MUST end with a zeroed row; YAME_NFILES subtracts it. An emitter
+ * that omits the terminator does not fail to compile or to run -- it silently
+ * reports one file too few, and the file that vanishes is whichever the
+ * table's order put last. */
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
 
 /* The parts of a key, split on the LAST @ and the LAST colon: a source may

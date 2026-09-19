@@ -897,8 +897,8 @@ static int file_wanted(const unit_t *a, const char *name,
  * answer. This is that answer: the registry, dumped.
  *
  * TSV rather than the aligned columns the summary uses, because the consumer
- * here is cut(1), not an eye. Descriptions come from data/assets.tsv keyed by
- * role, so one row describes `mask` for every platform that publishes one.
+ * here is cut(1), not an eye. Descriptions come from the registry row: each
+ * file carries its own.
  */
 static int dump_registry(const char *dopt, const sel_t *sel, size_t n_sel,
                          const char *filter) {
@@ -1104,7 +1104,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
  * which is affordable because the lookup is a scan of a compiled-in table and
  * the wrapping is a few hundred bytes of formatting.
  *
- * Ported from kycg, which is also where data/assets.tsv started.
+ * Ported from kycg, which is also where the descriptions started.
  */
 
 #define INFO_MAX_LINES 64

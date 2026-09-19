@@ -12,6 +12,8 @@ static const yame_asset_file_t F[] = {
     "http://127.0.0.1:1/zhou-lab/probe/v2/one.cm",
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0, 1,
     "One", "A probe set.", "probe", "-" },
+  /* the terminator: YAME_NFILES counts rows up to it. Leave it out and the
+   * registry silently loses its last file. */
   { NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, NULL } };
 int main(int argc, char **argv) {
   yame_fetch_cfg_t cfg = { F, YAME_NFILES(F), "methprobe", "METHPROBE_DATA_HOME" };

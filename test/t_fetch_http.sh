@@ -22,10 +22,8 @@ d=$(mktemp -d); trap 'kill $srv 2>/dev/null || true; rm -rf "$d"' EXIT
 cd "$d"
 
 scope=EPIC/KYCG; tag=v8.1
-sums="$root/tools/registry/sums/InfiniumAnnotation/$tag/$scope/SHA256SUMS"
 tree="mirror/zhou-lab/InfiniumAnnotation/$tag/$scope"
 mkdir -p "$tree"
-cp "$sums" "$tree/SHA256SUMS"
 cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
 asset="$scope/Blacklist.20220304.cm"
 

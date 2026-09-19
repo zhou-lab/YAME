@@ -1,10 +1,9 @@
 #!/bin/bash
-## fetch, against a loopback mirror. The base URLs and manifest anchors are
-## compiled in, so the test serves a tree that mirrors the real path layout:
-## the REAL cached manifest for one directory (tools/registry/sums, so the
-## compiled anchor matches) and one real 1 KB file from it -- the only data
-## fixture this suite commits. Everything fetch checks, it checks for real:
-## the manifest against its anchor, the file against the manifest's digest.
+## fetch, against a loopback mirror. The URLs and per-file digests are
+## compiled in, so the test serves a tree that mirrors the real path layout
+## with one real 1 KB file in it -- the only data fixture this suite commits.
+## Everything fetch checks, it checks for real: the file against the digest
+## the registry pins for it. No manifest is served or requested.
 ##
 ## Needs python3 for the server and a build with libcurl; skips otherwise.
 set -euo pipefail
@@ -24,15 +23,13 @@ cd "$d"
 
 ## ---- the mirror tree: /zhou-lab/InfiniumAnnotation/v8.1/EPIC/KYCG/ ----
 scope=EPIC/KYCG; tag=v8.1
-sums="$root/tools/registry/sums/InfiniumAnnotation/$tag/$scope/SHA256SUMS"
-[ -f "$sums" ] || { echo "no cached manifest at $sums"; exit 1; }
 tree="mirror/zhou-lab/InfiniumAnnotation/$tag/$scope"
 mkdir -p "$tree"
-cp "$sums" "$tree/SHA256SUMS"
 cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
-## the manifest must actually list our file with the digest we serve
-grep -q "$(sha256sum "$tree/Blacklist.20220304.cm" | cut -c1-64)  Blacklist.20220304.cm" "$tree/SHA256SUMS" ||
-  { echo "fixture no longer matches the cached manifest; refresh test/fixtures/"; exit 1; }
+## the registry must pin our file at the digest we serve
+pinned=$( . "$root/tools/registry/lib.sh"; field "$(files_of "$scope/Blacklist.20220304.cm" | head -1)" sha256 )
+[ "$(sha256sum "$tree/Blacklist.20220304.cm" | cut -c1-64)" = "$pinned" ] ||
+  { echo "fixture no longer matches the registry's digest; refresh test/fixtures/"; exit 1; }
 
 ## ---- serve it on a free loopback port --------------------------------------
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')

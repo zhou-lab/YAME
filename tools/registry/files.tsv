@@ -2,7 +2,9 @@
 #
 # key          source@tag:remote_path. source is <org>/<repo> on GitHub, or
 #              hf:<org>/<repo> on HuggingFace; tag is the immutable upstream
-#              tag; remote_path is the path within that tag. Unique.
+#              tag; remote_path is the path within that tag. Unique. The key
+#              splits on its LAST @ and LAST colon, so a remote_path may not
+#              contain a colon (the generator refuses one).
 # store_path   where the file lands under the store root, and its place in
 #              the browser tree. Unique. Decoupled from remote_path.
 # sha256, size filled by --refresh from the tag's manifest and the host API,
