@@ -46,3 +46,49 @@ nsets_of() {
   local p; p=$(sums_path "$1" "$2" "$3")
   grep -c '\.cm$' "$p" || true
 }
+
+## ---- files.tsv: one row per file the suite can fetch --------------------------
+files=$reg/files.tsv
+
+## The rows whose store_path matches any of the globs given, in table order.
+## Plain shell globs, and `*` crosses `/`: '*/KYCG/*' is every knowledge-base
+## set, '*/cpg_nocontig.cr' every coordinate stream, 'hg38/data/*' one
+## directory. No arguments means every row.
+files_of() {
+  local row store pat
+  rows_of "$files" | while IFS= read -r row; do
+    store=${row#*	}; store=${store%%	*}
+    if [ $# -eq 0 ]; then printf '%s\n' "$row"; continue; fi
+    for pat in "$@"; do
+      case $store in $pat) printf '%s\n' "$row"; break ;; esac
+    done
+  done
+}
+
+## One column of one row, by name, so an emitter never re-splits a line:
+##   field "$row" sha256
+field() {   ## row column
+  local i
+  case $2 in
+    key) i=1 ;; store_path) i=2 ;; sha256) i=3 ;; size) i=4 ;; rows) i=5 ;;
+    kind) i=6 ;; recommend) i=7 ;; title) i=8 ;; description) i=9 ;;
+    source) i=10 ;; citation) i=11 ;;
+    *) echo "registry/lib.sh: no column named $2" >&2; return 1 ;;
+  esac
+  printf '%s\n' "$1" | cut -f"$i"
+}
+
+## The download URL for a key, by the host rule -- the one place it lives:
+##   github       https://raw.githubusercontent.com/<org>/<repo>/<tag>/<remote_path>
+##   huggingface  https://huggingface.co/<org>/<repo>/resolve/<tag>/<remote_path>
+## The key is source@tag:remote_path; the source is <org>/<repo> on GitHub or
+## hf:<org>/<repo> on HuggingFace. Split on the LAST colon: the source may
+## carry one, the path never does.
+url_of() {   ## key
+  local srctag=${1%:*} remote=${1##*:}
+  local src=${srctag%@*} tag=${srctag##*@}
+  case $src in
+    hf:*) printf 'https://huggingface.co/%s/resolve/%s/%s\n' "${src#hf:}" "$tag" "$remote" ;;
+    *)    printf 'https://raw.githubusercontent.com/%s/%s/%s\n' "$src" "$tag" "$remote" ;;
+  esac
+}

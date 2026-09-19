@@ -51,6 +51,13 @@ set -euo pipefail
 printf '%s\t%s\t%s\n' "$(tag_of genomes)" "$(base_of genomes)" "$cat_dir"
 printf '%s\n' "$(anchor_of genomes "$(tag_of genomes)" hg38)"
 printf '%s\n' "$(nsets_of KYCGKB "$(tag_of KYCGKB)" hg38)"
+## the files.tsv surface: a glob selects rows, field reads one by name, and
+## url_of applies the host rule -- including the hf: source, whose colon is
+## why keys split on the LAST one
+r=$(files_of 'hg38/cpg_nocontig.cr' | head -1)
+printf '%s\t%s\t%s\n' "$(field "$r" store_path)" "$(field "$r" kind)" "$(url_of "$(field "$r" key)")"
+printf '%s\n' "$(files_of '*/KYCG/*' | wc -l)"
+printf '%s\n' "$(url_of 'hf:zhou-lab/methscope@v11:hg38_wg.updecx')"
 EOF
 ( cd "$d" && bash "$d/consumer.sh" "$root" ) > "$d/lib.out" 2>"$d/lib.err" ||
   { echo "lib.sh is not sourceable from another directory"; cat "$d/lib.err"; exit 1; }
@@ -68,6 +75,12 @@ sed -n '3p' "$d/lib.out" | grep -Eq '^[0-9]+$' ||
 [ "$(cut -f3 < <(head -1 "$d/lib.out"))" = "$root/tools/registry/catalog" ] ||
   { echo "lib.sh resolved cat_dir against the caller, not itself"
     head -1 "$d/lib.out"; exit 1; }
+[ "$(sed -n '4p' "$d/lib.out")" = "$(printf 'hg38/cpg_nocontig.cr\tgenome\thttps://raw.githubusercontent.com/zhou-lab/genomes/v4/hg38/cpg_nocontig.cr')" ] ||
+  { echo "files_of / field / url_of did not agree on the coordinate stream"; sed -n '4p' "$d/lib.out"; exit 1; }
+[ "$(sed -n '5p' "$d/lib.out")" -gt 100 ] ||
+  { echo "'*/KYCG/*' selected only $(sed -n '5p' "$d/lib.out") rows"; exit 1; }
+[ "$(sed -n '6p' "$d/lib.out")" = "https://huggingface.co/zhou-lab/methscope/resolve/v11/hg38_wg.updecx" ] ||
+  { echo "url_of mishandled an hf: key"; sed -n '6p' "$d/lib.out"; exit 1; }
 
 ## ---- 5. this repo's own registry still says what it should -----------------
 ## The coordinate stream is published at <genome>/ by the genomes unit, with no

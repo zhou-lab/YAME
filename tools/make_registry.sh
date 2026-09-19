@@ -29,6 +29,7 @@ set -euo pipefail
 ## Sourcing sets reg, cat_dir and sums_dir as well.
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/registry/lib.sh"
+files=$reg/files.tsv
 
 check=0
 refresh=0
@@ -239,32 +240,13 @@ fi
 
 
 
-## Per-directory file list, straight out of the cached manifest: the names and
-## digests are already there, so compiling them in costs nothing and lets a
-## browser offer individual files instead of whole directories. Sizes come from
-## catalog/file_sizes.tsv (the contents API); 0 means "not published", and
-## nothing depends on it.
-emit_file_table() {   ## slug source tag subpath scope [prefix] [skip]
-  local slug=$1 src=$2 tg=$3 sub=$4 scope=${5:-} pfx=${6:-} skip=${7:-}
-  local p; p=$(sums_path "$src" "$tg" "$sub")
-  printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$slug"
-  while read -r sha name; do
-    [ -n "${name:-}" ] || continue
-    ## One upstream directory can back several entries; take only this one's.
-    case "$name" in "$pfx"*) ;; *) continue ;; esac
-    ## A file this directory publishes but another source owns. It stays in
-    ## the upstream manifest -- we do not control that repo -- but listing it
-    ## here too would fetch the same bytes twice into the same store slot.
-    [ -n "$skip" ] && [ "$name" = "$skip" ] && continue
-    local size=0
-    if [ -n "$scope" ]; then
-      size=$(rows_of "$cat_dir/file_sizes.tsv" |
-             /usr/bin/awk -F'\t' -v g="$scope" -v n="$name" \
-                          '$1==g && $2==n {print $3}')
-      [ -n "$size" ] || size=0
-    fi
-    printf '    { "%s", "%s", %s },\n' "$name" "$sha" "$size"
-  done < "$p"
+## Per-directory file list, straight out of files.tsv: every row whose
+## store_path sits in this directory, in table order.
+emit_file_table() {   ## slug store_dir
+  printf 'static const yame_asset_file_t YAME_FILES_%s[] = {\n' "$1"
+  rows_of "$files" | /usr/bin/awk -F'\t' -v d="$2" '
+    { p=$2; sub(/\/[^\/]*$/, "", p) }
+    p==d { n=$2; sub(/^.*\//, "", n); printf "    { \"%s\", \"%s\", %s },\n", n, $3, ($4==""?0:$4) }'
   printf '    { NULL, NULL, 0 }\n};\n\n'
 }
 
@@ -277,13 +259,52 @@ slug_of() { echo "$1/$2" | tr -c 'A-Za-z0-9\n' '_'; }
 ## the SOURCES named -- every source by default, which is yame's own registry;
 ## a downstream tool that ships fetch over the YAME code it bundles asks for
 ## only the sources it consumes. One function, so the two cannot drift.
+## One directory of files.tsv, as the fields today's yame_asset_reg_t row
+## needs. Everything comes from the key (source@tag:remote_path) and the
+## store_path; the four TRANSITION rules below exist only so that, until
+## Phase 2 changes the compiled record, the output stays byte-identical to
+## what the per-source catalog produced -- they name the catalog source for
+## the cached manifest under sums/, and the label/target/slug spellings the
+## old rows carried. They leave with the old record.
+unit_fields() {   ## store_dir first_key -> sets: src tag repo catsrc label base rsub target subpath slug
+  local key=$2
+  local srctag=${key%:*} remote=${key##*:}   ## split on the LAST colon: hf:org/repo@tag:path
+  src=${srctag%@*}; tag=${srctag##*@}
+  repo=${src#hf:}
+  rsub=${remote%/*}; [ "$rsub" = "$remote" ] && rsub=""
+  case $src in
+    hf:*)                   base="https://huggingface.co/$repo/resolve" ;;
+    *)                      base="https://raw.githubusercontent.com/$repo" ;;
+  esac
+  case $repo in                                  ## TRANSITION: catalog source names
+    zhou-lab/InfiniumAnnotation) catsrc=InfiniumAnnotation; label=InfiniumAnnotation ;;
+    zhou-lab/KYCGKB_*)           catsrc=KYCGKB;             label=KYCGKB ;;
+    zhou-lab/genomes)            catsrc=genomes;            label=genomes ;;
+    zhou-lab/methscope_data)     catsrc=methscope;          label=methscope ;;
+    zhou-lab/methscope)          catsrc=methscope_models;   label=methscope ;;
+    *) echo "make_registry.sh: no transition rule for $repo" >&2; exit 1 ;;
+  esac
+  target=$1
+  [ "$catsrc" = KYCGKB ] && target=${1%/KYCG}   ## TRANSITION: the old row named the genome
+  subpath=$rsub
+  [ "$catsrc" = KYCGKB ] && subpath=$target      ## TRANSITION: sums/KYCGKB/<tag>/<genome>
+  slug=$(slug_of "$catsrc" "$target")
+}
+
+## Store directories in table order, each with its first key: one line per
+## directory, "<store_dir>\t<key>". The one-source@tag-per-directory rule is
+## checked here, since this is the one place every row of a directory passes.
+units_of() {
+  rows_of "$files" | /usr/bin/awk -F'\t' '
+    { d=$2; sub(/\/[^\/]*$/, "", d); st=$1; sub(/:[^:]*$/, "", st) }
+    !(d in first) { first[d]=st; order[++n]=d; key[d]=$1; next }
+    first[d]!=st  { printf "make_registry.sh: %s mixes %s and %s\n", d, first[d], st > "/dev/stderr"; bad=1 }
+    END { if (bad) exit 1; for (i=1;i<=n;i++) print order[i] "\t" key[order[i]] }'
+}
+
 emit_yame() {
-  local ia_tag ia_base g_tag g_base kb_tag kb_base ms_tag ms_base msm_tag msm_base
-  ia_tag=$(tag_of InfiniumAnnotation); ia_base=$(base_of InfiniumAnnotation)
-  g_tag=$(tag_of genomes);             g_base=$(base_of genomes)
-  kb_tag=$(tag_of KYCGKB);             kb_base=$(base_of KYCGKB)
-  ms_tag=$(tag_of methscope);          ms_base=$(base_of methscope)
-  msm_tag=$(tag_of methscope_models);  msm_base=$(base_of methscope_models)
+  local units; units=$(units_of) || exit 1
+  local src tag repo catsrc label base rsub target subpath slug
 
   cat <<EOF
 /* registry.h -- GENERATED by tools/make_registry.sh. Do not edit.
@@ -324,105 +345,29 @@ emit_yame() {
 EOF
 
   ## The file tables first: the asset rows point at them.
-  rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _b _r _o; do
-    emit_file_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation \
-                    "$ia_tag" "$p" "InfiniumAnnotation/$p"
-    emit_file_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation \
-                    "$ia_tag" "$p/KYCG" "InfiniumAnnotation/$p/KYCG"
-  done
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
-    emit_file_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g" "KYCGKB/$g" \
-                    "" "cpg_nocontig.cr"
-  done
-  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g; do
-    emit_file_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g" "genomes/$g"
-  done
-  rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
-    emit_file_table "$(slug_of methscope "$g")" methscope "$ms_tag" "$sub" "methscope/$g"
-  done
-  rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t pfx store; do
-    emit_file_table "$(slug_of methscope_models "$t")" methscope_models \
-                    "$msm_tag" "" "methscope/models" "$pfx"
+  printf '%s\n' "$units" | while IFS=$'\t' read -r d k; do
+    unit_fields "$d" "$k"
+    emit_file_table "$slug" "$d"
   done
 
   ## Then the ancestries, for the directories that have one. A source only
   ## grows one the first time it is bumped, so most of these are absent and
   ## their rows carry NULL -- which is exactly the old behaviour.
-  rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _b _r _o; do
-    emit_prior_table "$(slug_of InfiniumAnnotation "$p")" InfiniumAnnotation \
-                     "$ia_tag" "$p"
-    emit_prior_table "$(slug_of InfiniumAnnotation "$p/KYCG")" InfiniumAnnotation \
-                     "$ia_tag" "$p/KYCG"
-  done
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
-    emit_prior_table "$(slug_of KYCGKB "$g")" KYCGKB "$kb_tag" "$g"
-  done
-  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g; do
-    emit_prior_table "$(slug_of genomes "$g")" genomes "$g_tag" "$g"
-  done
-  rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
-    emit_prior_table "$(slug_of methscope "$g")" methscope "$ms_tag" "$sub"
-  done
-  rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t pfx store; do
-    emit_prior_table "$(slug_of methscope_models "$t")" methscope_models \
-                     "$msm_tag" ""
+  printf '%s\n' "$units" | while IFS=$'\t' read -r d k; do
+    unit_fields "$d" "$k"
+    emit_prior_table "$slug" "$catsrc" "$tag" "$subpath"
   done
 
   cat <<EOF
 static const yame_asset_reg_t YAME_ASSETS[] = {
 EOF
 
-  ## Array platforms: the platform directory, then its KYCG/ subdirectory.
-  ## Both are fetchable on their own -- sesame wants the first, kycg wants both.
-  rows_of "$cat_dir/InfiniumAnnotation.tsv" | while IFS=$'\t' read -r p _b _r _o; do
-    s1=$(slug_of InfiniumAnnotation "$p"); s2=$(slug_of InfiniumAnnotation "$p/KYCG")
-    printf '    { "InfiniumAnnotation", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p")" "$s1" "$s1" \
-      "$(prior_ref "$s1" InfiniumAnnotation "$ia_tag" "$p")"
-    printf '    { "InfiniumAnnotation", "%s/KYCG", "%s", "%s", "%s/KYCG", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$p" "$ia_base" "$ia_tag" "$p" "$p" "$(anchor_of InfiniumAnnotation "$ia_tag" "$p/KYCG")" "$s2" "$s2" \
-      "$(prior_ref "$s2" InfiniumAnnotation "$ia_tag" "$p/KYCG")"
-  done
-
-  ## The coordinate stream on its own. Target and store_sub are <genome>, the
-  ## same spelling and the same place yame uses, so `methscope fetch
-  ## hg38/cpg_nocontig.cr` and `yame fetch hg38/cpg_nocontig.cr` are the same
-  ## command over the same file -- and the same one the genomes unit below
-  ## writes, so fetching both costs one download.
-
-  ## Whole-genome knowledgebases: one repo each, manifest at the repo root.
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
-    s=$(slug_of KYCGKB "$g")
-    printf '    { "KYCGKB", "%s", "%s/%s", "%s", "", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$s" "$s" \
-      "$(prior_ref "$s" KYCGKB "$kb_tag" "$g")"
-  done
-
-  ## Genome-level annotation (seqinfo / gaps / cytoband).
-  rows_of "$cat_dir/genomes.tsv" | while IFS=$'\t' read -r g; do
-    s=$(slug_of genomes "$g")
-    printf '    { "genomes", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$g" "$g_base" "$g_tag" "$g" "$g" "$(anchor_of genomes "$g_tag" "$g")" "$s" "$s" \
-      "$(prior_ref "$s" genomes "$g_tag" "$g")"
-  done
-
-  ## Example query methylomes -- the only source here that is data rather than
-  ## annotation. The target carries the genome so the browser files them under
-  ## it; the manifest sits at a differently-named path upstream.
-  rows_of "$cat_dir/methscope.tsv" | while IFS=$'\t' read -r g sub; do
-    s=$(slug_of methscope "$g")
-    printf '    { "methscope", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$g" "$ms_base" "$ms_tag" "$sub" "$g" "$(anchor_of methscope "$ms_tag" "$sub")" "$s" "$s" \
-      "$(prior_ref "$s" methscope "$ms_tag" "$sub")"
-  done
-
-  ## Model bundles: manifest at the repo root, so remote_sub is empty. Mixed
-  ## genomes in one directory, so the target is not a genome name.
-  rows_of "$cat_dir/methscope_models.tsv" | while IFS=$'\t' read -r t pfx store; do
-    s=$(slug_of methscope_models "$t")
-    printf '    { "methscope", "%s", "%s", "%s", "", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
-      "$t" "$msm_base" "$msm_tag" "$t" "$(anchor_of methscope_models "$msm_tag" "")" "$s" "$s" \
-      "$(prior_ref "$s" methscope_models "$msm_tag" "")"
+  printf '%s\n' "$units" | while IFS=$'\t' read -r d k; do
+    unit_fields "$d" "$k"
+    printf '    { "%s", "%s", "%s", "%s", "%s", "%s", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+      "$label" "$target" "$base" "$tag" "$rsub" "$d" \
+      "$(anchor_of "$catsrc" "$tag" "$subpath")" "$slug" "$slug" \
+      "$(prior_ref "$slug" "$catsrc" "$tag" "$subpath")"
   done
 
   cat <<'EOF'
@@ -464,16 +409,16 @@ typedef struct yame_ref_rows_s {
 EOF
 
   ## Every directory a row space owns, nearest first: a name is looked up in
-  ## the unit's own directory before its knowledgebase, because that is the
-  ## order someone naming a file means them in. Searching only the
-  ## knowledgebase left half the catalogue unreachable by name.
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _rest; do
-    printf 'static const char *const YAME_REF_DIRS_%s[] = { "%s", "%s/KYCG", NULL };\n' \
-      "$g" "$g" "$g"
-  done
-  rows_of "$cat_dir/InfiniumAnnotation.tsv" | cut -f1 | while read -r p; do
-    printf 'static const char *const YAME_REF_DIRS_%s[] = { "%s", "%s/KYCG", NULL };\n' \
-      "$p" "$p" "$p"
+  ## the unit's own directory before its knowledge base, because that is the
+  ## order someone naming a file means them in. The row-space files are the
+  ## rows of files.tsv with a kind; their name is the store directory that
+  ## holds them. Genomes first, then arrays, each in table order.
+  refs() { rows_of "$files" | /usr/bin/awk -F'\t' -v k="$1" '$6==k { d=$2; sub(/\/[^\/]*$/, "", d); print d "\t" $5 "\t" $2 }'; }
+  for kind in genome array; do
+    refs $kind | while IFS=$'\t' read -r name nrows path; do
+      printf 'static const char *const YAME_REF_DIRS_%s[] = { "%s", "%s/KYCG", NULL };\n' \
+        "$name" "$name" "$name"
+    done
   done
   echo
 
@@ -481,17 +426,12 @@ EOF
 static const yame_ref_rows_t YAME_REF_ROWS[] = {
 EOF
 
-  rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g _repo nrows _rest; do
-    [ -n "${nrows:-}" ] || continue
-    printf '    { "%s", "genome", %s, "%s/cpg_nocontig.cr", YAME_REF_DIRS_%s, "%s" },\n' \
-      "$g" "$nrows" "$g" "$g" "$g"
-  done
-  rows_of "$cat_dir/InfiniumAnnotation.tsv" |
-    while IFS=$'\t' read -r p _beads nrows _rest; do
-      [ -n "${nrows:-}" ] || continue
-      printf '    { "%s", "array", %s, "%s/%s.ordering.tsv.gz", YAME_REF_DIRS_%s, "%s" },\n' \
-        "$p" "$nrows" "$p" "$p" "$p" "$p"
+  for kind in genome array; do
+    refs $kind | while IFS=$'\t' read -r name nrows path; do
+      printf '    { "%s", "%s", %s, "%s", YAME_REF_DIRS_%s, "%s" },\n' \
+        "$name" "$kind" "$nrows" "$path" "$name" "$name"
     done
+  done
 
   cat <<'EOF'
     { NULL, NULL, 0, NULL, NULL, NULL }
