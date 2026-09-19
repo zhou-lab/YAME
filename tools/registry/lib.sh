@@ -45,8 +45,8 @@ field() {   ## row column
   local i
   case $2 in
     key) i=1 ;; store_path) i=2 ;; sha256) i=3 ;; size) i=4 ;; rows) i=5 ;;
-    kind) i=6 ;; recommend) i=7 ;; title) i=8 ;; description) i=9 ;;
-    source) i=10 ;; citation) i=11 ;;
+    kind) i=6 ;; title) i=7 ;; description) i=8 ;;
+    source) i=9 ;; citation) i=10 ;;
     *) echo "registry/lib.sh: no column named $2" >&2; return 1 ;;
   esac
   printf '%s\n' "$1" | cut -f"$i"

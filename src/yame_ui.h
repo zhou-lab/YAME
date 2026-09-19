@@ -424,12 +424,6 @@ typedef struct {
   const char          *open_root;
   yame_ui_preselect_fn preselect;
 
-  /* Bound to `r` when set: opens the collection under the cursor and checks
-   * the rows this accepts. A curated default matters because the catalogue is
-   * large and most of it is situational -- the answer to "which of these
-   * should I actually use" should be one keystroke, not a reading exercise. */
-  yame_ui_preselect_fn recommend;
-
   /**
    * Extra text a row can be found by, beyond what it displays.
    *

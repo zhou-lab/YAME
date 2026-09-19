@@ -196,7 +196,6 @@ typedef struct {
     const char *url;
     const char *sha256;
     uint64_t    size;        /* 0 when upstream does not publish one */
-    int         recommend;   /* in the browser's default selection for its directory */
     const char *title;
     const char *description;
     const char *source;

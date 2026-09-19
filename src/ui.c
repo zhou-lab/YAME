@@ -1724,8 +1724,6 @@ static void draw_help(const yame_ui_tree_t *spec, int picking) {
     frame_line(&f, "  %sCHOOSING%s", cyan, rst);
     help_row(&f, "space   x", "select the row, or everything under a folder");
     help_row(&f, "a", "select everything, or clear the selection");
-    if (spec->recommend)
-      help_row(&f, "r", "the recommended selection for what the cursor is on");
     for (size_t a = 0; a < spec->n_actions; ++a) {
       char k[2] = { spec->actions[a].key, '\0' };
       snprintf(buf, sizeof(buf), "%s what is selected",
@@ -2556,18 +2554,6 @@ int yame_ui_tree(const yame_ui_tree_t *spec) {
                             : (hit_i ? hit_i - 1 : n_hits - 1);
         tn_reveal(hits[hit_i]);
         want_cur = hits[hit_i];
-      }
-      else if (picking && spec->recommend && ch == 'r' && sel) {
-        /* Scoped to the collection under the cursor, which for a leaf means
-         * the one holding it. Recommending across the whole catalogue would
-         * check sets for platforms the user is not working on, and open every
-         * collection to do it. */
-        tnode_t *scope = (tn_is_leaf(sel) && sel->parent &&
-                          sel->parent->depth >= 0) ? sel->parent : sel;
-        tn_load_deep(scope, spec);
-        if (scope->n_kids) scope->expanded = 1;
-        tn_apply_pred(scope, spec, spec->recommend);
-        tn_open_to_checked(scope);
       }
       else if (on_key && on_key(ctx, ch, sel ? sel->path : NULL,
                                 sel ? sel->key : NULL)) {

@@ -245,10 +245,10 @@ drive(["fetch"], [b"h", b"h", ESC, b"q"], "help twice")
 drive(["fetch"], [ENTER, b"i", ENTER, b"i", b"q"], "info pane open and close")
 
 # 16. the remaining keys the help screen documents: l/left to open and close,
-#     x to select, r for the recommended selection
+#     x to select
 RIGHT, LEFT = b"\x1b[C", b"\x1b[D"
-drive(["fetch"], [b"l", DOWN, RIGHT, LEFT, LEFT, b"x", b"r", b"a", b"a", b"q"],
-      "open, close, select, recommend")
+drive(["fetch"], [b"l", DOWN, RIGHT, LEFT, LEFT, b"x", b"a", b"a", b"q"],
+      "open, close, select")
 
 # 17. f with nothing selected must not start a fetch
 code, out = drive(["fetch"], [b"f", b"q"], "fetch with an empty selection")

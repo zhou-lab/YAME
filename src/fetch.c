@@ -466,8 +466,8 @@ static size_t collect_scope(const char *path, const unit_t **out,
 }
 
 
-/* An array platform, or a genome build? Decides which recommended list
- * applies and what the row calls itself. */
+/* An array platform, or a genome build? Decides what the row calls
+ * itself. */
 static int unit_is_array(const char *unit) {
   const unit_t *a = find_unit(unit);
   if (!a) return 0;
@@ -1312,7 +1312,6 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
   lay_free(&L);
 }
 
-/** Is this file part of its unit's recommended selection? */
 /**
  * What a row can be found by, beyond the filename it displays.
  *
@@ -1347,16 +1346,6 @@ static const char *bx_facets(void *ctx, const char *path, const char *key) {
     n += (size_t)snprintf(buf + n, sizeof(buf) - n, " %s", YAME_ASSETS[i].source);
   }
   return buf;
-}
-
-static int bx_recommend(void *ctx, const char *path, const char *key) {
-  (void)ctx; (void)path;
-  const char *bar = key ? strchr(key, '|') : NULL;
-  if (!bar) return 0;
-  size_t idx = (size_t)strtoul(key, NULL, 10);
-  if (idx >= YAME_ASSETS_N) return 0;
-  const yame_asset_file_t *f = file_of(&YAME_ASSETS[idx], bar + 1);
-  return f ? f->recommend : 0;
 }
 
 /* ---- choosing and fetching ---- */
@@ -1778,7 +1767,6 @@ static int browse_catalog(const char *dopt, int force) {
   spec.detail      = bx_detail;
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
-  spec.recommend   = bx_recommend;
   spec.facets      = bx_facets;
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";
@@ -1845,7 +1833,6 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char
   spec.detail      = bx_detail;
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
-  spec.recommend   = bx_recommend;
   spec.facets      = bx_facets;
   spec.open_root   = open_unit;         /* start where the caller is working */
   spec.actions[0].key    = 'f';

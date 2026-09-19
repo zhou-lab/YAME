@@ -155,10 +155,10 @@ EOF
       if (src ~ /^hf:/) { sub(/^hf:/, "", src); return "https://huggingface.co/" src "/resolve/" tag "/" path }
       return "https://raw.githubusercontent.com/" src "/" tag "/" path
     }
-    { printf "    { %s, %s, %s, %s, %s, %d, %s, %s, %s, %s },\n",
-             q($1), q($2), q(url($1)), q($3), ($4==""?0:$4), ($7=="yes"?1:0), q($8), q($9), q($10), q($11) }'
+    { printf "    { %s, %s, %s, %s, %s, %s, %s, %s, %s },\n",
+             q($1), q($2), q(url($1)), q($3), ($4==""?0:$4), q($7), q($8), q($9), q($10) }'
   cat <<'EOF'
-    { NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, NULL }
+    { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL }
 };
 
 #define YAME_FILES_N (sizeof(YAME_FILES)/sizeof(YAME_FILES[0]) - 1)
