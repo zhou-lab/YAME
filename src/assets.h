@@ -509,9 +509,9 @@ void yame_ref_explain(FILE *out, uint64_t rows, int status, const char *name,
  * What `fetch` needs to know about the tool it is running inside. yame's own
  * entry point builds one of these from its compiled-in registry; a downstream
  * tool that ships fetch over the YAME code it bundles builds one from ITS
- * registry (make_registry.sh --tool=<name>), so the models its docs name are,
- * by construction, the ones its own binary pins. Store conflicts between
- * tools stay handled by yame_assets_pin_state.
+ * registry, which it generates itself from the shared catalogue, so the
+ * models its docs name are, by construction, the ones its own binary pins.
+ * Store conflicts between tools stay handled by yame_assets_pin_state.
  */
 typedef struct {
   const yame_asset_reg_t *reg;  /* the catalogue: one row per directory       */
