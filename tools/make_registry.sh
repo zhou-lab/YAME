@@ -29,7 +29,30 @@ set -euo pipefail
 ## Sourcing sets reg, cat_dir and sums_dir as well.
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/registry/lib.sh"
-files=$reg/files.tsv
+
+## ---- PHASE 1 ONLY. Deleted at the start of phase 2. -------------------------
+## The compiled record is still the per-directory yame_asset_reg_t, whose
+## anchor is sha256 of the UPSTREAM manifest, so this script still keeps
+## those manifests cached under sums/ and still reads the tag and base from
+## TAGS to refresh them. Nothing downstream may build against these: they
+## are not in lib.sh, and the file-centric record that replaces them needs
+## none of it. (Decision 3, 2026-09-19.)
+cat_dir=$reg/catalog
+sums_dir=$reg/sums
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+tag_of()  { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $2}'; }
+base_of() { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $3}'; }
+sums_path() { echo "$sums_dir/$1/$2/$3/SHA256SUMS"; }   ## source tag subpath
+anchor_of() {
+  local p; p=$(sums_path "$1" "$2" "$3")
+  [ -s "$p" ] || { echo "make_registry.sh: no cached manifest at $p" >&2
+                   echo "  run --refresh first" >&2; exit 1; }
+  sha256_of "$p"
+}
+## ---------------------------------------------------------------------------
 
 check=0
 refresh=0

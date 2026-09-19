@@ -1,68 +1,42 @@
-## Catalog lookups, for any tool that generates a registry from this catalog.
+## The registry, for any tool that generates its own header from it.
 ##
-## SOURCE THIS, do not run it: it defines functions and paths and does nothing
-## else. Where a consumer sources it from, and what it emits afterwards, are
-## the consumer's business -- this file states the catalog's facts and stops.
+## SOURCE THIS, do not run it: it defines functions and one path and does
+## nothing else. Where a consumer sources it from, and what it emits
+## afterwards, are the consumer's business -- this file states the table's
+## facts and stops. It is the whole of what the suite's tools share.
 ##
-## YAME keeps the catalog: which tag each upstream source is pinned at, and the
-## cached manifests that make an anchor verifiable with no network. It does not
-## keep anyone else's emitter. A tool's registry struct is that tool's public
-## type, so adding a field to it must not require a commit here. Each tool owns
-## its emitter; this file is the whole of what they share.
-##
-## WHY THE PATHS RESOLVE OFF BASH_SOURCE. In a sourced file $0 is the caller's
-## script, not this one. Only BASH_SOURCE names this file, and the catalog is
-## its neighbour, so this is what makes the lookups work from any caller in any
-## directory.
+## The table is tools/registry/files.tsv: one row per file the suite can
+## fetch, keyed source@tag:remote_path. The paths resolve off BASH_SOURCE
+## rather than $0, because in a sourced file $0 is the caller's script.
 
 reg=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cat_dir=$reg/catalog
-sums_dir=$reg/sums
-
-sha256_of() {                      ## hash a file, portable across the lab's boxes
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -d' ' -f1
-  else
-    shasum -a 256 "$1" | cut -d' ' -f1
-  fi
-}
-
-## Strip comments and blank lines from a catalog TSV.
-rows_of() { grep -v '^#' "$1" | grep -v '^[[:space:]]*$'; }
-
-## A field from TAGS: tag_of <source>, base_of <source>.
-tag_of()  { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $2}'; }
-base_of() { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $3}'; }
-
-## The cached manifest for one directory, and the facts derived from it.
-sums_path() { echo "$sums_dir/$1/$2/$3/SHA256SUMS"; }   ## source tag subpath
-anchor_of() {
-  local p; p=$(sums_path "$1" "$2" "$3")
-  [ -s "$p" ] || { echo "registry/lib.sh: no cached manifest at $p" >&2
-                   echo "  run make_registry.sh --refresh first" >&2; exit 1; }
-  sha256_of "$p"
-}
-nsets_of() {
-  local p; p=$(sums_path "$1" "$2" "$3")
-  grep -c '\.cm$' "$p" || true
-}
-
-## ---- files.tsv: one row per file the suite can fetch --------------------------
 files=$reg/files.tsv
 
-## The rows whose store_path matches any of the globs given, in table order.
-## Plain shell globs, and `*` crosses `/`: '*/KYCG/*' is every knowledge-base
-## set, '*/cpg_nocontig.cr' every coordinate stream, 'hg38/data/*' one
-## directory. No arguments means every row.
+## Strip comments and blank lines from a TSV.
+rows_of() { grep -v '^#' "$1" | grep -v '^[[:space:]]*$'; }
+
+## The rows whose store_path matches any of the globs given, in table order;
+## no globs means every row. Ordinary shell globbing: `*` and `?` stop at a
+## slash, `**` crosses it. So 'EPICv2/*' is that directory's own files --
+## the same set `yame fetch EPICv2` means -- and 'EPICv2/**' includes
+## EPICv2/KYCG/ beneath it.
 files_of() {
-  local row store pat
-  rows_of "$files" | while IFS= read -r row; do
-    store=${row#*	}; store=${store%%	*}
-    if [ $# -eq 0 ]; then printf '%s\n' "$row"; continue; fi
-    for pat in "$@"; do
-      case $store in $pat) printf '%s\n' "$row"; break ;; esac
-    done
-  done
+  local pats; pats=$(printf '%s\t' "$@")
+  rows_of "$files" | /usr/bin/awk -F'\t' -v pats="$pats" '
+    function g2re(g,   r, i, c, n) {
+      r = "^"; n = length(g)
+      for (i = 1; i <= n; i++) {
+        c = substr(g, i, 1)
+        if (c == "*") { if (substr(g, i+1, 1) == "*") { r = r ".*"; i++ } else r = r "[^/]*" }
+        else if (c == "?") r = r "[^/]"
+        else if (index(".[]()+^$|\\{}", c)) r = r "\\" c
+        else r = r c
+      }
+      return r "$"
+    }
+    BEGIN { np = split(pats, p, "\t"); for (i = 1; i <= np; i++) if (p[i] != "") re[++n] = g2re(p[i]) }
+    n == 0 { print; next }
+    { for (i = 1; i <= n; i++) if ($2 ~ re[i]) { print; next } }'
 }
 
 ## One column of one row, by name, so an emitter never re-splits a line:
@@ -78,17 +52,20 @@ field() {   ## row column
   printf '%s\n' "$1" | cut -f"$i"
 }
 
+## The three parts of a key, source@tag:remote_path, split on the LAST @ and
+## the LAST colon: a source may carry a colon (hf:org/repo), a path never
+## does. One parser, so three repos cannot each get it subtly wrong.
+key_source() { local s=${1%:*}; printf '%s\n' "${s%@*}"; }   ## <org>/<repo>, or hf:<org>/<repo>
+key_tag()    { local s=${1%:*}; printf '%s\n' "${s##*@}"; }  ## the immutable upstream tag
+key_path()   { printf '%s\n' "${1##*:}"; }                   ## the path within that tag
+
 ## The download URL for a key, by the host rule -- the one place it lives:
 ##   github       https://raw.githubusercontent.com/<org>/<repo>/<tag>/<remote_path>
 ##   huggingface  https://huggingface.co/<org>/<repo>/resolve/<tag>/<remote_path>
-## The key is source@tag:remote_path; the source is <org>/<repo> on GitHub or
-## hf:<org>/<repo> on HuggingFace. Split on the LAST colon: the source may
-## carry one, the path never does.
 url_of() {   ## key
-  local srctag=${1%:*} remote=${1##*:}
-  local src=${srctag%@*} tag=${srctag##*@}
+  local src; src=$(key_source "$1")
   case $src in
-    hf:*) printf 'https://huggingface.co/%s/resolve/%s/%s\n' "${src#hf:}" "$tag" "$remote" ;;
-    *)    printf 'https://raw.githubusercontent.com/%s/%s/%s\n' "$src" "$tag" "$remote" ;;
+    hf:*) printf 'https://huggingface.co/%s/resolve/%s/%s\n' "${src#hf:}" "$(key_tag "$1")" "$(key_path "$1")" ;;
+    *)    printf 'https://raw.githubusercontent.com/%s/%s/%s\n' "$src" "$(key_tag "$1")" "$(key_path "$1")" ;;
   esac
 }
