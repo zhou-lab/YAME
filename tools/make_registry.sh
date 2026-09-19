@@ -20,10 +20,10 @@
 ## than a silent change of digests.
 set -euo pipefail
 
+## The catalog lookups live beside the catalog, in a file any tool can source.
+## Sourcing sets reg, cat_dir and sums_dir as well.
 here=$(cd "$(dirname "$0")" && pwd)
-reg=$here/registry
-cat_dir=$reg/catalog
-sums_dir=$reg/sums
+. "$here/registry/lib.sh"
 
 tool=""
 out=""
@@ -46,34 +46,6 @@ for arg in "$@"; do
   if [ "$prev" = "-o" ]; then out=$arg; fi
   prev=$arg
 done
-
-sha256_of() {                      ## hash a file, portable across the lab's boxes
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -d' ' -f1
-  else
-    shasum -a 256 "$1" | cut -d' ' -f1
-  fi
-}
-
-## Strip comments and blank lines from a catalog TSV.
-rows_of() { grep -v '^#' "$1" | grep -v '^[[:space:]]*$'; }
-
-## A field from TAGS: tag_of <source>, base_of <source>.
-tag_of()  { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $2}'; }
-base_of() { rows_of "$reg/TAGS" | awk -v s="$1" '$1==s {print $3}'; }
-
-## The cached manifest for one directory, and the facts derived from it.
-sums_path() { echo "$sums_dir/$1/$2/$3/SHA256SUMS"; }   ## source tag subpath
-anchor_of() {
-  local p; p=$(sums_path "$1" "$2" "$3")
-  [ -s "$p" ] || { echo "make_registry.sh: no cached manifest at $p" >&2
-                   echo "  run --refresh first" >&2; exit 1; }
-  sha256_of "$p"
-}
-nsets_of() {
-  local p; p=$(sums_path "$1" "$2" "$3")
-  grep -c '\.cm$' "$p" || true
-}
 
 ## The tags this build supersedes for one directory: every cached tag STRICTLY
 ## EARLIER than the pinned one, as "<anchor>\t<tag>".
