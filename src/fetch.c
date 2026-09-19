@@ -26,7 +26,7 @@
  * way to be exercised on its own.
  *
  * Two forms:
- *   yame fetch <name>[@tag]   a directory this build pins
+ *   yame fetch <name>          a store directory, or one file in it
  *   yame fetch -u URL -s SHA -o DEST     one file, digest given by hand
  *
  * The second is the low-level form: a per-file digest supplied by the caller,
@@ -51,13 +51,56 @@
  * one of those sites is a static helper in this file, reached only from
  * yame_fetch_main() or yame_browse_pick(), which set it first. */
 static const yame_fetch_cfg_t *cfg_;
-#define YAME_ASSETS   (cfg_->reg)
-#define YAME_ASSETS_N (cfg_->n_reg)
 #define TOOL          (cfg_->tool)
-#include "assetinfo.h"
 #include "yame_ui.h"
 
 #include "wzmisc.h"   /* wzmalloc/wzstrdup: allocation that cannot return NULL */
+
+/* ---- the registry, read as directories ----
+ *
+ * The compiled registry is a flat list of files. The browser and every
+ * command here think in store DIRECTORIES -- hg38, EPIC/KYCG, hg38/models --
+ * because that is what a person fetches, verifies and is told about. So the
+ * list is grouped once, at entry, into this view: one unit per distinct
+ * directory, its files in table order, and the one source@tag every file in
+ * it carries (the generator refuses a directory that mixes two). Nothing is
+ * compiled per directory; this is derived, and it dies with the process. */
+typedef struct {
+  char   dir[256];                 /* the store directory; the browser path */
+  char   source[160];              /* the repo, out of the keys */
+  char   tag[64];
+  const yame_asset_file_t **files; /* into cfg_->files, table order */
+  size_t n_files;
+} unit_t;
+static unit_t *UNITS;
+static size_t  N_UNITS;
+#define YAME_ASSETS   (UNITS)
+#define YAME_ASSETS_N (N_UNITS)
+
+static void build_units(void) {
+  /* Rebuilt on every entry: a downstream tool may hand fetch a different
+   * registry than last time (yame_browse_pick after yame_fetch_main). */
+  for (size_t i = 0; i < N_UNITS; ++i) free(UNITS[i].files);
+  free(UNITS); UNITS = NULL; N_UNITS = 0;
+  UNITS = wzcalloc(cfg_->n_files ? cfg_->n_files : 1, sizeof(unit_t));
+  for (size_t j = 0; j < cfg_->n_files; ++j) {
+    const yame_asset_file_t *f = &cfg_->files[j];
+    size_t dl = yame_file_dirlen(f);
+    size_t u = 0;
+    for (; u < N_UNITS; ++u)
+      if (strlen(UNITS[u].dir) == dl && strncmp(UNITS[u].dir, f->store_path, dl) == 0) break;
+    if (u == N_UNITS) {
+      unit_t *nu = &UNITS[N_UNITS++];
+      if (dl >= sizeof nu->dir) dl = sizeof nu->dir - 1;
+      memcpy(nu->dir, f->store_path, dl); nu->dir[dl] = '\0';
+      yame_key_source(f->key, nu->source, sizeof nu->source);
+      yame_key_tag(f->key, nu->tag, sizeof nu->tag);
+      nu->files = wzcalloc(cfg_->n_files, sizeof(*nu->files));
+    }
+    UNITS[u].files[UNITS[u].n_files++] = f;
+  }
+}
+
 static int usage(void) {
   char root[4096];
   yame_assets_root(NULL, cfg_->tool_env, root, sizeof(root));
@@ -66,21 +109,22 @@ static int usage(void) {
     snprintf(head, sizeof head, "%s fetch                              browse the catalogue", TOOL);
     yame_usage_head(head); }
   { char l1[128], l2[128];
-    snprintf(l1, sizeof l1, "%s fetch [options] <name>[@tag] ...", TOOL);
+    snprintf(l1, sizeof l1, "%s fetch [options] <name> ...", TOOL);
     snprintf(l2, sizeof l2, "%s fetch [options] -u <url> -s <sha256> -o <dest>", TOOL);
     yame_usage_text(l1); yame_usage_text(l2); }
 
   yame_usage_sec("Naming:");
-  yame_usage_text("A name is what the browser shows: hg38, hg38/KYCG, hg38/data,");
-  yame_usage_text("EPIC. It is a scope -- `hg38` takes the unit and everything under");
-  yame_usage_text("it, `hg38/data` takes the one directory. Narrow within it with -g.");
+  yame_usage_text("A name is a store directory, as the browser shows it: hg38,");
+  yame_usage_text("hg38/KYCG, hg38/data, EPIC. It takes that directory's own files --");
+  yame_usage_text("`hg38` is the genome annotation, not the knowledgebase and models");
+  yame_usage_text("beneath it; name those explicitly. Narrow within one with -g.");
   yame_usage_text("A file resolves too, best written out: `hg38/data/test.cg`. The");
   yame_usage_text("bare name works when only one directory publishes it.");
   yame_usage_text("Several names may be given, separated by spaces or by commas --");
   yame_usage_text("commas so a list fits an option that takes one argument. A");
   yame_usage_text("directory named twice is taken once, and naming it whole absorbs a");
   yame_usage_text("file picked out of it.");
-  yame_usage_text("The registry's own <source>/<target> still resolves.");
+  yame_usage_text("The pre-1.50 <source>/<target> spelling still resolves, for one release.");
 
   yame_usage_sec("Browsing:");
   yame_usage_text("With no target on a terminal, opens a tree browser: species, then");
@@ -134,12 +178,8 @@ static int usage(void) {
 
   yame_usage_sec("Options:");
   yame_usage_opt("-d <dir>", "Store root, overriding the environment.");
-  yame_usage_opt("-t <tag>", "Upstream tag, overriding the pinned one. Without a digest");
-  yame_usage_cont("for that tag nothing can be verified, so this needs -k.");
-  yame_usage_opt("-k", "Accept an unpinned tag (no anchor check). Files are still");
-  yame_usage_cont("verified against the manifest that tag publishes.");
-  yame_usage_opt("-f", "Re-download what is present, and overwrite a store that");
-  yame_usage_cont("was populated from a different tag.");
+  yame_usage_opt("-f", "Re-download what is present, and replace a file the store's");
+  yame_usage_cont("manifest records at a different digest than this build pins.");
   yame_usage_opt("-l", "Dump the registry as TSV and exit: one row per file, with");
   yame_usage_cont("its size, digest, description and whether the store has it.");
   yame_usage_cont("Takes the same <name> and -g a fetch does, so `-l -g");
@@ -163,9 +203,9 @@ static int usage(void) {
   yame_usage_opt("-h", "This help.");
 
   yame_usage_sec("Notes:");
-  yame_usage_text("* A directory records which upstream tag filled it, in the SHA256SUMS");
-  yame_usage_text("  it keeps. A build pinned elsewhere refuses to overwrite it rather");
-  yame_usage_text("  than start a re-download war; -f overrules that.");
+  yame_usage_text("* Each file is verified against the digest this build carries for it;");
+  yame_usage_text("  the SHA256SUMS a directory keeps records what was verified there.");
+  yame_usage_text("  A file recorded at another digest is stale and needs -f to replace.");
   yame_usage_text("* `shasum -a 256 -c SHA256SUMS` in any store directory re-verifies it");
   yame_usage_text("  by hand, with none of this code involved.");
   /**
@@ -185,12 +225,22 @@ static int usage(void) {
   return 1;
 }
 
-static const yame_asset_reg_t *find_asset(const char *source, const char *target) {
+static const unit_t *find_unit(const char *dir) {
   for (size_t i = 0; i < YAME_ASSETS_N; ++i)
-    if (strcmp(YAME_ASSETS[i].source, source) == 0 &&
-        strcmp(YAME_ASSETS[i].target, target) == 0)
-      return &YAME_ASSETS[i];
+    if (strcmp(YAME_ASSETS[i].dir, dir) == 0) return &YAME_ASSETS[i];
   return NULL;
+}
+
+/* The pre-1.50 address, <source>/<target>: InfiniumAnnotation/EPICv2,
+ * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted for one release
+ * so documented commands keep working; the address is the store path now.
+ * Every old target was the store directory, except KYCGKB's, which named the
+ * genome while the sets live under <genome>/KYCG. */
+static const unit_t *find_asset(const char *source, const char *target) {
+  char dir[300];
+  if (strcmp(source, "KYCGKB") == 0) snprintf(dir, sizeof dir, "%s/KYCG", target);
+  else snprintf(dir, sizeof dir, "%s", target);
+  return find_unit(dir);
 }
 
 /* ------------------------------------------------------------ the browser
@@ -262,10 +312,10 @@ typedef struct {
  * a fetch has to put the counts back. */
 static void refresh_roots(browse_t *b);
 
-static const yame_asset_file_t *file_of(const yame_asset_reg_t *a,
+static const yame_asset_file_t *file_of(const unit_t *a,
                                         const char *name) {
   for (size_t i = 0; i < a->n_files; ++i)
-    if (strcmp(a->files[i].name, name) == 0) return &a->files[i];
+    if (strcmp(yame_file_name(a->files[i]), name) == 0) return a->files[i];
   return NULL;
 }
 
@@ -336,12 +386,12 @@ static int file_superseded(const char *dir, const char *name,
   return 0;
 }
 
-static int file_present(const char *store_root, const yame_asset_reg_t *a,
+static int file_present(const char *store_root, const unit_t *a,
                         const char *name) {
   const yame_asset_file_t *f = file_of(a, name);
   char dir[4096], path[4096];
   if (yame_assets_join(dir, sizeof(dir), store_root,
-                       a->store_sub) != 0) return 0;
+                       a->dir) != 0) return 0;
   if (yame_assets_join(path, sizeof(path), dir, name) != 0) return 0;
   if (!yame_assets_is_file(path)) return 0;
   return !file_superseded(dir, name, f ? f->sha256 : NULL);
@@ -379,24 +429,17 @@ static const struct { const char *group, *unit; } UNIT_ORDER[] = {
 /* ---- registry rows, read as units ---- */
 
 /* Which unit a registry row belongs to, and where it sits inside it. */
-static void unit_of(const yame_asset_reg_t *a, char *unit, size_t nu,
+static void unit_of(const unit_t *a, char *unit, size_t nu,
                     char *sub, size_t ns) {
-  /* A genome's knowledgebase is its own upstream repo, so the mapping cannot
-   * come from the target alone. */
-  if (strcmp(a->source, "KYCGKB") == 0) {
-    snprintf(unit, nu, "%s", a->target);
-    snprintf(sub, ns, "KYCG");
-    return;
-  }
-  const char *slash = strchr(a->target, '/');
+  const char *slash = strchr(a->dir, '/');
   if (slash) {
-    size_t l = (size_t)(slash - a->target);
+    size_t l = (size_t)(slash - a->dir);
     if (l >= nu) l = nu - 1;
-    memcpy(unit, a->target, l);
+    memcpy(unit, a->dir, l);
     unit[l] = '\0';
     snprintf(sub, ns, "%s", slash + 1);
   } else {
-    snprintf(unit, nu, "%s", a->target);
+    snprintf(unit, nu, "%s", a->dir);
     sub[0] = '\0';
   }
 }
@@ -410,31 +453,26 @@ static void unit_of(const yame_asset_reg_t *a, char *unit, size_t nu,
  * by two sources each, and as a scope those simply select both instead of
  * being ambiguous.
  */
-static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
+static size_t collect_scope(const char *path, const unit_t **out,
                             size_t cap) {
-  size_t n = 0, plen = strlen(path);
-  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
-    char u[128], sb[128], full[264];
-    unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
-    if (sb[0]) snprintf(full, sizeof(full), "%s/%s", u, sb);
-    else       snprintf(full, sizeof(full), "%s", u);
-    if (strncasecmp(full, path, plen) == 0 &&
-        (full[plen] == '\0' || full[plen] == '/'))
-      out[n++] = &YAME_ASSETS[i];
-  }
-  return n;
+  /* A directory address is that directory's own files. `hg38` is the genome
+   * annotation, not its knowledgebase and models beneath; `hg38/KYCG` is
+   * addressed explicitly. (Decided 2026-09-19: a directory glob and a fetch
+   * address select the same set, and sesame's "fetch the ordering" advice
+   * must not pull 45 MB of sets under it.) */
+  for (size_t i = 0; i < YAME_ASSETS_N && cap; ++i)
+    if (strcasecmp(YAME_ASSETS[i].dir, path) == 0) { out[0] = &YAME_ASSETS[i]; return 1; }
+  return 0;
 }
 
 
 /* An array platform, or a genome build? Decides which recommended list
  * applies and what the row calls itself. */
 static int unit_is_array(const char *unit) {
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    char u[128], s[128];
-    unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
-    if (strcmp(u, unit) == 0)
-      return strcmp(YAME_ASSETS[i].source, "InfiniumAnnotation") == 0;
-  }
+  const unit_t *a = find_unit(unit);
+  if (!a) return 0;
+  for (size_t j = 0; j < a->n_files; ++j)
+    if (strstr(yame_file_name(a->files[j]), ".ordering.tsv.gz")) return 1;
   return 0;
 }
 
@@ -446,7 +484,7 @@ static const char *group_of(const char *unit) {
 
 static int unit_known(const char *unit) {
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    char u[128], s[128];
+    char u[256], s[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) == 0) return 1;
   }
@@ -454,22 +492,22 @@ static int unit_known(const char *unit) {
 }
 
 /* The units of one group, in the table's order. */
-static size_t group_units(const char *group, char units[][128], size_t cap) {
+static size_t group_units(const char *group, char units[][256], size_t cap) {
   size_t n = 0;
   if (strcmp(group, "other") != 0) {
     for (size_t i = 0; UNIT_ORDER[i].unit && n < cap; ++i)
       if (strcmp(UNIT_ORDER[i].group, group) == 0 &&
           unit_known(UNIT_ORDER[i].unit))
-        snprintf(units[n++], 128, "%s", UNIT_ORDER[i].unit);
+        snprintf(units[n++], 256, "%s", UNIT_ORDER[i].unit);
     return n;
   }
   for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
-    char u[128], s[128];
+    char u[256], s[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(group_of(u), "other") != 0) continue;
     size_t k = 0;
     for (; k < n; ++k) if (strcmp(units[k], u) == 0) break;
-    if (k == n) snprintf(units[n++], 128, "%s", u);
+    if (k == n) snprintf(units[n++], 256, "%s", u);
   }
   return n;
 }
@@ -480,11 +518,11 @@ static size_t all_groups(char groups[][64], size_t cap) {
     size_t k = 0;
     for (; k < n; ++k) if (strcmp(groups[k], UNIT_ORDER[i].group) == 0) break;
     if (k < n) continue;
-    char units[32][128];
+    char units[32][256];
     if (group_units(UNIT_ORDER[i].group, units, 32))
       snprintf(groups[n++], 64, "%s", UNIT_ORDER[i].group);
   }
-  char units[32][128];
+  char units[32][256];
   if (n < cap && group_units("other", units, 32))
     snprintf(groups[n++], 64, "%s", "other");
   return n;
@@ -505,9 +543,9 @@ static int is_unit_index(const char *name) {
          strcmp(name, "cpg_nocontig.cr") == 0;
 }
 
-static int has_file(const yame_asset_reg_t *a, const char *name) {
+static int has_file(const unit_t *a, const char *name) {
   for (size_t i = 0; i < a->n_files; ++i)
-    if (strcmp(a->files[i].name, name) == 0) return 1;
+    if (strcmp(yame_file_name(a->files[i]), name) == 0) return 1;
   return 0;
 }
 
@@ -523,7 +561,7 @@ static int has_file(const yame_asset_reg_t *a, const char *name) {
 static const char *const COMPANION_SFX[] = { ".idx", ".tbi", NULL };
 
 /* Is this file an index whose data file sits in the same directory? */
-static int is_companion(const yame_asset_reg_t *a, const char *name) {
+static int is_companion(const unit_t *a, const char *name) {
   size_t l = strlen(name);
   for (size_t k = 0; COMPANION_SFX[k]; ++k) {
     size_t sl = strlen(COMPANION_SFX[k]);
@@ -539,7 +577,7 @@ static int is_companion(const yame_asset_reg_t *a, const char *name) {
 
 /* The index belonging to `name`, if the directory publishes one. Returns the
  * suffix that matched, so a row can say which kind it carries. */
-static const char *companion_of(const yame_asset_reg_t *a, const char *name,
+static const char *companion_of(const unit_t *a, const char *name,
                                 char *out, size_t n) {
   for (size_t k = 0; COMPANION_SFX[k]; ++k) {
     snprintf(out, n, "%s%s", name, COMPANION_SFX[k]);
@@ -549,17 +587,17 @@ static const char *companion_of(const yame_asset_reg_t *a, const char *name,
   return NULL;
 }
 
-static uint64_t companion_size(const yame_asset_reg_t *a, const char *name) {
+static uint64_t companion_size(const unit_t *a, const char *name) {
   char idxname[256];
   if (!companion_of(a, name, idxname, sizeof(idxname))) return 0;
   for (size_t i = 0; i < a->n_files; ++i)
-    if (strcmp(a->files[i].name, idxname) == 0) return a->files[i].size;
+    if (strcmp(yame_file_name(a->files[i]), idxname) == 0) return a->files[i]->size;
   return 0;
 }
 
 /* One thing the catalogue offers: a file, plus its index when it has one. */
 typedef struct {
-  const yame_asset_reg_t  *a;
+  const unit_t  *a;
   const yame_asset_file_t *f;
   const char              *paired;   /* ".idx" / ".tbi", or NULL */
   int                      required;
@@ -577,19 +615,19 @@ static size_t unit_entries(const char *unit, const char *sub, int recursive,
                            ent_t *out, size_t cap) {
   size_t n = 0;
   for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    char u[128], s[128];
+    const unit_t *a = &YAME_ASSETS[i];
+    char u[256], s[256];
     unit_of(a, u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) != 0) continue;
 
     for (size_t j = 0; j < a->n_files && n < cap; ++j) {
-      const yame_asset_file_t *f = &a->files[j];
-      if (is_companion(a, f->name)) continue;
+      const yame_asset_file_t *f = a->files[j];
+      if (is_companion(a, yame_file_name(f))) continue;
 
-      int required = is_unit_index(f->name);
+      int required = is_unit_index(yame_file_name(f));
       /* The row sits at its unit's store path. `required` governs ordering
        * and auto-inclusion, not placement. */
-      const char *fsub = a->store_sub;
+      const char *fsub = a->dir;
       const char *slash = strchr(fsub, '/');
       const char *at = slash ? slash + 1 : "";
       (void)s;
@@ -598,7 +636,7 @@ static size_t unit_entries(const char *unit, const char *sub, int recursive,
       char idxname[256];
       out[n].a = a;
       out[n].f = f;
-      out[n].paired = companion_of(a, f->name, idxname, sizeof(idxname));
+      out[n].paired = companion_of(a, yame_file_name(f), idxname, sizeof(idxname));
       (void)idxname;
       out[n].required = required;
       ++n;
@@ -609,25 +647,25 @@ static size_t unit_entries(const char *unit, const char *sub, int recursive,
 
 /* The subdirectories directly below a unit -- in practice KYCG, but derived
  * rather than assumed. */
-static size_t unit_subs(const char *unit, char subs[][128], size_t cap) {
+static size_t unit_subs(const char *unit, char subs[][256], size_t cap) {
   size_t n = 0;
   for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
-    char u[128], s[128];
+    char u[256], s[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) != 0 || !s[0]) continue;
 
     size_t k = 0;
     for (; k < n; ++k) if (strcmp(subs[k], s) == 0) break;
-    if (k == n) snprintf(subs[n++], 128, "%s", s);
+    if (k == n) snprintf(subs[n++], 256, "%s", s);
   }
   return n;
 }
 
 static int ent_present(const char *store_root, const ent_t *e) {
-  if (!file_present(store_root, e->a, e->f->name)) return 0;
+  if (!file_present(store_root, e->a, yame_file_name(e->f))) return 0;
   if (e->paired) {
     char idxname[256];
-    snprintf(idxname, sizeof(idxname), "%s%s", e->f->name, e->paired);
+    snprintf(idxname, sizeof(idxname), "%s%s", yame_file_name(e->f), e->paired);
     if (!file_present(store_root, e->a, idxname)) return 0;
   }
   return 1;
@@ -658,23 +696,19 @@ static void unit_counts(const char *store_root, const char *unit,
  */
 static int unit_pin_conflict(const char *store_root, const char *unit) {
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[i];
-    char u[128], s[128];
-    unit_of(a, u, sizeof(u), s, sizeof(s));
+    const unit_t *a = &YAME_ASSETS[i];
+    char u[256], sb[256];
+    unit_of(a, u, sizeof(u), sb, sizeof(sb));
     if (strcmp(u, unit) != 0) continue;
-
-    char dir[4096];
-    if (yame_assets_join(dir, sizeof(dir), store_root, a->store_sub) != 0)
-      continue;
-    if (yame_assets_pin_state(dir, a->anchor, a->prior, a->n_prior)
-        == YAME_PIN_CONFLICT) return 1;
+    for (size_t j = 0; j < a->n_files; ++j)
+      if (yame_file_state(store_root, a->files[j]) == YAME_STORE_STALE) return 1;
   }
   return 0;
 }
 
 static void group_counts(const char *store_root, const char *group,
                          size_t *total, size_t *have) {
-  char units[32][128];
+  char units[32][256];
   size_t nu = group_units(group, units, 32);
   *total = 0; *have = 0;
   for (size_t i = 0; i < nu; ++i) {
@@ -756,7 +790,7 @@ static void counts_note(size_t total, size_t have, char *out, size_t n) {
 static const char *path_tag(const char *unit, const char *sub) {
   const char *tag = NULL;
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    char u[128], s[128];
+    char u[256], s[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) != 0) continue;
     if (sub && strcmp(s, sub) != 0) continue;
@@ -769,12 +803,12 @@ static const char *path_tag(const char *unit, const char *sub) {
 static const char *path_upstream(const char *unit, const char *sub) {
   const char *url = NULL;
   for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    char u[128], s[128];
+    char u[256], s[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), s, sizeof(s));
     if (strcmp(u, unit) != 0) continue;
     if (sub && strcmp(s, sub) != 0) continue;
-    if (!url) url = YAME_ASSETS[i].base_url;
-    else if (strcmp(url, YAME_ASSETS[i].base_url) != 0) return NULL;
+    if (!url) url = YAME_ASSETS[i].source;
+    else if (strcmp(url, YAME_ASSETS[i].source) != 0) return NULL;
   }
   return url;
 }
@@ -792,8 +826,8 @@ static const char *unit_tag(const char *unit) { return path_tag(unit, NULL); }
  * pressed it.
  */
 typedef struct {
-  char unit[128];
-  char sub[128];
+  char unit[256];
+  char sub[256];
 } bpath_t;
 
 static void bpath_parse(const char *path, bpath_t *p) {
@@ -829,53 +863,15 @@ static void group_of_row(const char *path, char *out, size_t n) {
   out[i] = '\0';
 }
 
-/* ---- what data/assets.tsv calls a file ---- */
-
-/**
- * The key a filename is described under.
- *
- * A knowledgebase set is named by the part before the first dot, so one row
- * covers every platform publishing it. Everything else is named by its role,
- * because "EPIC.hg38.mask.cm" and "MM285.mm39.mask.cm" are the same kind of
- * thing and describing them once is the point.
- */
-static void info_key_of(const char *name, char *out, size_t n) {
-  static const struct { const char *needle, *key; } roles[] = {
-    { ".ordering.",    "ordering" },
-    { ".coord.",       "coord" },
-    { ".snp.",         "snp" },
-    { ".typeI_ext.",   "typeI_ext" },
-    { ".mask.",        "mask" },
-    { "seqinfo.",      "seqinfo" },
-    { "gaps.",         "gaps" },
-    { "cytoband.",     "cytoband" },
-    { "cpg_nocontig.", "cpg_nocontig" },
-    { "genes.",        "genes" },
-    { NULL, NULL }
-  };
-  for (size_t i = 0; roles[i].needle; ++i)
-    if (strstr(name, roles[i].needle)) {
-      snprintf(out, n, "%s", roles[i].key);
-      return;
-    }
-
-  const char *dot = strchr(name, '.');
-  size_t l = dot ? (size_t)(dot - name) : strlen(name);
-  if (l >= n) l = n - 1;
-  memcpy(out, name, l);
-  out[l] = '\0';
-}
-
 /* Defined below, beside the -g filter they serve; the listing wants the same
  * matching so that -l is the dry run for a fetch. */
-static void file_facets(const yame_asset_reg_t *a, const char *name,
+static void file_facets(const unit_t *a, const char *name,
                         char *out, size_t cap);
-static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
-                       const char *tag, const char *anchor,
+static int fetch_names(const unit_t *a, const char *store_root,
                        const char *const *names, size_t n_names,
                        const yame_fetch_opt_t *opt, char **err);
 static int facets_match(const char *facets, const char *terms);
-static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
+static size_t collect_scope(const char *path, const unit_t **out,
                             size_t cap);
 
 /* One registry entry with the files named out of it: empty list = the whole
@@ -883,12 +879,11 @@ static size_t collect_scope(const char *path, const yame_asset_reg_t **out,
  * would make, so both paths take this. */
 #define SEL_ONLY_MAX 64
 typedef struct {
-  const yame_asset_reg_t *a;
+  const unit_t *a;
   const char *only[SEL_ONLY_MAX];  /* empty: the whole directory */
   size_t n_only;
-  const char *tag;                 /* @tag on this name, else -t, else pinned */
 } sel_t;
-static int file_wanted(const yame_asset_reg_t *a, const char *name,
+static int file_wanted(const unit_t *a, const char *name,
                        const char *filter,
                        const char *const *only, size_t n_only);
 
@@ -914,36 +909,31 @@ static int dump_registry(const char *dopt, const sel_t *sel, size_t n_sel,
          "local\tdescription\n");
 
   for (size_t i = 0; i < n_sel; ++i) {
-    const yame_asset_reg_t *a = sel[i].a;
+    const unit_t *a = sel[i].a;
     char dir[4096];
-    yame_assets_join(dir, sizeof(dir), root, a->store_sub);
+    yame_assets_join(dir, sizeof(dir), root, a->dir);
 
-    const char *state = "-";
-    switch (yame_assets_pin_state(dir, a->anchor, a->prior, a->n_prior)) {
-    case YAME_PIN_MATCH:    state = "present";   break;
-    case YAME_PIN_CONFLICT: state = "other_tag"; break;
-    case YAME_PIN_UNKNOWN:  state = "unpinned";  break;
-    case YAME_PIN_ANCESTOR: state = "old_tag";   break;
-    default:                state = "-";         break;
-    }
-
+    (void)dir;
     for (size_t j = 0; j < a->n_files; ++j) {
-      const yame_asset_file_t *f = &a->files[j];
+      const yame_asset_file_t *f = a->files[j];
+      const char *state = "-";
+      switch (yame_file_state(root, f)) {
+      case YAME_STORE_CURRENT: state = "current"; break;
+      case YAME_STORE_ABSENT:  state = "absent";  break;
+      case YAME_STORE_STALE:   state = "stale";   break;
+      default: break;
+      }
 
       /* A name that picked out one file lists that file, not its directory:
        * `-l <file>` is the dry run for fetching that file, which is what the
        * usage text has always promised. */
-      if (!file_wanted(a, f->name, filter, sel[i].only, sel[i].n_only))
+      if (!file_wanted(a, yame_file_name(f), filter, sel[i].only, sel[i].n_only))
         continue;
-
-      char ikey[256];
-      info_key_of(f->name, ikey, sizeof(ikey));
-      const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
 
       /* A tab or newline inside a title would shift every later column, so
        * fold whitespace to single spaces on the way out. */
       char title[512];
-      const char *src = k && k->title ? k->title : "-";
+      const char *src = f->title && *f->title ? f->title : "-";
       size_t n = 0;
       for (; *src && n + 1 < sizeof(title); ++src) {
         char c = (*src == '\t' || *src == '\n' || *src == '\r') ? ' ' : *src;
@@ -953,9 +943,9 @@ static int dump_registry(const char *dopt, const sel_t *sel, size_t n_sel,
       title[n] = '\0';
 
       printf("%s\t%s\t%s\t%s\t%s\t%" PRIu64 "\t%s\t%s\t%s\t%s\n",
-             a->target, a->source, a->tag, a->store_sub, f->name,
+             a->dir, a->source, a->tag, a->dir, yame_file_name(f),
              f->size, f->sha256 ? f->sha256 : "-", state,
-             file_present(root, a, f->name) ? "yes" : "no", title);
+             file_present(root, a, yame_file_name(f)) ? "yes" : "no", title);
     }
   }
   return 0;
@@ -971,17 +961,14 @@ static int dump_registry(const char *dopt, const sel_t *sel, size_t n_sel,
  * "CpG" or "methylation" in nearly every row, so matching them would make
  * every common word select the whole catalogue.
  */
-static void file_facets(const yame_asset_reg_t *a, const char *name,
+static void file_facets(const unit_t *a, const char *name,
                         char *out, size_t cap) {
-  char ikey[256];
-  info_key_of(name, ikey, sizeof(ikey));
-  const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
-  char u[128], sb[128];
+  const yame_asset_file_t *f = file_of(a, name);
+  char u[256], sb[256];
   unit_of(a, u, sizeof(u), sb, sizeof(sb));
-  snprintf(out, cap, "%s %s %s %s %s %s %s", name, a->source, u, sb,
-           k && k->collections ? k->collections : "",
-           k && k->title       ? k->title       : "",
-           k && k->source      ? k->source      : "");
+  snprintf(out, cap, "%s %s %s %s %s %s", name, a->source, u, sb,
+           f && f->title  ? f->title  : "",
+           f && f->source ? f->source : "");
 }
 
 /* All terms must appear: narrowing is the point, so a second term that
@@ -1041,14 +1028,14 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
   char sz[24], name[256], line[352], key[288];
   /* A pair is one row, so it is one size too: the .idx is part of what a
    * fetch of this row will cost. */
-  human_size(e->f->size + (e->paired ? companion_size(e->a, e->f->name) : 0),
+  human_size(e->f->size + (e->paired ? companion_size(e->a, yame_file_name(e->f)) : 0),
              sz, sizeof(sz));
-  snprintf(name, sizeof(name), "%s%s%s", e->f->name, e->paired ? " +" : "",
+  snprintf(name, sizeof(name), "%s%s%s", yame_file_name(e->f), e->paired ? " +" : "",
            e->paired ? e->paired + 1 : "");
   /* Both fields fixed-width: the tail is right-aligned as a whole, so a size
    * that varies in width would walk the tag column left and right. */
   snprintf(line, sizeof(line), "%s\t" TAIL_FMT, name, e->a->tag, sz);
-  snprintf(key, sizeof(key), "%zu|%s", idx, e->f->name);
+  snprintf(key, sizeof(key), "%zu|%s", idx, yame_file_name(e->f));
 
   out->rows[out->n]   = wzstrdup(line);
   out->keys[out->n]   = wzstrdup(key);
@@ -1086,7 +1073,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
 
   /* Then the subdirectories, only at the top of a unit. */
   if (!p.sub[0]) {
-    char subs[8][128];
+    char subs[8][256];
     size_t n_subs = unit_subs(p.unit, subs, 8);
     for (size_t i = 0; i < n_subs && out->n < CAP; ++i) {
       size_t total, have;
@@ -1199,14 +1186,14 @@ static void lay_wrap(info_lay_t *L, const char *label, const char *text) {
 
 /* Where a file comes from and where it lands. Facts from the registry, so
  * every file says something even when the table describes none of them. */
-static void lay_provenance(info_lay_t *L, const yame_asset_reg_t *a,
+static void lay_provenance(info_lay_t *L, const unit_t *a,
                            const yame_asset_file_t *f, const char *paired) {
   char buf[1024];
 
-  snprintf(buf, sizeof(buf), "%s @ %s", a->base_url, a->tag);
+  snprintf(buf, sizeof(buf), "%s @ %s", a->source, a->tag);
   lay_wrap(L, "upstream", buf);
 
-  snprintf(buf, sizeof(buf), "%s/%s", a->store_sub, f ? f->name : "");
+  snprintf(buf, sizeof(buf), "%s/%s", a->dir, f ? yame_file_name(f) : "");
   lay_wrap(L, "store", buf);
 
   if (f) {
@@ -1235,7 +1222,7 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
     char group[64];
     group_of_row(path, group, sizeof(group));
 
-    char units[32][128], list[512] = "";
+    char units[32][256], list[512] = "";
     size_t nu = group_units(group, units, 32);
     for (size_t i = 0; i < nu; ++i) {
       strncat(list, units[i], sizeof(list) - strlen(list) - 1);
@@ -1291,25 +1278,20 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
     size_t idx = (size_t)strtoul(key, NULL, 10);
     const char *name = bar + 1;
     if (idx >= YAME_ASSETS_N) { lay_free(&L); return; }
-    const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+    const unit_t *a = &YAME_ASSETS[idx];
 
     const yame_asset_file_t *f = NULL;
     for (size_t i = 0; i < a->n_files; ++i)
-      if (strcmp(a->files[i].name, name) == 0) { f = &a->files[i]; break; }
+      if (strcmp(yame_file_name(a->files[i]), name) == 0) { f = a->files[i]; break; }
 
     char idxname[256];
     const char *paired = companion_of(a, name, idxname, sizeof(idxname));
 
-    char ikey[256];
-    info_key_of(name, ikey, sizeof(ikey));
-    const yame_assetinfo_t *k = yame_assetinfo_find(ikey);
-
-    if (k) {
-      lay_head(&L, name, k->title);
-      lay_wrap(&L, NULL, k->biology);
-      lay_wrap(&L, "source", k->source);
-      lay_wrap(&L, "citation", k->citation);
-      lay_wrap(&L, "processing", k->processing);
+    if (f && f->title && *f->title) {
+      lay_head(&L, name, f->title);
+      lay_wrap(&L, NULL, f->description);
+      lay_wrap(&L, "source", f->source);
+      lay_wrap(&L, "citation", f->citation);
     } else {
       char buf[512];
       snprintf(buf, sizeof(buf), "  %s%s%s   %s(nothing recorded about this "
@@ -1358,7 +1340,7 @@ static const char *bx_facets(void *ctx, const char *path, const char *key) {
   /* a unit or folder: its own name, and every source that fills it */
   size_t n = (size_t)snprintf(buf, sizeof(buf), "%s %s", bp.unit, bp.sub);
   for (size_t i = 0; i < YAME_ASSETS_N && n + 32 < sizeof(buf); ++i) {
-    char u[128], sb[128];
+    char u[256], sb[256];
     unit_of(&YAME_ASSETS[i], u, sizeof(u), sb, sizeof(sb));
     if (strcmp(u, bp.unit) != 0) continue;
     if (bp.sub[0] && strcmp(sb, bp.sub) != 0) continue;
@@ -1368,20 +1350,13 @@ static const char *bx_facets(void *ctx, const char *path, const char *key) {
 }
 
 static int bx_recommend(void *ctx, const char *path, const char *key) {
-  (void)ctx;
+  (void)ctx; (void)path;
   const char *bar = key ? strchr(key, '|') : NULL;
   if (!bar) return 0;
-
-  bpath_t p;
-  bpath_parse(path, &p);
-  if (!p.unit[0]) return 0;
-
-  char ikey[256];
-  info_key_of(bar + 1, ikey, sizeof(ikey));
-  /* Every array platform shares one recommended list: the sets are the same
-   * annotation projected onto different probe orderings. */
-  return yame_assetinfo_recommended(ikey,
-                                    unit_is_array(p.unit) ? "array" : p.unit);
+  size_t idx = (size_t)strtoul(key, NULL, 10);
+  if (idx >= YAME_ASSETS_N) return 0;
+  const yame_asset_file_t *f = file_of(&YAME_ASSETS[idx], bar + 1);
+  return f ? f->recommend : 0;
 }
 
 /* ---- choosing and fetching ---- */
@@ -1403,7 +1378,7 @@ static void bx_accept(void *ctx, const char *path, const char *key) {
 
   size_t idx = (size_t)strtoul(key, NULL, 10);
   if (idx >= YAME_ASSETS_N) return;
-  const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+  const unit_t *a = &YAME_ASSETS[idx];
   const char *name = bar + 1;
   pick_add(b, idx, name);
 
@@ -1414,13 +1389,13 @@ static void bx_accept(void *ctx, const char *path, const char *key) {
   if (companion_of(a, name, idxname, sizeof(idxname)))
     pick_add(b, idx, idxname);
 
-  char unit[128], sub[128];
+  char unit[256], sub[256];
   unit_of(a, unit, sizeof(unit), sub, sizeof(sub));
   static ent_t ents[512];
   size_t n = unit_entries(unit, "", 0, ents, 512);
   for (size_t i = 0; i < n; ++i)
     if (ents[i].required)
-      pick_add(b, (size_t)(ents[i].a - YAME_ASSETS), ents[i].f->name);
+      pick_add(b, (size_t)(ents[i].a - YAME_ASSETS), yame_file_name(ents[i].f));
 }
 
 /**
@@ -1436,7 +1411,7 @@ static void bx_accept(void *ctx, const char *path, const char *key) {
 
 static void panel_row(int line, const char *color, const char *glyph,
                       const char *label, const char *value) {
-  char lbl[512];
+  char lbl[700];
   snprintf(lbl, sizeof(lbl), "%s", label ? label : "");
 
   int pad = PANEL_LABELW - (int)strlen(lbl);
@@ -1521,11 +1496,11 @@ static int confirm_plan(browse_t *b) {
     if (idx >= YAME_ASSETS_N) continue;
     ++n_files;
 
-    const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+    const unit_t *a = &YAME_ASSETS[idx];
     uint64_t sz = 0;
     for (size_t j = 0; j < a->n_files; ++j)
-      if (strcmp(a->files[j].name, b->pick[i].name) == 0) {
-        sz = a->files[j].size;
+      if (strcmp(yame_file_name(a->files[j]), b->pick[i].name) == 0) {
+        sz = a->files[j]->size;
         break;
       }
     if (sz) bytes += sz; else ++unknown;
@@ -1536,30 +1511,6 @@ static int confirm_plan(browse_t *b) {
   }
   n_dirs = n_seen;
 
-  /* A directory carried forward from an earlier tag has its SHA256SUMS
-   * rewritten, not merely files added to it -- a larger claim than the count
-   * above, and this panel is the last place it can be declined. In the
-   * browser the fetch itself runs quiet, so if it is not said here it is not
-   * said at all. */
-  char carry[160];
-  size_t n_carry = 0;
-  carry[0] = '\0';
-  for (size_t k = 0; k < n_seen; ++k) {
-    const yame_asset_reg_t *a = &YAME_ASSETS[seen[k]];
-    if (!a->n_prior) continue;
-    char dir[4096];
-    if (yame_assets_join(dir, sizeof(dir), b->root, a->store_sub) != 0) continue;
-    const char *from = yame_assets_pin_prior_tag(dir, a->prior, a->n_prior);
-    if (!from) continue;
-    if (!n_carry)
-      snprintf(carry, sizeof(carry), "%s: %s to %s", a->store_sub, from, a->tag);
-    ++n_carry;
-  }
-  if (n_carry > 1) {
-    size_t l = strlen(carry);
-    snprintf(carry + l, sizeof(carry) - l, " (+%zu more)", n_carry - 1);
-  }
-
   char sz[32], label[256], value[128];
   human_size(bytes, sz, sizeof(sz));
 
@@ -1569,15 +1520,9 @@ static int confirm_plan(browse_t *b) {
   else if (unknown)    snprintf(value, sizeof(value), "at least %s", sz);
   else                 snprintf(value, sizeof(value), "%s", sz);
 
-  /* The carry note gets its own line rather than competing with the others:
-     a truncated selection and a tag being rewritten are both worth reading,
-     and dropping either to fit would drop the one that matters more. */
   int row = 1;
-  yame_ui_panel_open(carry[0] ? 5 : 4);
+  yame_ui_panel_open(4);
   panel_row(0, yame_ui_bold(), yame_ui_unicode() ? "⤓" : ">", label, value);
-  if (carry[0])
-    panel_row(row++, yame_ui_yellow(), yame_ui_unicode() ? "↻" : "^",
-              "carries forward", carry);
   if (b->n_dropped) {
     char note[128];
     snprintf(note, sizeof(note), "%zu more did not fit and will NOT be fetched",
@@ -1679,7 +1624,7 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
     }
     if (!n_names) continue;
 
-    const yame_asset_reg_t *a = &YAME_ASSETS[idx];
+    const unit_t *a = &YAME_ASSETS[idx];
 
     fprog_t fp;
     memset(&fp, 0, sizeof(fp));
@@ -1688,8 +1633,8 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
     yame_fetch_opt_t opt = {0};
     opt.force = b->force;
     if (in_widget) {
-      char what[256], howmany[64];
-      snprintf(what, sizeof(what), "%s/%s", a->source, a->target);
+      char what[600], howmany[64];
+      snprintf(what, sizeof(what), "%s/%s", a->source, a->dir);
       snprintf(howmany, sizeof(howmany), "%zu file%s", n_names,
                n_names == 1 ? "" : "s");
       panel_row(0, yame_ui_cyan(), yame_ui_unicode() ? "⤓" : ">", what,
@@ -1701,17 +1646,16 @@ static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
       opt.on_done = fp_done;
       opt.ud = &fp;
     } else {
-      fprintf(stderr, "%s/%s  -  %zu file%s\n", a->source, a->target,
+      fprintf(stderr, "%s/%s  -  %zu file%s\n", a->source, a->dir,
               n_names, n_names == 1 ? "" : "s");
     }
 
     char *err = NULL;
-    if (fetch_names(a, b->root, a->tag, a->anchor, names, n_names,
-                    &opt, &err) == 0) {
+    if (fetch_names(a, b->root, names, n_names, &opt, &err) == 0) {
       ok += (int)n_names;
       for (size_t j = 0; j < n_names; ++j)
         for (size_t k = 0; k < a->n_files; ++k)
-          if (strcmp(a->files[k].name, names[j]) == 0) moved += a->files[k].size;
+          if (strcmp(yame_file_name(a->files[k]), names[j]) == 0) moved += a->files[k]->size;
     } else {
       bad += (int)n_names;
       if (in_widget)
@@ -1780,7 +1724,7 @@ static void refresh_roots(browse_t *b) {
   size_t ng = all_groups(groups, 16), i = 0;
   for (size_t g = 0; g < ng && i < b->n_roots; ++g) {
     root_row(b, i++, groups[g], NULL);
-    char units[32][128];
+    char units[32][256];
     size_t nu = group_units(groups[g], units, 32);
     for (size_t j = 0; j < nu && i < b->n_roots; ++j)
       root_row(b, i++, groups[g], units[j]);
@@ -1811,7 +1755,7 @@ static int browse_catalog(const char *dopt, int force) {
   size_t ng = all_groups(groups, 16);
   for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
     branch[n_roots++] = 0;                  /* a heading never opens */
-    char units[32][128];
+    char units[32][256];
     size_t nu = group_units(groups[i], units, 32);
     for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
   }
@@ -1860,6 +1804,7 @@ static int browse_catalog(const char *dopt, int force) {
  */
 size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char ***out_paths) {
   cfg_ = cfg;
+  build_units();
   enum { MAXROOT = 64 };
   static char *roots[MAXROOT];
   static unsigned char styles[MAXROOT], branch[MAXROOT];
@@ -1878,7 +1823,7 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char
   size_t ng = all_groups(groups, 16);
   for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
     branch[n_roots++] = 0;
-    char units[32][128];
+    char units[32][256];
     size_t nu = group_units(groups[i], units, 32);
     for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
   }
@@ -1936,7 +1881,7 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char
     size_t idx = b.chosen_asset[i];
     if (idx >= YAME_ASSETS_N) continue;
     char dir[4096], path[4096];
-    if (yame_assets_join(dir, sizeof(dir), b.root, YAME_ASSETS[idx].store_sub) != 0)
+    if (yame_assets_join(dir, sizeof(dir), b.root, YAME_ASSETS[idx].dir) != 0)
       continue;
     if (yame_assets_join(path, sizeof(path), dir, b.chosen_name[i]) != 0) continue;
     if (!yame_assets_is_file(path)) continue;   /* the fetch did not land it */
@@ -2045,7 +1990,7 @@ static void prog_done(void *ud, const char *name, uint64_t bytes, int ok) {
  */
 /* Where a file would land, and whether it is already there: the store's
  * layout, or the current directory under -c. */
-static int sel_present(const char *root, const yame_asset_reg_t *a,
+static int sel_present(const char *root, const unit_t *a,
                        const char *name, int here) {
   if (!here) return file_present(root, a, name);
   /* In a working directory a name collision is ordinary: your own
@@ -2054,10 +1999,10 @@ static int sel_present(const char *root, const yame_asset_reg_t *a,
    * demo running on it. Here, present means the right bytes. */
   if (!yame_assets_is_file(name)) return 0;
   for (size_t i = 0; i < a->n_files; ++i)
-    if (strcmp(a->files[i].name, name) == 0) {
+    if (strcmp(yame_file_name(a->files[i]), name) == 0) {
       char got[65];
       if (yame_assets_sha256_file(name, got) != 0) return 0;
-      return yame_assets_digest_equal(got, a->files[i].sha256);
+      return yame_assets_digest_equal(got, a->files[i]->sha256);
     }
   return 1;
 }
@@ -2082,7 +2027,7 @@ static int one_file_wanted(const char *name, const char *only_file) {
  * two names. It held a single name until v1.44, and the second name was
  * silently dropped as a duplicate of the first. Empty list: the whole
  * directory. */
-static int file_wanted(const yame_asset_reg_t *a, const char *name,
+static int file_wanted(const unit_t *a, const char *name,
                        const char *filter,
                        const char *const *only, size_t n_only) {
   if (n_only) {
@@ -2111,87 +2056,54 @@ static int file_wanted(const yame_asset_reg_t *a, const char *name,
  * compiled into the registry is the one the manifest would have supplied, and
  * it is what the anchor made trustworthy at build time.
  */
-static int fetch_entry_here(const yame_asset_reg_t *a, const char *tag,
-                            const char *filter,
+static int fetch_entry_here(const unit_t *a, const char *filter,
                             const char *const *only, size_t n_only,
                             const yame_fetch_opt_t *opt, char **err) {
   for (size_t i = 0; i < a->n_files; ++i) {
-    const char *name = a->files[i].name;
+    const char *name = yame_file_name(a->files[i]);
     if (!file_wanted(a, name, filter, only, n_only)) continue;
-
-    char url[4096];
-    int n = (a->remote_sub && a->remote_sub[0])
-      ? snprintf(url, sizeof(url), "%s/%s/%s/%s",
-                 a->base_url, tag, a->remote_sub, name)
-      : snprintf(url, sizeof(url), "%s/%s/%s", a->base_url, tag, name);
-    if (n < 0 || (size_t)n >= sizeof(url)) return -1;
-
     int got = 0;
-    if (yame_assets_download_verify(url, a->files[i].sha256, name,
+    if (yame_assets_download_verify(a->files[i]->url, a->files[i]->sha256, name,
                                     opt, &got, err) != 0)
       return -1;
   }
   return 0;
 }
 
-/**
- * Fetch a named set of files from one unit into its store directory, with
- * the manifest written beside them.
- */
-static int fetch_names(const yame_asset_reg_t *a, const char *store_root,
-                       const char *tag, const char *anchor,
+/* Fetch the named files of one directory, each verified against the digest
+ * the registry compiles in, and rewrite the directory's manifest. */
+static int fetch_names(const unit_t *a, const char *store_root,
                        const char *const *names, size_t n_names,
                        const yame_fetch_opt_t *opt, char **err) {
-  int rc = 0;
-
-  /* The ancestry travels with the anchor: both are per-unit registry facts,
-   * and carrying one without the other would either refuse an upgrade this
-   * build knows how to make, or adopt a manifest it cannot verify. A caller
-   * that dropped the anchor to take an unpinned -t tag has left the lineage,
-   * so it gets no ancestry either. Attaching it here rather than at each call
-   * site keeps the two from being set apart. */
-  yame_fetch_opt_t o;
-  if (opt) o = *opt; else memset(&o, 0, sizeof(o));
-  int pinned = anchor && a->anchor && strcmp(anchor, a->anchor) == 0;
-  o.prior   = pinned ? a->prior   : NULL;
-  o.n_prior = pinned ? a->n_prior : 0;
-
-  if (n_names) {
-    char sub[4096];
-    if (yame_assets_join(sub, sizeof(sub), store_root, a->store_sub) != 0) rc = -1;
-    else {
-      /* Name the upgrade while it happens. Carrying a directory forward moves
-       * bytes an ordinary fetch would not, and an unexplained re-download of
-       * something the store already had reads as a bug. */
-      const char *from = o.n_prior
-        ? yame_assets_pin_prior_tag(sub, o.prior, o.n_prior) : NULL;
-      if (from && !o.quiet)
-        fprintf(stderr, "[yame] %s: %s -> %s\n", a->store_sub, from, tag);
-      rc = yame_assets_fetch_subset(a->base_url, tag, a->remote_sub, sub,
-                                    anchor, names, n_names, &o, err);
-    }
+  if (!n_names) return 0;
+  const yame_asset_file_t **want = wzmalloc(n_names * sizeof(*want));
+  size_t n = 0;
+  for (size_t i = 0; i < n_names; ++i) {
+    const yame_asset_file_t *f = file_of(a, names[i]);
+    if (f) want[n++] = f;
   }
-
+  int rc = yame_assets_fetch_files(cfg_, store_root, want, n, opt, err);
+  free(want);
   /* The manifest just changed on disk; the next presence question has to read
    * the new one. */
   dir_sums_forget();
   return rc;
 }
 
-static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
-                       const char *tag, const char *anchor, const char *filter,
+static int fetch_entry(const unit_t *a, const char *store_root,
+                       const char *filter,
                        const char *const *only, size_t n_only,
                        const yame_fetch_opt_t *opt, char **err) {
-  const char **names = malloc(a->n_files * sizeof(*names));
+  const char **names = malloc((a->n_files ? a->n_files : 1) * sizeof(*names));
   if (!names) return -1;
   size_t n_names = 0;
   for (size_t i = 0; i < a->n_files; ++i) {
-    if (!file_wanted(a, a->files[i].name, filter, only, n_only)) continue;
-    names[n_names++] = a->files[i].name;
+    const char *name = yame_file_name(a->files[i]);
+    if (!file_wanted(a, name, filter, only, n_only)) continue;
+    names[n_names++] = name;
   }
   if (!n_names) { free(names); return 0; }
-
-  int rc = fetch_names(a, store_root, tag, anchor, names, n_names, opt, err);
+  int rc = fetch_names(a, store_root, names, n_names, opt, err);
   free(names);
   return rc;
 }
@@ -2208,18 +2120,15 @@ static int fetch_entry(const yame_asset_reg_t *a, const char *store_root,
  * absorbs a file-level one: `fetch hg38/data hg38/data/x.cg` takes the
  * directory once, not the directory and then the file again.
  */
-static int resolve_spec(const char *arg, const char *tag_opt,
+static int resolve_spec(const char *arg,
                         sel_t *out, size_t *n_out, size_t cap, int quiet) {
   char spec[512];
   if (snprintf(spec, sizeof(spec), "%s", arg) >= (int)sizeof(spec)) {
     fprintf(stderr, "%s fetch: " "target name too long.\n", TOOL);
     return 1;
   }
-  const char *tag = tag_opt;
-  char *at = strchr(spec, '@');
-  if (at) { *at = '\0'; tag = at + 1; }
 
-  const yame_asset_reg_t *hits[64];
+  const unit_t *hits[64];
   const char *only = NULL;
 
   /* Whatever the browser showed you is what you can type. The tree names a
@@ -2244,7 +2153,7 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     char *slash = strchr(spec, '/');
     if (slash) {
       *slash = '\0';
-      const yame_asset_reg_t *a = find_asset(spec, slash + 1);
+      const unit_t *a = find_asset(spec, slash + 1);
       if (a) { hits[0] = a; n_sel = 1; }
       else *slash = '/';
     }
@@ -2262,13 +2171,13 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     if (cut && (size_t)(cut - spec) < sizeof(head))
       memcpy(head, spec, (size_t)(cut - spec));
 
-    const yame_asset_reg_t *hit[16];
+    const unit_t *hit[16];
     char hitpath[16][544];   /* a 264-byte browser path plus a file name */
     size_t n_hit = 0, n_claim = 0;   /* shown, and how many there really are */
     for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
       for (size_t j = 0; j < YAME_ASSETS[i].n_files; ++j) {
-        if (strcmp(YAME_ASSETS[i].files[j].name, fname) != 0) continue;
-        const char *dir = YAME_ASSETS[i].store_sub;
+        if (strcmp(yame_file_name(YAME_ASSETS[i].files[j]), fname) != 0) continue;
+        const char *dir = YAME_ASSETS[i].dir;
         if (head[0] && strcasecmp(dir, head) != 0) break;
         ++n_claim;
         if (n_hit < 16) {
@@ -2286,7 +2195,7 @@ static int resolve_spec(const char *arg, const char *tag_opt,
       /* The registry string outlives this resolver. Pointing back into `arg`
        * retained an @tag suffix, while pointing into local `spec` would
        * dangle on return. */
-      only = file_of(hit[0], fname)->name;
+      only = yame_file_name(file_of(hit[0], fname));
     }
     else if (n_claim > 1) {
       fprintf(stderr, "%s fetch: " "%zu directories publish a file called "
@@ -2342,7 +2251,6 @@ static int resolve_spec(const char *arg, const char *tag_opt,
     out[*n_out].a = hits[i];
     out[*n_out].n_only = 0;
     if (only) out[*n_out].only[out[*n_out].n_only++] = only;
-    out[*n_out].tag = tag;
     ++*n_out;
   }
   return 0;
@@ -2359,13 +2267,12 @@ static size_t sel_all(sel_t *out, size_t cap) {
   for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
     out[n].a = &YAME_ASSETS[i];
     out[n].n_only = 0;
-    out[n].tag = NULL;
     ++n;
   }
   return n;
 }
 
-static int resolve_args(int argc, char *argv[], int first, const char *tag_override,
+static int resolve_args(int argc, char *argv[], int first,
                         sel_t *sel, size_t *n_sel, size_t SELCAP,
                         char *shown, size_t shown_cap) {
   for (int ai = first; ai < argc; ++ai) {
@@ -2389,7 +2296,7 @@ static int resolve_args(int argc, char *argv[], int first, const char *tag_overr
            tok && rc == 0; tok = strtok_r(NULL, ",", &save)) {
         while (*tok == ' ') ++tok;        /* "a, b" reads like -m does */
         if (!*tok) continue;              /* a trailing or doubled comma */
-        rc = resolve_spec(tok, tag_override, sel, n_sel, SELCAP, 1);
+        rc = resolve_spec(tok, sel, n_sel, SELCAP, 1);
         if (rc != 0) bad = tok;
       }
       if (rc != 0) *n_sel = before;
@@ -2398,9 +2305,8 @@ static int resolve_args(int argc, char *argv[], int first, const char *tag_overr
       /* The whole string may be a name in its own right. If it is not, the
        * piece that failed is the more useful thing to name -- "nothing is
        * called nope" beats quoting the entire list back. */
-      if (resolve_spec(argv[ai], tag_override, sel, n_sel, SELCAP,
-                       bad != NULL) != 0) {
-        if (bad) resolve_spec(bad, tag_override, sel, n_sel, SELCAP, 0);
+      if (resolve_spec(argv[ai], sel, n_sel, SELCAP, bad != NULL) != 0) {
+        if (bad) resolve_spec(bad, sel, n_sel, SELCAP, 0);
         return 1;
       }
     }
@@ -2456,21 +2362,20 @@ static void permute_opts(int argc, char **argv, const char *optstring) {
 
 int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   cfg_ = cfg;
+  build_units();
   optind = 1;                       /* a library entry: never trust the caller's */
-  const char *dopt = NULL, *tag_override = NULL;
+  const char *dopt = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
-  int force = 0, quiet = 0, unpinned_ok = 0, list = 0, assume_yes = 0;
+  int force = 0, quiet = 0, list = 0, assume_yes = 0;
   int dry_run = 0, here = 0;
   const char *filter = NULL;
   int c;
 
-  permute_opts(argc, argv, "cd:t:kflqu:s:o:yng:h");
-  while ((c = getopt(argc, argv, "cd:t:kflqu:s:o:yng:h")) >= 0) {
+  permute_opts(argc, argv, "cd:flqu:s:o:yng:h");
+  while ((c = getopt(argc, argv, "cd:flqu:s:o:yng:h")) >= 0) {
     switch (c) {
     case 'c': here = 1; break;
     case 'd': dopt = optarg; break;
-    case 't': tag_override = optarg; break;
-    case 'k': unpinned_ok = 1; break;
     case 'f': force = 1; break;
     case 'l': list = 1; break;
     case 'g': filter = optarg; break;
@@ -2496,7 +2401,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
    * store state comes from the same helper a downstream tool calls at load
    * time, so yame and methscope describe the situation in the same words. */
   if (optind >= argc && !quiet) {
-    if (yame_store_report(cfg_->reg, cfg_->n_reg, TOOL, cfg_->tool_env, dopt, stderr) > 0 && !list)
+    if (yame_store_report(cfg_, dopt, stderr) > 0 && !list)
       fputc('\n', stderr);
   }
 
@@ -2504,7 +2409,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
     sel_t lsel[64];
     size_t n_l = 0;
     if (optind >= argc) n_l = sel_all(lsel, 64);
-    else if (resolve_args(argc, argv, optind, tag_override, lsel, &n_l,
+    else if (resolve_args(argc, argv, optind, lsel, &n_l,
                           sizeof(lsel)/sizeof(lsel[0]), NULL, 0) != 0)
       return 1;
     return dump_registry(dopt, lsel, n_l, filter);
@@ -2560,7 +2465,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   size_t n_sel = 0;
   char shown[512] = "";           /* the names, for the plan and the errors */
   const size_t SELCAP = sizeof(sel)/sizeof(sel[0]);
-  if (resolve_args(argc, argv, optind, tag_override, sel, &n_sel, SELCAP,
+  if (resolve_args(argc, argv, optind, sel, &n_sel, SELCAP,
                    shown, sizeof(shown)) != 0)
     return 1;
 
@@ -2585,15 +2490,15 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   for (size_t i = 0; i < n_sel; ++i) {
     size_t n_here = 0;
     for (size_t j = 0; j < sel[i].a->n_files; ++j) {
-      if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter,
+      if (!file_wanted(sel[i].a, yame_file_name(sel[i].a->files[j]), filter,
                        sel[i].only, sel[i].n_only))
         continue;
       ++n_here;
       /* Already-present files are skipped unless -f, so counting their bytes
        * in the total would quote a transfer that is not going to happen. */
-      if (!force && sel_present(root, sel[i].a, sel[i].a->files[j].name, here))
+      if (!force && sel_present(root, sel[i].a, yame_file_name(sel[i].a->files[j]), here))
         ++n_have;
-      else total += sel[i].a->files[j].size;
+      else total += sel[i].a->files[j]->size;
     }
     if (n_here) { ++n_dirs; n_files += n_here; }
   }
@@ -2645,13 +2550,13 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
       size_t k = 0;
       for (size_t i = 0; i < n_sel; ++i)
         for (size_t j = 0; j < sel[i].a->n_files && k < n_files; ++j) {
-          if (!file_wanted(sel[i].a, sel[i].a->files[j].name, filter,
+          if (!file_wanted(sel[i].a, yame_file_name(sel[i].a->files[j]), filter,
                        sel[i].only, sel[i].n_only))
             continue;
-          if (!force && sel_present(root, sel[i].a, sel[i].a->files[j].name, here))
+          if (!force && sel_present(root, sel[i].a, yame_file_name(sel[i].a->files[j]), here))
             continue;                 /* listing what will move, not what is */
-          v[k].name = sel[i].a->files[j].name;
-          v[k].size = sel[i].a->files[j].size;
+          v[k].name = yame_file_name(sel[i].a->files[j]);
+          v[k].size = sel[i].a->files[j]->size;
           ++k;
         }
       /* Insertion sort: k is at most a few hundred, and this keeps the
@@ -2686,49 +2591,6 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
         fprintf(stderr, "%s\n", yame_ui_reset());
       }
       free(v);
-    }
-  }
-
-  /* Carrying a directory forward from an earlier tag rewrites its SHA256SUMS,
-   * which is a larger claim than "these files arrived" -- it relabels a
-   * directory another tool may be reading. The question is a few lines below,
-   * so say it here, while it can still be answered no. */
-  if (!here) {
-    const char *said[64];
-    size_t n_said = 0;
-    for (size_t i = 0; i < n_sel; ++i) {
-      const yame_asset_reg_t *a = sel[i].a;
-      if (!a->n_prior) continue;
-
-      /* An unpinned -t tag has left the lineage, and fetch_names drops the
-       * ancestry with the anchor, so nothing is carried forward there. */
-      if (sel[i].tag && strcmp(sel[i].tag, a->tag) != 0) continue;
-
-      /* Only when something is actually going to move into THIS directory:
-       * the manifest is written by the fetch, so a selection of nothing
-       * carries no tag anywhere. */
-      int moving = 0;
-      for (size_t j = 0; j < a->n_files && !moving; ++j)
-        if (file_wanted(a, a->files[j].name, filter,
-                        sel[i].only, sel[i].n_only) &&
-            (force || !sel_present(root, a, a->files[j].name, here)))
-          moving = 1;
-      if (!moving) continue;
-
-      /* Two names can select the same directory; it is carried forward once. */
-      int dup = 0;
-      for (size_t p = 0; p < n_said; ++p)
-        if (strcmp(said[p], a->store_sub) == 0) { dup = 1; break; }
-      if (dup) continue;
-
-      char dir[4096];
-      if (yame_assets_join(dir, sizeof(dir), root, a->store_sub) != 0) continue;
-      const char *from = yame_assets_pin_prior_tag(dir, a->prior, a->n_prior);
-      if (!from) continue;
-
-      fprintf(stderr, "  carries %s forward from %s to %s\n",
-              a->store_sub, from, a->tag);
-      if (n_said < sizeof(said) / sizeof(said[0])) said[n_said++] = a->store_sub;
     }
   }
 
@@ -2781,36 +2643,10 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   }
 
   for (size_t i = 0; i < n_sel; ++i) {
-    const yame_asset_reg_t *a = sel[i].a;
-    const char *tag = sel[i].tag ? sel[i].tag : a->tag;
-    const char *anchor = a->anchor;
-
-    /* A tag this build does not pin carries no digest for its manifest, so
-     * the anchor check has to be dropped -- a decision the caller makes
-     * explicitly, not something that happens quietly because they typed a
-     * tag. */
-    if (sel[i].tag && strcmp(sel[i].tag, a->tag) != 0) {
-      if (!unpinned_ok) {
-        fprintf(stderr,
-                "%s fetch: this build pins %s at %s, so it holds no digest "
-                "for %s and cannot verify the manifest published there. "
-                "Re-run with -k to accept that, or regenerate the registry "
-                "and rebuild.\n", TOOL, a->target, a->tag, sel[i].tag);
-        return 1;
-      }
-      anchor = NULL;
-    }
-
-    char store_sub[4096];
-    if (yame_assets_join(store_sub, sizeof(store_sub), root, a->store_sub) != 0) {
-      fprintf(stderr, "%s fetch: " "store path too long.\n", TOOL);
-      return 1;
-    }
-
+    const unit_t *a = sel[i].a;
     int rc = here
-      ? fetch_entry_here(a, tag, filter, sel[i].only, sel[i].n_only, &opt, &err)
-      : fetch_entry(a, root, tag, anchor, filter, sel[i].only, sel[i].n_only,
-                    &opt, &err);
+      ? fetch_entry_here(a, filter, sel[i].only, sel[i].n_only, &opt, &err)
+      : fetch_entry(a, root, filter, sel[i].only, sel[i].n_only, &opt, &err);
     if (rc != 0) {
       fprintf(stderr, "%s fetch: " "%s\n", TOOL, err ? err : "failed");
       free(err);

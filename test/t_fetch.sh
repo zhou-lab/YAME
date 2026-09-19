@@ -161,13 +161,14 @@ if "$YAME" fetch -u "$YAME_ASSETS_MIRROR/nope/missing.cm" -s "$want" -o gone.cm 
   echo "fetch -u accepted a 404"; exit 1
 fi
 
-## ---- 10. -t and -k: an overriding tag has no compiled anchor ---------------
-## Without -k an unpinned tag must be refused rather than fetched blind.
+## ---- 10. -t and -k are gone: every file carries its own digest ------------
+## An overriding tag would have nothing to verify against, so the option no
+## longer exists; it is refused as unknown rather than fetched blind.
 rm -rf "$YAME_DATA_HOME"/*
 if "$YAME" fetch -y -t v0.0 "$asset" </dev/null > t1.log 2>&1; then
-  echo "an unpinned -t tag was fetched without -k"; exit 1
+  echo "-t was accepted"; exit 1
 fi
-grep -qiE 'tag|anchor|pin|-k' t1.log || { echo "the -t refusal does not explain itself"; cat t1.log; exit 1; }
+[ -z "$(find "$YAME_DATA_HOME" -type f)" ] || { echo "-t fetched something"; exit 1; }
 
 ## ---- 11. the browser's fetch confirmation ----------------------------------
 ## The tree lists DIRECTORIES, not files, so f always proposes a whole unit.
@@ -290,52 +291,49 @@ PY
   done
 fi
 
-## ---- 12. a store that is behind says so, once, on stderr --------------------
-## Bare `fetch` and `fetch -l` print one line per directory whose manifest is
-## from an earlier tag this binary knows, naming the command that repairs it.
-## A named fetch prints nothing extra, since it IS the repair, and -q is quiet.
-##
-## Staged with the real mechanism: methscope_models carries prior anchors and
-## its earlier manifests are cached, so a directory holding a cached prior
-## manifest is exactly a store filled at that earlier tag.
+## ---- 12. a store with stale files says so, once, on stderr -----------------
+## Bare `fetch` and `fetch -l` print one line per directory holding files whose
+## manifest line records a digest other than the one this build pins, naming
+## the command that repairs it (with -y, so it also works in a script). A
+## named fetch prints nothing extra, since it IS the repair, and -q is quiet.
 rm -rf "$YAME_DATA_HOME"/*
 "$YAME" fetch -l </dev/null 2> quiet.err >/dev/null
-grep -q 'earlier tag' quiet.err && { echo "an empty store was reported as behind"; cat quiet.err; exit 1; }
+grep -q 'differ from this build' quiet.err && { echo "an empty store was reported as stale"; cat quiet.err; exit 1; }
 
-cur=$(grep -o 'methscope_models *v[0-9]*' "$root/tools/registry/TAGS" | /usr/bin/awk '{print $2}')
-prev="v$(( ${cur#v} - 1 ))"
-prevsums="$root/tools/registry/sums/methscope_models/$prev/SHA256SUMS"
-if [ -f "$prevsums" ]; then
-  mkdir -p "$YAME_DATA_HOME/hg38/models"
-  cp "$prevsums" "$YAME_DATA_HOME/hg38/models/"
-  "$YAME" fetch -l </dev/null 2> behind.err >/dev/null
-  grep -q "hg38/models was fetched at an earlier tag than this yame; run: yame fetch hg38/models" behind.err ||
-    { echo "-l did not report the $prev-filled hg38/models as behind"; cat behind.err; exit 1; }
-  [ "$(grep -c 'hg38/models' behind.err)" -eq 1 ] ||
-    { echo "hg38/models was reported more than once"; cat behind.err; exit 1; }
-  "$YAME" fetch </dev/null 2> bare.err >/dev/null
-  grep -q 'earlier tag' bare.err || { echo "bare fetch did not report the store as behind"; exit 1; }
-  ## naming any target suppresses the report: the fetch is the repair
-  "$YAME" fetch -n "$asset" </dev/null 2> named.err >/dev/null
-  grep -q 'earlier tag' named.err && { echo "a named fetch printed the report"; cat named.err; exit 1; }
-  "$YAME" fetch -q -l </dev/null 2> q.err >/dev/null
-  grep -q 'earlier tag' q.err && { echo "-q did not silence the report"; exit 1; }
-else
-  echo "skip: no cached $prev manifest to stage an old-tag store" >&2
-fi
-rm -rf "$YAME_DATA_HOME"/*
-
-## ---- 13. a stale local manifest is a pin conflict, not silently overwritten --
-rm -rf "$YAME_DATA_HOME"/*
+## Stage it: the file on disk, and a manifest recording it at another digest.
 mkdir -p "$YAME_DATA_HOME/$scope"
+cp "$here/fixtures/Blacklist.20220304.cm" "$YAME_DATA_HOME/$scope/"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"
+"$YAME" fetch -l </dev/null 2> behind.err >/dev/null
+grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files differ from this build; run: yame fetch -y -f $scope" behind.err ||
+  { echo "-l did not report the stale $scope"; cat behind.err; exit 1; }
+[ "$(grep -c "$scope" behind.err)" -eq 1 ] || { echo "$scope was reported more than once"; cat behind.err; exit 1; }
+"$YAME" fetch </dev/null 2> bare.err >/dev/null
+grep -q 'differ from this build' bare.err || { echo "bare fetch did not report the stale directory"; exit 1; }
+## the listing says the same per file
+"$YAME" fetch -l "$asset" </dev/null 2>/dev/null | tail -n +2 | cut -f8 | grep -qx stale ||
+  { echo "-l does not mark the stale file as stale"; "$YAME" fetch -l "$asset" </dev/null 2>/dev/null; exit 1; }
+## naming any target suppresses the report: the fetch is the repair
+"$YAME" fetch -n "$asset" </dev/null 2> named.err >/dev/null
+grep -q 'differ from this build' named.err && { echo "a named fetch printed the report"; cat named.err; exit 1; }
+"$YAME" fetch -q -l </dev/null 2> q.err >/dev/null
+grep -q 'differ from this build' q.err && { echo "-q did not silence the report"; exit 1; }
+
+## ---- 13. a stale file is refused without -f, replaced with it -----------------
+## The staged store from 12 is still there: the file present, recorded at a
+## digest this build does not pin. Without -f the fetch says so and leaves it;
+## with -f the file is re-verified (here it already matches, so nothing moves)
+## and the manifest line is corrected.
 if "$YAME" fetch -y "$asset" </dev/null > f8.log 2>&1; then
-  ## acceptable only if it says what it did about the stale manifest
-  grep -qi 'manifest\|pin\|stale\|conflict\|upgrad' f8.log ||
-    { echo "a stale manifest was overwritten without a word"; cat f8.log; exit 1; }
-else
-  grep -qi 'manifest\|pin\|conflict\|-f' f8.log || { echo "pin conflict refused but not explained"; cat f8.log; exit 1; }
+  echo "a stale file was replaced without -f"; cat f8.log; exit 1
 fi
+grep -q 'stale.*re-run with -f' f8.log || { echo "the refusal does not explain -f"; cat f8.log; exit 1; }
+grep -q 'xxxxxxxx' "$YAME_DATA_HOME/$scope/SHA256SUMS" || { echo "the refusal rewrote the manifest"; exit 1; }
+"$YAME" fetch -y -f "$asset" </dev/null > f9.log 2>&1 || { echo "fetch -f failed"; cat f9.log; exit 1; }
+grep -q 'xxxxxxxx' "$YAME_DATA_HOME/$scope/SHA256SUMS" && { echo "-f did not correct the manifest line"; exit 1; }
+"$YAME" fetch -l "$asset" </dev/null 2>/dev/null | tail -n +2 | cut -f8 | grep -qx current ||
+  { echo "after -f the file is not current"; exit 1; }
+rm -rf "$YAME_DATA_HOME"/*
 
 ## ---- 14. several files named out of ONE directory ---------------------------
 ## Selection only, so this needs no bytes and no mirror: -n and -l read the

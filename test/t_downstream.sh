@@ -39,13 +39,16 @@ grep -q '^methprobe fetch: nothing in the catalogue is called nosuch' e.txt ||
   { echo "an unknown name was not refused as methprobe"; head -2 e.txt; exit 1; }
 grep -q 'methprobe fetch -l' e.txt || { echo "the hint does not name the tool's -l"; exit 1; }
 
-## ---- 4. the store-behind report is in the tool's voice too ------------------
-## Stage the tool's directory with a manifest its registry does not know.
+## ---- 4. the stale-store report is in the tool's voice too -------------------
+## Stage the tool's directory with its file on disk, recorded at a digest its
+## registry does not pin: stale, and the line says so with the tool's verb,
+## naming the -y -f command that repairs it.
 mkdir -p "$METHPROBE_DATA_HOME/hg38/probe"
-printf 'ffff  z.cm\n' > "$METHPROBE_DATA_HOME/hg38/probe/SHA256SUMS"
+: > "$METHPROBE_DATA_HOME/hg38/probe/one.cm"
+printf 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  one.cm\n' > "$METHPROBE_DATA_HOME/hg38/probe/SHA256SUMS"
 ./probe_fetch -l </dev/null 2> r.txt >/dev/null
-grep -q '^\[methprobe fetch\] hg38/probe is at a tag this methprobe does not know -- update methprobe' r.txt ||
-  { echo "the behind-store line is not in the tool's voice"; cat r.txt; exit 1; }
+grep -q '^\[methprobe fetch\] hg38/probe: 1 of 1 files differ from this build; run: methprobe fetch -y -f hg38/probe' r.txt ||
+  { echo "the stale-store line is not in the tool's voice"; cat r.txt; exit 1; }
 ## and the tool's store variable wins over YAME_DATA_HOME: nothing was read from ystore
 [ -z "$(find "$YAME_DATA_HOME" -type f)" ] || { echo "the tool read yame's store"; exit 1; }
 

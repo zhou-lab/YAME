@@ -60,28 +60,36 @@ Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
   yame fetch -c hg38/data/human_hg38_test.cg  # one named file, no -y needed
   yame fetch -u <url> -s <sha256> -o <dest>    # single-file form
 
-A name is a scope: `hg38` takes the unit and all beneath it, `hg38/data` one
-directory, `hg38/data/test.cg` one file. Several names may be given, separated
-by spaces or commas. Options are accepted before or after the names, and the
-documented form leads with the options. Others:
-`-d <dir>` store root, `-t <tag>` upstream tag override (needs `-k` to accept
-an unpinned tag), `-q` no progress.
+A name is a store directory or one file in it: `hg38` takes that directory's
+own files (the genome annotation -- not the knowledgebase and models beneath
+it, which are `hg38/KYCG` and `hg38/models`), `hg38/data/test.cg` one file.
+Several names may be given, separated by spaces or commas. Options are
+accepted before or after the names, and the documented form leads with the
+options. Others: `-d <dir>` store root, `-q` no progress. The pre-1.50
+`<source>/<target>` spelling (`genomes/hg38`, `InfiniumAnnotation/EPICv2`)
+still resolves for one release.
 
 Off a terminal a fetch of a DIRECTORY will not proceed without `-y` — it prints
 the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or
 agent fetch of a folder needs `-y` (or `-n` to plan only). A name that picks out
 one file is its own confirmation and runs as it stands. `-l` prints ten columns: target,
-source, tag, store_path, file, bytes, sha256, dir_state, local, description.
+source, tag, store_path, file, bytes, sha256, dir_state, local, description
+-- `dir_state` is per file: current, absent, or stale (see below).
 `-l` takes the same names a fetch does, one or several, file or directory, and
 lists exactly what fetching them would take, so it is the offline dry run for
 any fetch command. It reaches no network: the registry is compiled in.
 
-Downloads verify the pinned `SHA256SUMS` anchor and each file digest; `.part`
-files are renamed only after verification. `-c` writes to cwd without a
-manifest. `-f` re-downloads what is present and overwrites a store populated
-from an unrelated tag; known earlier registry tags upgrade automatically.
-`.idx`/`.tbi` companions are fetched with their data. Verify by hand with
-`shasum -a 256 -c SHA256SUMS` in any store directory.
+Every file is verified against the digest this build carries for it -- there
+is no upstream manifest to trust first -- and `.part` files are renamed only
+after verification. The `SHA256SUMS` a directory keeps records what was
+verified there, one line per file; a file whose line records another digest
+is STALE (fetched by a build that pinned something else), a bare `fetch` or
+`fetch -l` reports it per directory with the `-f` command that repairs it,
+and only what differs is re-downloaded. `-f` re-downloads what is present and
+replaces stale files. `-c` writes to cwd without a manifest. `.idx`/`.tbi`
+companions are fetched with their data. Verify by hand with
+`shasum -a 256 -c SHA256SUMS` in any store directory: for a directory that is
+an exact copy of an upstream one, that file is byte-identical to upstream's.
 
 A failed download names the cause: `download failed: HTTP 404 Not Found: <url>`,
 or curl's own text (`curl: Couldn't resolve host name`) for a failure below HTTP.
@@ -98,8 +106,8 @@ or the YAME version that pins them, v1.45. A model can also be WITHDRAWN: v10
 dropped the two routing-tree classifiers (`hg38_celltype.clfx`,
 `mm10_celltype_brain.clfx`) in favour of the bank classifiers published at v9.
 A store filled at an earlier tag keeps those files and nothing deletes them;
-they simply stop being listed, and `yame_store_state` reports them as
-NOT_LISTED rather than current.
+they simply stop being listed, and neither `fetch` nor `yame_store_state`
+has anything to say about a file the registry does not list.
 
 ## Formats
 

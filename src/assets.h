@@ -175,163 +175,119 @@ typedef struct {
 yame_sums_ent_t *yame_assets_parse_sums(const char *text, size_t *n);
 yame_sums_ent_t *yame_assets_sums_load_file(const char *path, size_t *n);
 
-/* ----------------------------------------------------------------- the pin */
-
-enum {
-  YAME_PIN_MATCH    =  0,   /* stored manifest hashes to the caller's anchor */
-  YAME_PIN_ABSENT   =  1,   /* no manifest stored yet -- nothing to conflict */
-  YAME_PIN_UNKNOWN  =  2,   /* manifest present but caller passed no anchor */
-  YAME_PIN_ANCESTOR =  3,   /* filled at an earlier tag this build supersedes */
-  YAME_PIN_CONFLICT = -1    /* populated at a tag this build does not pin */
-};
-
-/* A tag this build knows it supersedes: `anchor` identifies a store filled at
- * that tag, `tag` is what to call it when reporting the upgrade. The registry
- * emits one of these per past tag it has cached a manifest for. */
-typedef struct {
-  const char *tag;
-  const char *anchor;
-} yame_pin_prior_t;
-
-/**
- * Compare <dir>/SHA256SUMS against the caller's compiled anchor.
- *
- * A YAME_PIN_CONFLICT means another tool (or an older build of this one)
- * populated the directory from a different upstream tag. Fetching would
- * overwrite it, and then that other tool would overwrite it back on its next
- * run, forever. So a conflict stops a write; a reader may proceed with a
- * warning, since reading never re-verifies digests anyway.
- */
-int yame_assets_pin_check(const char *dir, const char *anchor_sha);
-
-/**
- * As pin_check, but able to tell an UPGRADE from a conflict.
- *
- * Plain pin_check is a scalar equality, so a store this build simply moved
- * past looks exactly like one some stranger filled. Given the anchors of the
- * tags this build knows it supersedes, a stored manifest matching one of them
- * is YAME_PIN_ANCESTOR: safe to overwrite without -f, because the two tags are
- * the same lineage and this build holds the later one.
- *
- * The re-download war pin_check exists to prevent is still prevented. An older
- * binary meeting a newer store sees a hash it has never heard of -- a newer tag
- * is not among its ancestors -- and still stops. Only a strictly known-earlier
- * tag is adopted, and only in the direction of the newer build.
- *
- * `prior` may be NULL (n_prior 0), which makes this identical to pin_check.
- */
-int yame_assets_pin_state(const char *dir, const char *anchor_sha,
-                          const yame_pin_prior_t *prior, size_t n_prior);
-
-/* Which known earlier tag filled this directory, for the message that reports
- * the upgrade. NULL when no prior matches -- i.e. whenever pin_state did not
- * say YAME_PIN_ANCESTOR. */
-const char *yame_assets_pin_prior_tag(const char *dir,
-                                      const yame_pin_prior_t *prior,
-                                      size_t n_prior);
-
 /* ---------------------------------------------------- the registry's rows */
-/* One file a directory publishes, with the digest it must have.
+/**
+ * One file the suite can fetch. A tool's registry.h is an array of these and
+ * nothing else -- no directory rows, no anchors, no ancestry. The type lives
+ * HERE, not in the generated file, so library code can take any tool's
+ * registry as an argument rather than being bound to yame's at build time.
+ *
+ * `key` is the file's identity, source@tag:remote_path: which repo, which
+ * immutable tag, which path within it. The repo and the tag are read out of
+ * it with yame_key_*() below. `store_path` is where the file lands under the
+ * store root and its place in the browser tree; it is decoupled from the
+ * remote path. `url` is compiled rather than derived so the host rule exists
+ * in one place (tools/registry/lib.sh). The four prose fields are what the
+ * browser shows; `source` here is the upstream database, not the repo.
  */
 typedef struct {
-    const char *name;
+    const char *key;
+    const char *store_path;
+    const char *url;
     const char *sha256;
     uint64_t    size;        /* 0 when upstream does not publish one */
+    int         recommend;   /* in the browser's default selection for its directory */
+    const char *title;
+    const char *description;
+    const char *source;
+    const char *citation;
 } yame_asset_file_t;
 
 #define YAME_NFILES(t) (sizeof(t)/sizeof((t)[0]) - 1)
-#define YAME_NPRIOR(t) (sizeof(t)/sizeof((t)[0]))
 
-/* One fetchable directory: where it comes from, where it lands, and the
- * digest its manifest must have. A tool's registry.h is an array of these;
- * the types live HERE, not in that generated file, so library code can take
- * any tool's registry as an argument rather than being bound to yame's at
- * yame's build time. */
+/* The parts of a key, split on the LAST @ and the LAST colon: a source may
+ * carry a colon (hf:org/repo), a path never does. Each writes at most n-1
+ * bytes plus NUL and returns the length it wanted. */
+size_t yame_key_source(const char *key, char *out, size_t n);
+size_t yame_key_tag(const char *key, char *out, size_t n);
+size_t yame_key_path(const char *key, char *out, size_t n);
+
+/* The file name within its store directory, and that directory (as a
+ * length: everything before the last slash, 0 for the root). */
+const char *yame_file_name(const yame_asset_file_t *f);
+size_t yame_file_dirlen(const yame_asset_file_t *f);
+
+/* ------------------------------------- fetch, over the caller's registry */
+/**
+ * What `fetch` needs to know about the tool it is running inside. yame's own
+ * entry point builds one of these from its compiled-in registry; a downstream
+ * tool that ships fetch over the YAME code it bundles builds one from ITS
+ * registry, which it generates itself from the shared table, so the models
+ * its docs name are, by construction, the ones its own binary pins.
+ */
 typedef struct {
-    const char *source;      /* upstream repo family: InfiniumAnnotation, ... */
-    const char *target;      /* platform, genome, or "<platform>/KYCG" */
-    const char *base_url;    /* <base>/<tag>/<remote_sub>/SHA256SUMS */
-    const char *tag;
-    const char *remote_sub;  /* "" when the manifest is at the repo root */
-    const char *store_sub;   /* path under the store root */
-    const char *anchor;      /* sha256 of that directory's SHA256SUMS */
-    const yame_asset_file_t *files;  /* what the directory holds */
-    size_t      n_files;
-    const yame_pin_prior_t *prior;   /* earlier tags this build supersedes */
-    size_t      n_prior;
-} yame_asset_reg_t;
+  const yame_asset_file_t *files; /* the registry: one row per file          */
+  size_t n_files;
+  const char *tool;             /* "yame", "methscope": usage text, messages   */
+  const char *tool_env;         /* NULL, or e.g. "METHSCOPE_DATA_HOME" -- read
+                                 * ahead of $YAME_DATA_HOME for the store root */
+} yame_fetch_cfg_t;
 
 /* ------------------------------------------ is the store what this build pins? */
 /**
- * What a tool should say about a store directory, or a file in one, before it
- * trusts it. This is the one call a downstream tool makes at load time -- and
- * what `fetch` itself prints when a store is behind -- so that every tool
- * describes the same situation in the same words.
+ * A file's state in the store, judged by the line that names it in the
+ * directory's SHA256SUMS -- the record of what was downloaded -- against the
+ * digest this registry compiles in. No file is hashed here: a 3 GB model is
+ * classified by one line of text.
  *
- * The registry is an ARGUMENT, not yame's compiled-in one: methscope passes
- * its own, so the verb in the advice is `methscope fetch`, and the tag it is
- * judged against is the one methscope pins.
+ *   CURRENT   on disk, and the manifest records the digest this build pins
+ *             (or records nothing about it -- a file that was put there by
+ *             hand is taken at its word until a fetch verifies it)
+ *   ABSENT    not on disk
+ *   STALE     on disk, but the manifest records a different digest: fetched
+ *             by an earlier or later build, or by another tool at another
+ *             tag. A fetch replaces it; -f is asked for first.
+ *
+ * There is no directory-level state: a directory is the sum of its files.
  */
 typedef enum {
-  YAME_STORE_CURRENT = 0,   /* at this registry's tag; a named file's digest matches  */
-  YAME_STORE_ABSENT,        /* nothing fetched for this directory yet                  */
-  YAME_STORE_OLD_TAG,       /* filled at an earlier tag this registry knows -- fetch it */
-  YAME_STORE_OTHER_TAG,     /* filled at a tag this registry does not know -- the TOOL
-                             * is behind the store, or another tool filled it          */
-  YAME_STORE_UNPINNED,      /* a manifest is there but this registry has no anchor     */
-  YAME_STORE_STALE_FILE,    /* directory is current but this file's digest differs     */
-  YAME_STORE_MISSING_FILE,  /* directory is current but this file is not on disk       */
-  YAME_STORE_NOT_CATALOGUED,/* the path is under no directory this registry lists      */
-  YAME_STORE_NOT_LISTED     /* the DIRECTORY is catalogued and current, but this file is
-                             * not among the ones this registry lists there -- a file
-                             * withdrawn upstream since this store was filled, or one
-                             * that was never ours. Appended rather than inserted so
-                             * the values a downstream compiled against do not move. */
+  YAME_STORE_CURRENT = 0,
+  YAME_STORE_ABSENT,
+  YAME_STORE_STALE,
+  YAME_STORE_NOT_CATALOGUED   /* the path names nothing this registry lists */
 } yame_store_state_t;
 
-/**
- * Classify `path` -- a store directory, or a file inside one -- against
- * `reg`. `path` may be absolute or relative to the store root that
- * yame_assets_root() resolves from `tool_env` and $YAME_DATA_HOME.
- *
- * `advice`, if given, receives one sentence naming the situation and the
- * exact command that fixes it, spelled with `tool` ("yame", "methscope"):
- *
- *   OLD_TAG    "hg38/models was fetched at an earlier tag than this yame;
- *               run: yame fetch hg38/models"
- *   OTHER_TAG  "hg38/models is at a tag this yame does not know -- update
- *               yame, then run: yame fetch hg38/models"
- *
- * CURRENT leaves `advice` empty. Nothing here downloads or deletes.
- */
-yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
-                                    const char *tool, const char *tool_env,
-                                    const char *path, char *advice, size_t n);
+yame_store_state_t yame_file_state(const char *root, const yame_asset_file_t *f);
 
 /**
- * Walk every directory in `reg` and print one advice line to `out` for each
- * that is OLD_TAG or OTHER_TAG. Returns how many lines it printed, so a
- * caller can decide whether to say anything more. This is what a bare
- * `<tool> fetch` and `<tool> fetch -l` print on stderr.
+ * Classify `path` -- a store path, absolute or relative to the store root
+ * resolved from `tool_env` and $YAME_DATA_HOME -- against `cfg`. A directory
+ * is STALE if any file in it is, ABSENT if none of them is on disk, else
+ * CURRENT. `advice`, if given, receives one sentence naming the situation and
+ * the exact command that fixes it, spelled with cfg->tool and carrying -y so
+ * it also works where nobody can answer a prompt.
  */
-int yame_store_report(const yame_asset_reg_t *reg, size_t n_reg,
-                      const char *tool, const char *tool_env,
-                      const char *root_override, FILE *out);
+yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *path,
+                                    char *advice, size_t n);
+
+/**
+ * Walk every directory the registry knows and print one line to `out` for
+ * each that holds stale files:
+ *
+ *   [methscope fetch] hg38/models: 3 of 7 files differ from this build;
+ *                     run: methscope fetch -y -f hg38/models
+ *
+ * Returns how many lines it printed. This is what a bare `<tool> fetch` and
+ * `<tool> fetch -l` print on stderr.
+ */
+int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
+                      FILE *out);
 
 /* --------------------------------------------------------------- fetching */
 
 typedef struct {
-  int force;                 /* re-download what is present; overrule a pin */
+  int force;                 /* re-download what is present; replace what is stale */
   int quiet;                 /* no progress reporting */
-
-  /* The tags this build supersedes, for the directory being fetched. Left
-   * NULL, a fetch keeps the old all-or-nothing behaviour: any manifest that
-   * is not the pinned one is a conflict needing -f. Set, an upgrade from one
-   * of these proceeds on its own. It rides here rather than in the argument
-   * list because it is per-directory registry data, like the anchor it
-   * qualifies, and every caller already carries an options struct. */
-  const yame_pin_prior_t *prior;
-  size_t n_prior;
 
   /* Optional progress hooks. Left NULL, a fetch is silent apart from errors,
    * which is what a library caller with its own UI wants: a caller passes its
@@ -364,40 +320,28 @@ int yame_assets_download_verify(const char *url, const char *want_sha,
                                 int *downloaded, char **err);
 
 /**
- * Fetch a whole SHA256SUMS-anchored directory:
+ * Fetch the files in `want` (n_want of them, rows of cfg->files) into the
+ * store under `root`, each verified against the digest the registry compiles
+ * in, and then rewrite the SHA256SUMS of every directory touched.
  *
- *   <base>/<tag>/<remote_sub>/{SHA256SUMS, files...}  ->  <store_sub>/
+ * A file whose manifest line already records the pinned digest is skipped
+ * without being hashed; one with no line is hashed and skipped if it
+ * matches; anything else is downloaded to a .part and renamed into place
+ * only when its digest matches. So a one-file bump costs one file, and -f
+ * (opt->force) is what makes a present file move again.
  *
- * The manifest is pulled first and checked against `anchor_sha` (pass NULL to
- * accept whatever the remote publishes -- only sensible for a tag this build
- * does not pin). Then every file it lists is fetched and verified, and the
- * manifest is written into the store verbatim so the result re-verifies with
- * shasum alone.
- *
- * Refuses to touch a directory whose stored manifest conflicts with
- * `anchor_sha` unless opt->force; see yame_assets_pin_check().
+ * The manifest a directory gets lists every registry file in that directory,
+ * in registry order, in sha256sum format: the pinned digest for each file
+ * this call verified, the line the old manifest had for each file it did
+ * not touch, and the pinned digest for files not on disk at all -- so the
+ * manifest never claims a file is current that this call did not confirm,
+ * and a directory that is an exact copy of an upstream directory ends up
+ * byte-identical to upstream's own SHA256SUMS. No upstream manifest is
+ * downloaded: the digests the binary carries are the whole trust chain.
  */
-int yame_assets_fetch_subtree(const char *base, const char *tag,
-                              const char *remote_sub, const char *store_sub,
-                              const char *anchor_sha,
-                              const yame_fetch_opt_t *opt, char **err);
-
-/**
- * As above, but only the entries named in `only` (n_only of them). Passing
- * only == NULL fetches everything, which is exactly what fetch_subtree does.
- *
- * A partial directory is a normal state, not a degraded one: a knowledgebase
- * directory can hold dozens of sets and most callers want a few. The manifest
- * is still written verbatim, because it describes the TAG rather than what was
- * taken from it -- that is what keeps the pin check meaningful, and
- * `shasum -a 256 -c SHA256SUMS` then reports the ones not taken as missing,
- * which is the truth.
- */
-int yame_assets_fetch_subset(const char *base, const char *tag,
-                             const char *remote_sub, const char *store_sub,
-                             const char *anchor_sha,
-                             const char *const *only, size_t n_only,
-                             const yame_fetch_opt_t *opt, char **err);
+int yame_assets_fetch_files(const yame_fetch_cfg_t *cfg, const char *root,
+                            const yame_asset_file_t *const *want, size_t n_want,
+                            const yame_fetch_opt_t *opt, char **err);
 
 /* ------------------------------------------- inferring a row-space reference */
 
@@ -515,23 +459,6 @@ void yame_ref_explain(FILE *out, uint64_t rows, int status, const char *name,
  * and the array), or 0 if nothing was chosen or the terminal cannot host a
  * tree -- in which case the caller should say what it needs and stop.
  */
-/* ------------------------------------- fetch, over the caller's registry */
-/**
- * What `fetch` needs to know about the tool it is running inside. yame's own
- * entry point builds one of these from its compiled-in registry; a downstream
- * tool that ships fetch over the YAME code it bundles builds one from ITS
- * registry, which it generates itself from the shared catalogue, so the
- * models its docs name are, by construction, the ones its own binary pins.
- * Store conflicts between tools stay handled by yame_assets_pin_state.
- */
-typedef struct {
-  const yame_asset_reg_t *reg;  /* the catalogue: one row per directory       */
-  size_t n_reg;
-  const char *tool;             /* "yame", "methscope": usage text, messages   */
-  const char *tool_env;         /* NULL, or e.g. "METHSCOPE_DATA_HOME" -- read
-                                 * ahead of $YAME_DATA_HOME for the store root */
-} yame_fetch_cfg_t;
-
 /* `<tool> fetch ...` -- the whole subcommand: browser, -l, named targets,
  * the single-file form, mirrors, -t/-k. argv[0] is ignored. */
 int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]);

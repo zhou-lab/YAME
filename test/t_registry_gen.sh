@@ -84,12 +84,17 @@ EOF
   { echo "url_of mishandled an hf: key"; sed -n '9p' "$d/lib.out"; exit 1; }
 
 ## ---- 5. this repo's own registry still says what it should -----------------
-## The coordinate stream is published at <genome>/ by the genomes unit, with no
-## lift, and the knowledgebase no longer offers a second copy of it.
-grep -q 'cpg_nocontig.cr", "[0-9a-f]*", [0-9]* }' "$root/src/registry.h" ||
-  { echo "yame no longer publishes the coordinate stream at <genome>/"; exit 1; }
-grep 'YAME_FILES_KYCGKB_hg38' -A 40 "$root/src/registry.h" |
-  sed -n '/^};/q;p' | grep -q 'cpg_nocontig.cr' &&
-  { echo "the knowledgebase still lists the coordinate stream"; exit 1; }
+## The coordinate stream is published at <genome>/ by zhou-lab/genomes, and the
+## knowledge base directory no longer offers a second copy of it.
+grep -q '"zhou-lab/genomes@v[0-9]*:hg38/cpg_nocontig.cr", "hg38/cpg_nocontig.cr"' "$root/src/registry.h" ||
+  { echo "the coordinate stream is not published at hg38/ from genomes"; exit 1; }
+grep -q '"hg38/KYCG/cpg_nocontig.cr"' "$root/src/registry.h" &&
+  { echo "the knowledge base still lists the coordinate stream"; exit 1; }
+## and the registry is exactly the table: one C row per data row
+n_tsv=$(grep -vc '^#' "$root/tools/registry/files.tsv")
+n_h=$(grep -c '^    { "' "$root/src/registry.h")
+n_ref=$(grep -c '^    { "[^"]*", "\(genome\|array\)", ' "$root/src/registry.h")
+[ "$((n_h - n_ref))" = "$n_tsv" ] ||
+  { echo "registry.h has $((n_h - n_ref)) file rows; files.tsv has $n_tsv"; exit 1; }
 
 exit 0

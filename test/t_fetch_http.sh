@@ -111,11 +111,13 @@ grep -q 'download failed: HTTP 429 Too Many Requests, the server asks for a 600 
 ! grep -q 'retrying in' f429c.log || { echo "retried despite a 600 s Retry-After"; cat f429c.log; exit 1; }
 
 ## ---- 5. below HTTP: a refused connection names the curl failure ------------
-## The manifest is the first request, so that is the message that comes back.
+## The file is the only request -- nothing is fetched before it -- so its
+## failure is the whole message, and for one file it comes back as the
+## fetch's own error rather than a count with the reason above it.
 kill $srv; wait $srv 2>/dev/null || true
 rc=0; "$YAME" fetch -y "$asset" </dev/null > frefused.log 2>&1 || rc=$?
 [ "$rc" -ne 0 ] || { echo "fetch succeeded with no server"; exit 1; }
-grep -q "cannot fetch the manifest: curl: .*: http://127.0.0.1:$port/" frefused.log ||
+grep -q "^yame fetch: download failed: curl: .*: http://127.0.0.1:$port/" frefused.log ||
   { echo "refused connection not explained:"; cat frefused.log; exit 1; }
 
 echo "ok: t_fetch_http"

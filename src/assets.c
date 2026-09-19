@@ -332,45 +332,42 @@ yame_sums_ent_t *yame_assets_sums_load_file(const char *path, size_t *n) {
   return v;
 }
 
-/* ----------------------------------------------------------------- the pin */
+/* ------------------------------------------------------------------ keys */
 
-int yame_assets_pin_state(const char *dir, const char *anchor_sha,
-                          const yame_pin_prior_t *prior, size_t n_prior) {
-  char sums[YAME_PATH_MAX];
-  if (yame_assets_join(sums, sizeof(sums), dir, YAME_ASSETS_SUMS_FILE) != 0)
-    return YAME_PIN_ABSENT;
-  if (!yame_assets_is_file(sums)) return YAME_PIN_ABSENT;
-  if (!anchor_sha || !*anchor_sha) return YAME_PIN_UNKNOWN;
-
-  char got[65];
-  if (yame_assets_sha256_file(sums, got) != 0) return YAME_PIN_ABSENT;
-  if (yame_assets_digest_equal(got, anchor_sha)) return YAME_PIN_MATCH;
-
-  /* Not the pinned tag. Before calling that a conflict, ask whether it is a
-   * tag this build came from: an upgrade and a stranger are the same
-   * inequality until the ancestry is consulted. */
-  for (size_t i = 0; i < n_prior; ++i)
-    if (prior[i].anchor && yame_assets_digest_equal(got, prior[i].anchor))
-      return YAME_PIN_ANCESTOR;
-
-  return YAME_PIN_CONFLICT;
+/* source@tag:remote_path, split on the LAST @ and the LAST colon. */
+static size_t put(char *out, size_t n, const char *p, size_t l) {
+  if (n) { size_t c = l < n - 1 ? l : n - 1; memcpy(out, p, c); out[c] = '\0'; }
+  return l;
+}
+size_t yame_key_path(const char *key, char *out, size_t n) {
+  const char *c = strrchr(key, ':');
+  const char *p = c ? c + 1 : key;
+  return put(out, n, p, strlen(p));
+}
+size_t yame_key_tag(const char *key, char *out, size_t n) {
+  const char *c = strrchr(key, ':');
+  size_t end = c ? (size_t)(c - key) : strlen(key);
+  size_t at = end;
+  while (at > 0 && key[at - 1] != '@') --at;
+  if (at == 0) return put(out, n, "", 0);
+  return put(out, n, key + at, end - at);
+}
+size_t yame_key_source(const char *key, char *out, size_t n) {
+  const char *c = strrchr(key, ':');
+  size_t end = c ? (size_t)(c - key) : strlen(key);
+  size_t at = end;
+  while (at > 0 && key[at - 1] != '@') --at;
+  if (at == 0) return put(out, n, key, end);
+  return put(out, n, key, at - 1);
 }
 
-int yame_assets_pin_check(const char *dir, const char *anchor_sha) {
-  return yame_assets_pin_state(dir, anchor_sha, NULL, 0);
+const char *yame_file_name(const yame_asset_file_t *f) {
+  const char *s = strrchr(f->store_path, '/');
+  return s ? s + 1 : f->store_path;
 }
-
-const char *yame_assets_pin_prior_tag(const char *dir,
-                                      const yame_pin_prior_t *prior,
-                                      size_t n_prior) {
-  char sums[YAME_PATH_MAX], got[65];
-  if (yame_assets_join(sums, sizeof(sums), dir, YAME_ASSETS_SUMS_FILE) != 0)
-    return NULL;
-  if (yame_assets_sha256_file(sums, got) != 0) return NULL;
-  for (size_t i = 0; i < n_prior; ++i)
-    if (prior[i].anchor && yame_assets_digest_equal(got, prior[i].anchor))
-      return prior[i].tag;
-  return NULL;
+size_t yame_file_dirlen(const yame_asset_file_t *f) {
+  const char *s = strrchr(f->store_path, '/');
+  return s ? (size_t)(s - f->store_path) : 0;
 }
 
 /* --------------------------------------------------------------- fetching */
@@ -729,21 +726,6 @@ int yame_assets_download_verify(const char *url, const char *want_sha,
   return 0;
 }
 
-int yame_assets_fetch_subtree(const char *base, const char *tag,
-                              const char *remote_sub, const char *store_sub,
-                              const char *anchor_sha,
-                              const yame_fetch_opt_t *opt, char **err) {
-  return yame_assets_fetch_subset(base, tag, remote_sub, store_sub, anchor_sha,
-                                  NULL, 0, opt, err);
-}
-
-static int wanted(const char *name, const char *const *only, size_t n_only) {
-  if (!only) return 1;
-  for (size_t i = 0; i < n_only; ++i)
-    if (only[i] && strcmp(only[i], name) == 0) return 1;
-  return 0;
-}
-
 /* Write a manifest without ever exposing a truncated one. The manifest is the
  * directory's tag identity, so preserve the old bytes until its replacement
  * is complete. */
@@ -766,141 +748,135 @@ static int write_manifest(const char *path, const char *text, size_t len) {
   return 0;
 }
 
-int yame_assets_fetch_subset(const char *base, const char *tag,
-                             const char *remote_sub, const char *store_sub,
-                             const char *anchor_sha,
-                             const char *const *only, size_t n_only,
-                             const yame_fetch_opt_t *opt, char **err) {
-  /* Whose tag filled this directory? A conflict means another tool, or a
-   * build with a lineage this one does not know, populated it from a tag this
-   * build does not pin. Overwriting would start a re-download war between the
-   * two binaries, so stop and let the human decide.
-   *
-   * An ANCESTOR is the other case that inequality used to hide: a store this
-   * build's own registry moved past. Upgrading it is the whole point of the
-   * fetch, so it proceeds without -f. */
-  int pin = yame_assets_pin_state(store_sub, anchor_sha,
-                                  opt ? opt->prior : NULL,
-                                  opt ? opt->n_prior : 0);
-  if (pin == YAME_PIN_CONFLICT && !(opt && opt->force)) {
-    /* Remedy first: this is rendered into a fixed-width panel row by the
-     * browser, and the one word the reader needs is -f. Leading with the
-     * diagnosis put it past the truncation point. */
-    set_err(err,
-            "stale tag: re-fetch with -f to overwrite %s. Its %s came from a "
-            "different upstream tag than this build pins (%s).",
-            store_sub, YAME_ASSETS_SUMS_FILE, tag ? tag : "(none)");
-    return -1;
-  }
+/* One line of a directory's manifest, by file name: the digest recorded for
+ * it, or NULL when the manifest has no line for it (or does not exist). */
+static const char *manifest_digest(const yame_sums_ent_t *ents, size_t n,
+                                   const char *name) {
+  for (size_t i = 0; i < n; ++i)
+    if (strcmp(ents[i].name, name) == 0) return ents[i].sha;
+  return NULL;
+}
 
-  if (yame_assets_mkdir_p(store_sub) != 0) {
-    set_err(err, "cannot create %s", store_sub);
-    return -1;
-  }
-  sweep_stale_parts(store_sub);
+int yame_assets_fetch_files(const yame_fetch_cfg_t *cfg, const char *root,
+                            const yame_asset_file_t *const *want, size_t n_want,
+                            const yame_fetch_opt_t *opt, char **err) {
+  int failed = 0;
+  /* verified[i] for want[i]: 1 once its bytes are known to carry the pinned
+   * digest, whether they just arrived or were already there. */
+  unsigned char *verified = calloc(n_want ? n_want : 1, 1);
+  if (!verified) { set_err(err, "out of memory"); return -1; }
 
-  /* The manifest first: everything else is verified against it, and it is
-   * verified against the anchor compiled into the caller. */
-  char url[YAME_PATH_MAX];
-  int wrote = remote_sub && *remote_sub
-    ? snprintf(url, sizeof(url), "%s/%s/%s/%s", base, tag, remote_sub,
-               YAME_ASSETS_SUMS_FILE)
-    : snprintf(url, sizeof(url), "%s/%s/%s", base, tag, YAME_ASSETS_SUMS_FILE);
-  if (wrote >= (int)sizeof(url)) { set_err(err, "URL too long"); return -1; }
+  /* The manifest of the directory last looked at, so a directory's files are
+   * classified from one parse. */
+  char cur_dir[YAME_PATH_MAX] = "";
+  yame_sums_ent_t *ents = NULL; size_t n_ents = 0;
 
-  size_t sums_len = 0;
-  http_res_t res;
-  char *sums_text = http_get_mem_why(url, &sums_len, &res);
-  if (!sums_text) {
-    char why[128], mbuf[4096];
-    http_why(&res, why, sizeof why);
-    set_err(err, "cannot fetch the manifest: %s: %s", why,
-            mirror_url(url, mbuf, sizeof mbuf));
-    return -1;
-  }
+  for (size_t i = 0; i < n_want; ++i) {
+    const yame_asset_file_t *f = want[i];
+    char dest[YAME_PATH_MAX], dir[YAME_PATH_MAX];
+    if (yame_assets_join(dest, sizeof dest, root, f->store_path) != 0) { ++failed; continue; }
+    size_t dl = yame_file_dirlen(f);
+    if (dl >= sizeof dir) { ++failed; continue; }
+    if (yame_assets_join(dir, sizeof dir, root, "") != 0) { ++failed; continue; }
+    { char sub[YAME_PATH_MAX]; memcpy(sub, f->store_path, dl); sub[dl] = '\0';
+      if (yame_assets_join(dir, sizeof dir, root, sub) != 0) { ++failed; continue; } }
 
-  if (anchor_sha && *anchor_sha) {
-    char got[65];
-    yame_assets_sha256_buf(sums_text, sums_len, got);
-    if (!yame_assets_digest_equal(got, anchor_sha)) {
-      free(sums_text);
-      set_err(err,
-              "%s at %s does not match the digest this build pins. Either the "
-              "upstream tag moved, or this is not the content this build "
-              "expects; nothing was written.",
-              YAME_ASSETS_SUMS_FILE, url);
-      return -1;
+    if (strcmp(dir, cur_dir) != 0) {
+      free(ents); ents = NULL; n_ents = 0;
+      char mp[YAME_PATH_MAX];
+      if (yame_assets_join(mp, sizeof mp, dir, YAME_ASSETS_SUMS_FILE) == 0)
+        ents = yame_assets_sums_load_file(mp, &n_ents);
+      snprintf(cur_dir, sizeof cur_dir, "%s", dir);
+      if (yame_assets_mkdir_p(dir) != 0) { set_err(err, "cannot create %s", dir); ++failed; continue; }
+      sweep_stale_parts(dir);
     }
-  }
 
-  size_t n = 0;
-  yame_sums_ent_t *ents = yame_assets_parse_sums(sums_text, &n);
-  if (!ents || n == 0) {
-    free(sums_text); free(ents);
-    set_err(err, "empty or unreadable %s at %s", YAME_ASSETS_SUMS_FILE, url);
-    return -1;
-  }
-
-  /* A registry name can outlive an upstream tag. Under an unpinned -t/-k
-   * fetch, reject that mismatch before moving anything instead of writing the
-   * tag's manifest and reporting success with zero requested files. */
-  for (size_t j = 0; only && j < n_only; ++j) {
-    int found = 0;
-    for (size_t i = 0; i < n; ++i)
-      if (only[j] && strcmp(only[j], ents[i].name) == 0) { found = 1; break; }
-    if (!found) {
-      set_err(err, "%s is not published at tag %s",
-              only[j] ? only[j] : "(null)", tag ? tag : "(none)");
-      free(sums_text);
-      free(ents);
-      return -1;
+    /* Recorded as current, and on disk: nothing to move, nothing to hash. */
+    const char *rec = manifest_digest(ents, n_ents, yame_file_name(f));
+    if (!(opt && opt->force) && rec && yame_assets_digest_equal(rec, f->sha256)
+        && yame_assets_is_file(dest)) {
+      verified[i] = 1;
+      continue;
     }
-  }
-
-  int failed = 0, taken = 0;
-  for (size_t i = 0; i < n; ++i) {
-    char dest[YAME_PATH_MAX], furl[YAME_PATH_MAX];
-    if (!wanted(ents[i].name, only, n_only)) continue;
-    ++taken;
-    if (yame_assets_join(dest, sizeof(dest), store_sub, ents[i].name) != 0)
-      { ++failed; continue; }
-    wrote = remote_sub && *remote_sub
-      ? snprintf(furl, sizeof(furl), "%s/%s/%s/%s", base, tag, remote_sub,
-                 ents[i].name)
-      : snprintf(furl, sizeof(furl), "%s/%s/%s", base, tag, ents[i].name);
-    if (wrote >= (int)sizeof(furl)) { ++failed; continue; }
-
-    char *ferr = NULL;
-    if (yame_assets_download_verify(furl, ents[i].sha, dest, opt, NULL, &ferr)
-        != 0) {
-      if (!(opt && opt->quiet) && ferr) fprintf(stderr, "[yame] %s\n", ferr);
+    /* Recorded at ANOTHER digest, and on disk: stale -- fetched by a build
+     * that pinned something else, or by another tool. Replacing it is what
+     * -f is for; without it, say so and leave the file alone. */
+    if (!(opt && opt->force) && rec && !yame_assets_digest_equal(rec, f->sha256)
+        && yame_assets_is_file(dest)) {
+      set_err(err, "stale: %s is recorded at a different digest than this build "
+              "pins; re-run with -f to replace it", f->store_path);
       ++failed;
+      continue;
+    }
+    /* Otherwise download_verify decides: it hashes a present file and skips
+     * a match, and replaces anything else only once the new bytes verify. */
+    char *ferr = NULL;
+    if (yame_assets_download_verify(f->url, f->sha256, dest, opt, NULL, &ferr) != 0) {
+      /* One file asked for, one reason to give: it is the whole answer, so
+       * it goes back to the caller rather than to stderr with a count after
+       * it. Several files each report on their own line and the count sums
+       * them up. */
+      if (n_want == 1 && ferr && err && !*err) { *err = ferr; ferr = NULL; }
+      else if (!(opt && opt->quiet) && ferr) fprintf(stderr, "[yame] %s\n", ferr);
+      ++failed;
+    } else {
+      verified[i] = 1;
     }
     free(ferr);
   }
+  free(ents); ents = NULL; n_ents = 0;
 
-  /* Keep the manifest verbatim: it is what lets `shasum -a 256 -c SHA256SUMS`
-   * re-verify the store with none of this code, and it is what the next tool
-   * reads to learn which tag filled this directory. Written for a partial
-   * fetch too -- it describes the tag, not the subset taken from it. */
-  if (!failed) {
-    char sp[YAME_PATH_MAX];
-    if (yame_assets_join(sp, sizeof(sp), store_sub,
-                         YAME_ASSETS_SUMS_FILE) != 0 ||
-        write_manifest(sp, sums_text, sums_len) != 0) {
-      set_err(err, "files arrived, but cannot write %s/%s",
-              store_sub, YAME_ASSETS_SUMS_FILE);
-      failed = 1;
+  /* The manifests, one per directory touched: every registry file in the
+   * directory, in registry order; the pinned digest where this call
+   * verified the file, the old line where it did not and one existed, the
+   * pinned digest where the file is not on disk at all. */
+  for (size_t i = 0; i < n_want; ++i) {
+    size_t dl = yame_file_dirlen(want[i]);
+    int done = 0;
+    for (size_t k = 0; k < i && !done; ++k)
+      if (yame_file_dirlen(want[k]) == dl &&
+          strncmp(want[k]->store_path, want[i]->store_path, dl) == 0) done = 1;
+    if (done) continue;
+
+    char sub[YAME_PATH_MAX], dir[YAME_PATH_MAX], mp[YAME_PATH_MAX];
+    memcpy(sub, want[i]->store_path, dl); sub[dl] = '\0';
+    if (yame_assets_join(dir, sizeof dir, root, sub) != 0 ||
+        yame_assets_join(mp, sizeof mp, dir, YAME_ASSETS_SUMS_FILE) != 0) { ++failed; continue; }
+    size_t n_old = 0;
+    yame_sums_ent_t *old = yame_assets_sums_load_file(mp, &n_old);
+
+    size_t cap = 4096, len = 0;
+    char *text = malloc(cap);
+    if (!text) { free(old); ++failed; continue; }
+    for (size_t j = 0; j < cfg->n_files; ++j) {
+      const yame_asset_file_t *g = &cfg->files[j];
+      if (yame_file_dirlen(g) != dl || strncmp(g->store_path, sub, dl) != 0) continue;
+      const char *name = yame_file_name(g);
+      const char *sha = g->sha256;
+      int v = 0;
+      for (size_t k = 0; k < n_want; ++k) if (want[k] == g) { v = verified[k]; break; }
+      if (!v) {
+        const char *rec = manifest_digest(old, n_old, name);
+        char full[YAME_PATH_MAX];
+        if (rec && yame_assets_join(full, sizeof full, dir, name) == 0 &&
+            yame_assets_is_file(full)) sha = rec;
+      }
+      size_t need = len + 64 + 2 + strlen(name) + 2;
+      if (need > cap) { cap = need * 2; char *t = realloc(text, cap); if (!t) { free(text); text = NULL; break; } text = t; }
+      len += (size_t)snprintf(text + len, cap - len, "%s  %s\n", sha, name);
     }
+    free(old);
+    if (!text) { ++failed; continue; }
+    if (write_manifest(mp, text, len) != 0) {
+      set_err(err, "files arrived, but cannot write %s", mp);
+      ++failed;
+    }
+    free(text);
   }
 
-  free(sums_text);
-  free(ents);
-
+  free(verified);
   if (failed) {
-    if (!err || !*err)
-      set_err(err, "%d of %d files failed; the manifest was not written",
-              failed, taken);
+    if (!err || !*err) set_err(err, "%d of %zu files failed", failed, n_want);
     return -1;
   }
   return 0;
@@ -928,28 +904,11 @@ int yame_assets_download_verify(const char *url, const char *want_sha,
   return -1;
 }
 
-int yame_assets_fetch_subtree(const char *base, const char *tag,
-                              const char *remote_sub, const char *store_sub,
-                              const char *anchor_sha,
-                              const yame_fetch_opt_t *opt, char **err) {
-  return yame_assets_fetch_subset(base, tag, remote_sub, store_sub, anchor_sha,
-                                  NULL, 0, opt, err);
-}
-
-static int wanted(const char *name, const char *const *only, size_t n_only) {
-  if (!only) return 1;
-  for (size_t i = 0; i < n_only; ++i)
-    if (only[i] && strcmp(only[i], name) == 0) return 1;
-  return 0;
-}
-
-int yame_assets_fetch_subset(const char *base, const char *tag,
-                             const char *remote_sub, const char *store_sub,
-                             const char *anchor_sha,
-                             const char *const *only, size_t n_only,
-                             const yame_fetch_opt_t *opt, char **err) {
-  (void)base; (void)tag; (void)remote_sub; (void)anchor_sha; (void)opt;
-  set_err(err, "%s: %s", NO_CURL, store_sub);
+int yame_assets_fetch_files(const yame_fetch_cfg_t *cfg, const char *root,
+                            const yame_asset_file_t *const *want, size_t n_want,
+                            const yame_fetch_opt_t *opt, char **err) {
+  (void)cfg; (void)want; (void)n_want; (void)opt;
+  set_err(err, "%s: %s", NO_CURL, root);
   return -1;
 }
 
@@ -957,139 +916,108 @@ int yame_assets_fetch_subset(const char *base, const char *tag,
 
 /* ------------------------------------------ is the store what this build pins? */
 
-/* The registry row whose directory contains `path`, and -- when `path` names
- * a file rather than the directory itself -- that file's entry. Longest
- * store_sub wins, so hg38/KYCG is matched before hg38. */
-static const yame_asset_reg_t *row_for_path(const yame_asset_reg_t *reg, size_t n_reg,
-                                            const char *root, const char *path,
-                                            const yame_asset_file_t **file_out,
-                                            int *named_unlisted) {
-  const yame_asset_reg_t *best = NULL;
-  size_t best_len = 0;
+yame_store_state_t yame_file_state(const char *root, const yame_asset_file_t *f) {
+  char full[YAME_PATH_MAX], dir[YAME_PATH_MAX], mp[YAME_PATH_MAX], sub[YAME_PATH_MAX];
+  if (yame_assets_join(full, sizeof full, root, f->store_path) != 0) return YAME_STORE_ABSENT;
+  if (!yame_assets_is_file(full)) return YAME_STORE_ABSENT;
+  size_t dl = yame_file_dirlen(f);
+  memcpy(sub, f->store_path, dl); sub[dl] = '\0';
+  if (yame_assets_join(dir, sizeof dir, root, sub) != 0 ||
+      yame_assets_join(mp, sizeof mp, dir, YAME_ASSETS_SUMS_FILE) != 0) return YAME_STORE_CURRENT;
+  size_t n = 0;
+  yame_sums_ent_t *ents = yame_assets_sums_load_file(mp, &n);
+  yame_store_state_t st = YAME_STORE_CURRENT;
+  const char *name = yame_file_name(f);
+  for (size_t i = 0; i < n; ++i)
+    if (strcmp(ents[i].name, name) == 0) {
+      if (!yame_assets_digest_equal(ents[i].sha, f->sha256)) st = YAME_STORE_STALE;
+      break;
+    }
+  free(ents);
+  return st;
+}
+
+/* The state of one store directory: how many of its registry files are on
+ * disk, and how many of those are stale. */
+static void dir_states(const yame_fetch_cfg_t *cfg, const char *root,
+                       const char *sub, size_t *n, size_t *present, size_t *stale) {
+  size_t dl = strlen(sub);
+  *n = *present = *stale = 0;
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *g = &cfg->files[j];
+    if (yame_file_dirlen(g) != dl || strncmp(g->store_path, sub, dl) != 0) continue;
+    ++*n;
+    switch (yame_file_state(root, g)) {
+    case YAME_STORE_CURRENT: ++*present; break;
+    case YAME_STORE_STALE:   ++*present; ++*stale; break;
+    default: break;
+    }
+  }
+}
+
+yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *path,
+                                    char *advice, size_t n) {
+  if (advice && n) advice[0] = '\0';
+  const char *tool = cfg->tool ? cfg->tool : "yame";
+  char root[YAME_PATH_MAX];
+  yame_assets_root(NULL, cfg->tool_env, root, sizeof root);
+
   const char *rel = path;
   size_t rl = strlen(root);
   if (strncmp(path, root, rl) == 0 && (path[rl] == '/' || path[rl] == '\0'))
     rel = path + rl + (path[rl] == '/');
-  for (size_t i = 0; i < n_reg; ++i) {
-    const char *sub = reg[i].store_sub;
-    size_t sl = strlen(sub);
-    if (strncmp(rel, sub, sl) == 0 && (rel[sl] == '/' || rel[sl] == '\0') && sl >= best_len) {
-      best = &reg[i]; best_len = sl;
-    }
-  }
-  if (file_out) *file_out = NULL;
-  if (named_unlisted) *named_unlisted = 0;
-  if (!best) return NULL;
-  const char *tail = rel + best_len;
-  if (*tail == '/') ++tail;
-  if (*tail && file_out) {
-    for (size_t j = 0; j < best->n_files; ++j)
-      if (strcmp(best->files[j].name, tail) == 0) { *file_out = &best->files[j]; break; }
-    /* A path that names a file this row does not list is not the same thing as
-     * a path that names the directory, and the caller has to tell them apart:
-     * the first is a withdrawn or foreign file, the second is just "how is
-     * this directory?". Both leave *file_out NULL. */
-    if (!*file_out && named_unlisted) *named_unlisted = 1;
-  }
-  return best;
-}
 
-yame_store_state_t yame_store_state(const yame_asset_reg_t *reg, size_t n_reg,
-                                    const char *tool, const char *tool_env,
-                                    const char *path, char *advice, size_t n) {
-  if (advice && n) advice[0] = '\0';
-  if (!tool) tool = "yame";
-  char root[YAME_PATH_MAX];
-  yame_assets_root(NULL, tool_env, root, sizeof root);
-
-  const yame_asset_file_t *file = NULL;
-  int unlisted = 0;
-  const yame_asset_reg_t *row = row_for_path(reg, n_reg, root, path, &file, &unlisted);
-  if (!row) return YAME_STORE_NOT_CATALOGUED;
-
-  char dir[YAME_PATH_MAX];
-  if (yame_assets_join(dir, sizeof dir, root, row->store_sub) != 0)
-    return YAME_STORE_NOT_CATALOGUED;
-
-  /* The directory first: a file's digest only means something once the
-   * manifest beside it is the one this registry expects. */
-  int pin = yame_assets_pin_state(dir, row->anchor, row->prior, row->n_prior);
-  switch (pin) {
-  case YAME_PIN_ABSENT:
-    if (advice) snprintf(advice, n, "%s has not been fetched; run: %s fetch %s",
-                         row->target, tool, row->target);
-    return YAME_STORE_ABSENT;
-  case YAME_PIN_ANCESTOR:
-    if (advice) snprintf(advice, n, "%s was fetched at an earlier tag than this %s; "
-                         "run: %s fetch %s", row->target, tool, tool, row->target);
-    return YAME_STORE_OLD_TAG;
-  case YAME_PIN_CONFLICT:
-    if (advice) snprintf(advice, n, "%s is at a tag this %s does not know -- update %s, "
-                         "then run: %s fetch %s", row->target, tool, tool, tool, row->target);
-    return YAME_STORE_OTHER_TAG;
-  case YAME_PIN_UNKNOWN:
-    if (advice) snprintf(advice, n, "%s has a manifest this %s cannot check (no anchor)",
-                         row->target, tool);
-    return YAME_STORE_UNPINNED;
-  default: break;                      /* MATCH: now the file, if one was named */
-  }
-
-  /* The directory is current, and the path named a file the registry does not
-   * list there. Reported rather than called current, which is what it used to
-   * get: a model withdrawn upstream would otherwise pass a downstream's
-   * load-time check as healthy. Nothing is deleted, here or by a fetch -- the
-   * file simply stops being something this build knows about. */
-  if (!file && unlisted) {
+  /* A file? */
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *f = &cfg->files[j];
+    if (strcmp(f->store_path, rel) != 0) continue;
+    yame_store_state_t st = yame_file_state(root, f);
     if (advice) {
-      const char *base = strrchr(path, '/');
-      snprintf(advice, n,
-               "%s is in %s but this %s does not list it; it may have been "
-               "withdrawn upstream. Nothing needs it and nothing will remove "
-               "it -- delete it yourself if you want the space back.",
-               base ? base + 1 : path, row->target, tool);
+      if (st == YAME_STORE_ABSENT)
+        snprintf(advice, n, "%s is not in the store; run: %s fetch -y %s", rel, tool, rel);
+      else if (st == YAME_STORE_STALE)
+        snprintf(advice, n, "%s does not match the digest this %s pins; run: %s fetch -y -f %s",
+                 rel, tool, tool, rel);
     }
-    return YAME_STORE_NOT_LISTED;
+    return st;
   }
-
-  if (!file) return YAME_STORE_CURRENT;
-
-  char full[YAME_PATH_MAX];
-  if (yame_assets_join(full, sizeof full, dir, file->name) != 0) return YAME_STORE_CURRENT;
-  if (!yame_assets_is_file(full)) {
-    if (advice) snprintf(advice, n, "%s/%s is not in the store; run: %s fetch %s/%s",
-                         row->target, file->name, tool, row->target, file->name);
-    return YAME_STORE_MISSING_FILE;
+  /* A directory? */
+  size_t cnt, present, stale;
+  dir_states(cfg, root, rel, &cnt, &present, &stale);
+  if (!cnt) return YAME_STORE_NOT_CATALOGUED;
+  if (stale) {
+    if (advice) snprintf(advice, n, "%s: %zu of %zu files differ from this build; run: %s fetch -y -f %s",
+                         rel, stale, cnt, tool, rel);
+    return YAME_STORE_STALE;
   }
-  char got[65];
-  if (yame_assets_sha256_file(full, got) == 0 && !yame_assets_digest_equal(got, file->sha256)) {
-    if (advice) snprintf(advice, n, "%s/%s does not match the digest this %s pins; "
-                         "run: %s fetch %s/%s", row->target, file->name, tool, tool,
-                         row->target, file->name);
-    return YAME_STORE_STALE_FILE;
+  if (!present) {
+    if (advice) snprintf(advice, n, "%s has not been fetched; run: %s fetch -y %s", rel, tool, rel);
+    return YAME_STORE_ABSENT;
   }
   return YAME_STORE_CURRENT;
 }
 
-int yame_store_report(const yame_asset_reg_t *reg, size_t n_reg,
-                      const char *tool, const char *tool_env,
-                      const char *root_override, FILE *out) {
-  if (!tool) tool = "yame";
+int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FILE *out) {
+  const char *tool = cfg->tool ? cfg->tool : "yame";
   char root[YAME_PATH_MAX];
-  yame_assets_root(root_override, tool_env, root, sizeof root);
+  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
   int said = 0;
-  for (size_t i = 0; i < n_reg; ++i) {
-    char dir[YAME_PATH_MAX];
-    if (yame_assets_join(dir, sizeof dir, root, reg[i].store_sub) != 0) continue;
-    int pin = yame_assets_pin_state(dir, reg[i].anchor, reg[i].prior, reg[i].n_prior);
-    if (pin != YAME_PIN_ANCESTOR && pin != YAME_PIN_CONFLICT) continue;
-    /* two rows can share a directory (a genome and its KYCG index); say it once */
-    int dup = 0;
-    for (size_t k = 0; k < i; ++k)
-      if (strcmp(reg[k].store_sub, reg[i].store_sub) == 0) { dup = 1; break; }
-    if (dup) continue;
-    char advice[1024];
-    yame_store_state(reg, n_reg, tool, tool_env, dir, advice, sizeof advice);
-    if (advice[0]) { fprintf(out, "[%s fetch] %s\n", tool, advice); ++said; }
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *f = &cfg->files[j];
+    size_t dl = yame_file_dirlen(f);
+    int seen = 0;
+    for (size_t k = 0; k < j && !seen; ++k)
+      if (yame_file_dirlen(&cfg->files[k]) == dl &&
+          strncmp(cfg->files[k].store_path, f->store_path, dl) == 0) seen = 1;
+    if (seen) continue;
+    char sub[YAME_PATH_MAX];
+    memcpy(sub, f->store_path, dl); sub[dl] = '\0';
+    size_t cnt, present, stale;
+    dir_states(cfg, root, sub, &cnt, &present, &stale);
+    if (!stale) continue;
+    fprintf(out, "[%s fetch] %s: %zu of %zu files differ from this build; run: %s fetch -y -f %s\n",
+            tool, sub, stale, cnt, tool, sub);
+    ++said;
   }
   return said;
 }
