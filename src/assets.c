@@ -397,9 +397,9 @@ static size_t mem_write(void *data, size_t sz, size_t nm, void *ud) {
 /* YAME_ASSETS_MIRROR=<scheme://host[:port]> replaces the scheme and host of
  * every download URL and keeps the path, so
  *
- *   https://github.com/zhou-lab/InfiniumAnnotation/raw/v8.1/EPIC/SHA256SUMS
+ *   https://raw.githubusercontent.com/zhou-lab/InfiniumAnnotation/v8.1/EPIC/SHA256SUMS
  *
- * becomes <mirror>/zhou-lab/InfiniumAnnotation/raw/v8.1/EPIC/SHA256SUMS. For a
+ * becomes <mirror>/zhou-lab/InfiniumAnnotation/v8.1/EPIC/SHA256SUMS. For a
  * site that mirrors the public repositories -- compute nodes that cannot
  * reach GitHub are the usual case -- and for the test suite, which serves a
  * loopback mirror. Verification is untouched: every byte is still checked

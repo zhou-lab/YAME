@@ -22,11 +22,11 @@ printf '%s\n' "$help" | grep 'fetch available' >/dev/null ||
 d=$(mktemp -d); trap 'kill $srv 2>/dev/null; rm -rf "$d"' EXIT
 cd "$d"
 
-## ---- the mirror tree: /zhou-lab/InfiniumAnnotation/raw/v8.1/EPIC/KYCG/ ----
+## ---- the mirror tree: /zhou-lab/InfiniumAnnotation/v8.1/EPIC/KYCG/ ----
 scope=EPIC/KYCG; tag=v8.1
 sums="$root/tools/registry/sums/InfiniumAnnotation/$tag/$scope/SHA256SUMS"
 [ -f "$sums" ] || { echo "no cached manifest at $sums"; exit 1; }
-tree="mirror/zhou-lab/InfiniumAnnotation/raw/$tag/$scope"
+tree="mirror/zhou-lab/InfiniumAnnotation/$tag/$scope"
 mkdir -p "$tree"
 cp "$sums" "$tree/SHA256SUMS"
 cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
@@ -145,7 +145,7 @@ n_after=$(grep -c 'Blacklist.20220304.cm' server.log || true)
 ## ---- 9. the single-file form: -u with -s and -o -----------------------------
 ## A URL, the digest it must have, and where it goes. This path shares the
 ## download and verify code but none of the registry.
-url="$YAME_ASSETS_MIRROR/zhou-lab/InfiniumAnnotation/raw/$tag/$scope/Blacklist.20220304.cm"
+url="$YAME_ASSETS_MIRROR/zhou-lab/InfiniumAnnotation/$tag/$scope/Blacklist.20220304.cm"
 want=$(sha256sum "$here/fixtures/Blacklist.20220304.cm" | cut -c1-64)
 "$YAME" fetch -u "$url" -s "$want" -o direct.cm </dev/null > u1.log 2>&1 ||
   { echo "fetch -u failed"; cat u1.log; exit 1; }
@@ -230,7 +230,7 @@ if [ -d "$SHARED/Mammal40/KYCG" ] && [ -f "$SHARED/Mammal40/KYCG/SHA256SUMS" ]; 
   ## Selecting the unit takes its knowledgebase AND the platform directory
   ## above it -- "the index at the top of the list is fetched with anything
   ## else taken from this unit" -- so mirror both, or the run reports failures.
-  m2="mirror/zhou-lab/InfiniumAnnotation/raw/$tag/Mammal40"
+  m2="mirror/zhou-lab/InfiniumAnnotation/$tag/Mammal40"
   mkdir -p "$m2/KYCG"
   ## every regular file, not a glob: SHA256SUMS has no dot in its name, and
   ## without the manifest the whole directory fails verification

@@ -118,7 +118,7 @@ if [ "$refresh" = 1 ]; then
   echo "refreshing KYCGKB @ $kb_tag" >&2
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
     d=$sums_dir/KYCGKB/$kb_tag/$g; mkdir -p "$d"
-    curl -sfL -o "$d/SHA256SUMS" "$kb_base/$repo/raw/$kb_tag/SHA256SUMS" \
+    curl -sfL -o "$d/SHA256SUMS" "$kb_base/$repo/$kb_tag/SHA256SUMS" \
       || { echo "  MISS $g" >&2; rm -f "$d/SHA256SUMS"; }
   done
 
@@ -382,7 +382,7 @@ EOF
   ## Whole-genome knowledgebases: one repo each, manifest at the repo root.
   rows_of "$cat_dir/KYCGKB.tsv" | while IFS=$'\t' read -r g repo _rest; do
     s=$(slug_of KYCGKB "$g")
-    printf '    { "KYCGKB", "%s", "%s/%s/raw", "%s", "", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
+    printf '    { "KYCGKB", "%s", "%s/%s", "%s", "", "%s/KYCG", "%s", YAME_FILES_%s, YAME_NFILES(YAME_FILES_%s), %s },\n' \
       "$g" "$kb_base" "$repo" "$kb_tag" "$g" "$(anchor_of KYCGKB "$kb_tag" "$g")" "$s" "$s" \
       "$(prior_ref "$s" KYCGKB "$kb_tag" "$g")"
   done

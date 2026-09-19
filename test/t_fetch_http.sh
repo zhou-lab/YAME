@@ -23,7 +23,7 @@ cd "$d"
 
 scope=EPIC/KYCG; tag=v8.1
 sums="$root/tools/registry/sums/InfiniumAnnotation/$tag/$scope/SHA256SUMS"
-tree="mirror/zhou-lab/InfiniumAnnotation/raw/$tag/$scope"
+tree="mirror/zhou-lab/InfiniumAnnotation/$tag/$scope"
 mkdir -p "$tree"
 cp "$sums" "$tree/SHA256SUMS"
 cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"

@@ -12,11 +12,11 @@
 # bytes it claims to describe. Adding a tag means caching its manifests:
 #
 #   curl -sfL -o sums/InfiniumAnnotation/<tag>/<platform>/SHA256SUMS \
-#     https://github.com/zhou-lab/InfiniumAnnotation/raw/<tag>/<platform>/SHA256SUMS
+#     https://raw.githubusercontent.com/zhou-lab/InfiniumAnnotation/<tag>/<platform>/SHA256SUMS
 #
 # source              tag     base_url
-InfiniumAnnotation    v8.1    https://github.com/zhou-lab/InfiniumAnnotation/raw
-genomes               v4      https://github.com/zhou-lab/genomes/raw
-KYCGKB                v2      https://github.com/zhou-lab
+InfiniumAnnotation    v8.1    https://raw.githubusercontent.com/zhou-lab/InfiniumAnnotation
+genomes               v4      https://raw.githubusercontent.com/zhou-lab/genomes
+KYCGKB                v2      https://raw.githubusercontent.com/zhou-lab
 methscope             v4      https://raw.githubusercontent.com/zhou-lab/methscope_data
 methscope_models      v11     https://huggingface.co/zhou-lab/methscope/resolve
