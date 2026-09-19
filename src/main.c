@@ -96,11 +96,14 @@ static int usage(void)
   /* Where the reference data is, named by the variable that moves it -- not a
    * command, so not in the list of them, and worth seeing before them. */
   {
-    const char *env = getenv("YAME_DATA_HOME");
+    /* Name the variable that actually resolved it -- a store moved with a
+     * sibling tool's variable is still the store yame is about to read. */
+    const char *var = yame_assets_root_env(NULL);
     /* The same green the command names use: it is the one other thing on this
      * screen you might go and look at. */
-    fprintf(stderr, "%sYAME_DATA_HOME: %s%s%s\n", yame_ui_green(), store,
-            (env && *env) ? "" : " (unset, default)", yame_ui_reset());
+    fprintf(stderr, "%s%s: %s%s%s\n", yame_ui_green(),
+            var ? var : "YAME_DATA_HOME", store,
+            var ? "" : " (unset, default)", yame_ui_reset());
   }
   fprintf(stderr, "\n");
 

@@ -203,20 +203,40 @@ void yame_assets_legacy_notice(const char *root) {
   }
 }
 
+/* The store variables the suite's other tools export. The store is one shared
+ * tree, so the variable that moves it for one tool moves it for all of them:
+ * a reader who exported METHSCOPE_DATA_HOME and then runs `yame hprint` means
+ * that store, and finding nothing there is a bug, not a policy. Read after
+ * $YAME_DATA_HOME, so yame's own variable still wins for yame. */
+const char *const yame_assets_suite_env[] = {
+  "METHSCOPE_DATA_HOME",
+  NULL
+};
+
+const char *yame_assets_root_env(const char *tool_env) {
+  const char *env;
+  size_t i;
+
+  if (tool_env && *tool_env && (env = getenv(tool_env)) && *env) return tool_env;
+  if ((env = getenv("YAME_DATA_HOME")) && *env) return "YAME_DATA_HOME";
+  for (i = 0; yame_assets_suite_env[i]; ++i) {
+    if (tool_env && strcmp(tool_env, yame_assets_suite_env[i]) == 0) continue;
+    if ((env = getenv(yame_assets_suite_env[i])) && *env)
+      return yame_assets_suite_env[i];
+  }
+  return NULL;
+}
+
 const char *yame_assets_root(const char *override, const char *tool_env,
                              char *buf, size_t n) {
-  const char *env;
+  const char *env, *var;
 
   if (override && *override) {
     snprintf(buf, n, "%s", override);
     return buf;
   }
-  if (tool_env && *tool_env && (env = getenv(tool_env)) && *env) {
-    snprintf(buf, n, "%s", env);
-    return buf;
-  }
-  if ((env = getenv("YAME_DATA_HOME")) && *env) {
-    snprintf(buf, n, "%s", env);
+  if ((var = yame_assets_root_env(tool_env)) != NULL) {
+    snprintf(buf, n, "%s", getenv(var));
     return buf;
   }
   if ((env = getenv("XDG_DATA_HOME")) && *env) {

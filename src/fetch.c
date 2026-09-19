@@ -103,17 +103,29 @@ static int usage(void) {
 
   yame_usage_sec("Store:");
   /* a tool with its own store variable lists it first: that is what its
-   * users export, and it is read ahead of YAME_DATA_HOME */
-  if (cfg_->tool_env) {
-    char l[160];
-    snprintf(l, sizeof l, "Resolved in order: -d, $%s, $YAME_DATA_HOME,", cfg_->tool_env);
+   * users export, and it is read ahead of YAME_DATA_HOME. The suite's other
+   * variables come last, so a store moved with any one tool is found by all. */
+  {
+    char l[256];
+    size_t k = 0, i;
+    k += (size_t)snprintf(l + k, sizeof l - k, "Resolved in order: -d,");
+    if (cfg_->tool_env)
+      k += (size_t)snprintf(l + k, sizeof l - k, " $%s,", cfg_->tool_env);
+    k += (size_t)snprintf(l + k, sizeof l - k, " $YAME_DATA_HOME,");
+    for (i = 0; yame_assets_suite_env[i] && k < sizeof l; ++i) {
+      if (cfg_->tool_env && strcmp(cfg_->tool_env, yame_assets_suite_env[i]) == 0)
+        continue;
+      k += (size_t)snprintf(l + k, sizeof l - k, " $%s,", yame_assets_suite_env[i]);
+    }
     yame_usage_text(l);
-  } else
-    yame_usage_text("Resolved in order: -d, $YAME_DATA_HOME,");
+  }
   yame_usage_text("${XDG_DATA_HOME:-~/.local/share}/yame");
-  fprintf(stderr, "  %s%s: %s%s\n",
-          yame_ui_green(), cfg_->tool_env ? cfg_->tool_env : "YAME_DATA_HOME",
-          root, yame_ui_reset());
+  {
+    const char *var = yame_assets_root_env(cfg_->tool_env);
+    fprintf(stderr, "  %s%s: %s%s\n", yame_ui_green(),
+            var ? var : (cfg_->tool_env ? cfg_->tool_env : "YAME_DATA_HOME"),
+            root, yame_ui_reset());
+  }
   yame_usage_sec("Mirror:");
   yame_usage_text("$YAME_ASSETS_MIRROR=<scheme://host[:port]> downloads from a site that");
   yame_usage_text("mirrors the public repositories, keeping each URL's path: the file at");

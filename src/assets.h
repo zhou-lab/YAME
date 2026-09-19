@@ -76,6 +76,7 @@ int  yame_assets_digest_equal(const char *a, const char *b);
  *   override            (a --store/-d flag; NULL or "" to skip)
  *   $<tool_env>         (KYCG_DATA_DIR, SESAME_INDEX_DIR, ...; NULL to skip)
  *   $YAME_DATA_HOME
+ *   $<each yame_assets_suite_env>   (METHSCOPE_DATA_HOME, ...)
  *   ${XDG_DATA_HOME:-$HOME/.local/share}/yame
  *
  * The default is the data tier rather than a cache tier on purpose: these are
@@ -87,6 +88,23 @@ int  yame_assets_digest_equal(const char *a, const char *b);
  */
 const char *yame_assets_root(const char *override, const char *tool_env,
                              char *buf, size_t n);
+
+/**
+ * The store variables the suite's other tools export, NULL-terminated. The
+ * store is one shared tree, so whichever tool a reader used to move it moved
+ * it for all of them -- `yame hprint` under a store set with
+ * $METHSCOPE_DATA_HOME must find the coordinate track that is sitting in it.
+ * Read after $YAME_DATA_HOME, so yame's own variable still wins for yame.
+ */
+extern const char *const yame_assets_suite_env[];
+
+/**
+ * The name of the environment variable that resolved the store, for printing
+ * beside the path, or NULL when nothing in the environment did (the XDG or
+ * ~/.local/share default). Same order as yame_assets_root(), minus `override`:
+ * a caller that passed -d already knows it won.
+ */
+const char *yame_assets_root_env(const char *tool_env);
 
 /**
  * If the resolved root does not exist yet but a pre-consolidation per-tool
