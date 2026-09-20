@@ -1735,6 +1735,59 @@ static void refresh_roots(browse_t *b) {
   }
 }
 
+/* Before the browser opens over a store holding stale files: say which,
+ * directory by directory, and offer to replace them right here. Asked
+ * once, on the terminal the person is looking at -- a report printed on
+ * stderr a moment before the first frame was cleared by it, and one after
+ * the browser closed described a store they had already left. `n` opens
+ * the browser with the rows marked stale; `y` fetches exactly those files
+ * with -f, then opens it current. Returns 0 to go on to the browser, -1 if
+ * the replacement failed (the browser still opens; the rows say so). */
+static int stale_dialog(const char *dopt, const yame_fetch_opt_t *opt) {
+  const yame_asset_file_t *want[512];
+  size_t n = yame_store_stale(cfg_, dopt, want, 512);
+  if (!n) return 0;
+  if (n > 512) n = 512;
+
+  size_t n_dirs = 0;
+  uint64_t bytes = 0;
+  for (size_t i = 0; i < n; ++i) {
+    bytes += want[i]->size;
+    if (i == 0 || yame_file_dirlen(want[i]) != yame_file_dirlen(want[i-1]) ||
+        strncmp(want[i]->store_path, want[i-1]->store_path, yame_file_dirlen(want[i])) != 0)
+      ++n_dirs;
+  }
+  fprintf(stderr, "%s%s fetch: %zu director%s hold%s files from an earlier release "
+          "than this build pins%s\n", yame_ui_bold(), TOOL, n_dirs,
+          n_dirs == 1 ? "y" : "ies", n_dirs == 1 ? "s" : "", yame_ui_reset());
+  for (size_t i = 0; i < n; ++i) {
+    size_t dl = yame_file_dirlen(want[i]);
+    if (i == 0 || dl != yame_file_dirlen(want[i-1]) ||
+        strncmp(want[i]->store_path, want[i-1]->store_path, dl) != 0) {
+      char dir[4096], src[160];
+      memcpy(dir, want[i]->store_path, dl); dir[dl] = '\0';
+      yame_key_source(want[i]->key, src, sizeof src);
+      fprintf(stderr, "  %-12s %s(%s)%s\n", dir, yame_ui_dim(),
+              strncmp(src, "hf:", 3) == 0 ? src + 3 : src, yame_ui_reset());
+    }
+    fprintf(stderr, "      %s\n", yame_file_name(want[i]));
+  }
+  char sz[32], q[96];
+  human_size(bytes, sz, sizeof sz);
+  snprintf(q, sizeof q, "Replace them now? (%s)", sz);
+  if (!yame_ui_confirm(q, 0)) { fputc('\n', stderr); return 0; }
+
+  yame_fetch_opt_t o = *opt;
+  o.force = 1;
+  char root[4096], *err = NULL;
+  yame_assets_root(dopt, cfg_->tool_env, root, sizeof root);
+  int rc = yame_assets_fetch_files(cfg_, root, want, n, &o, &err);
+  if (rc != 0) fprintf(stderr, "%s fetch: %s\n", TOOL, err ? err : "replacement failed");
+  free(err);
+  fputc('\n', stderr);
+  return rc == 0 ? 0 : -1;
+}
+
 /* The catalogue as a browsable tree: species, then platform or build, then
  * what each publishes. Returns 0 when it ran, -1 when the terminal cannot
  * host it and the caller should print the list instead. */
@@ -2382,12 +2435,12 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
    * the store that was actually asked for. Returning from the case label read
    * fine until -d could change the answer. */
   /* A store that is behind this binary says so, once, on stderr -- before
-   * the listing, or AFTER the browser (below) -- and only when nothing was
-   * named, since a named fetch is already the fix. One line per directory,
-   * naming the files, what they came from and the command that repairs it;
-   * a script sees them, a person reads them, and neither has to know to
-   * read a dir_state column. The store state comes from the same helper a
-   * downstream tool calls at load time, so yame and methscope describe the
+   * the listing; the browser asks instead (stale_dialog) -- and only when
+   * nothing was named, since a named fetch is already the fix. One block
+   * per directory, naming the files, what they came from and the command
+   * that repairs it; a script sees them and does not have to know to read
+   * a dir_state column. The store state comes from the same helper a
+   * downstream tool calls at load time, so yame and sesame describe the
    * situation in the same words. */
   int browsing = optind >= argc && !list && !url && !sha && !dest &&
                  isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
@@ -2447,13 +2500,8 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
     size_t n_l = sel_all(lsel, sizeof(lsel)/sizeof(lsel[0]));
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
       return dump_registry(dopt, lsel, n_l, filter);
-    if (browse_catalog(dopt, force) == 0) {
-      /* The report goes AFTER the browser: printed before, it sat under the
-       * first frame and was never read. Here it lands on the screen the
-       * person is looking at, and describes the store they just left. */
-      if (!quiet) yame_store_report(cfg_, dopt, stderr);
-      return 0;
-    }
+    if (!quiet) stale_dialog(dopt, &opt);
+    if (browse_catalog(dopt, force) == 0) return 0;
     return dump_registry(dopt, lsel, n_l, filter); /* no terminal for the widget */
   }
 

@@ -373,8 +373,8 @@ static void t_store_state(const char *store) {
   char buf[2048]; FILE *mf = fmemopen(buf, sizeof buf, "w");
   int said = yame_store_report(&cfg, NULL, mf); fclose(mf);
   CHECK(said == 1, "report printed %d lines for one stale directory, want 1", said);
-  CHECK(strstr(buf, "[probe fetch] hg38/probe: 1 of 1 files come from an earlier release of zhou-lab/probe than this build pins (a.cm); replace them with: probe fetch -y -f hg38/probe") != NULL,
-        "report line is: %s", buf);
+  CHECK(strstr(buf, "[probe fetch] hg38/probe: 1 of 1 files come from an earlier release of zhou-lab/probe than this build pins:\n      a.cm\n    replace them with: probe fetch -y -f hg38/probe\n") != NULL,
+        "report block is: %s", buf);
   f = fopen(sums, "w"); fputs("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.cm\n", f); fclose(f);
   mf = fmemopen(buf, sizeof buf, "w");
   said = yame_store_report(&cfg, NULL, mf); fclose(mf);

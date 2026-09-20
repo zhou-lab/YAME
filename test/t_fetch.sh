@@ -289,11 +289,12 @@ PY
 fi
 
 ## ---- 12. a store with stale files says so, once, on stderr -----------------
-## Bare `fetch` and `fetch -l` print one line per directory holding files whose
-## manifest line records a digest other than the one this build pins: which
-## files, what they came from, and the command that repairs it (with -y, so
-## it also works in a script). A named fetch prints nothing extra, since it IS
-## the repair, and -q is quiet.
+## Bare `fetch` and `fetch -l` print one block per directory holding files
+## whose manifest line records a digest other than the one this build pins:
+## which files, one per line, what they came from, and the command that
+## repairs it (with -y, so it also works in a script). On a terminal the
+## browser asks instead (t_ui.sh). A named fetch prints nothing extra, since
+## it IS the repair, and -q is quiet.
 rm -rf "$YAME_DATA_HOME"/*
 "$YAME" fetch -l </dev/null 2> quiet.err >/dev/null
 grep -q 'from an earlier release' quiet.err && { echo "an empty store was reported as stale"; cat quiet.err; exit 1; }
@@ -303,9 +304,12 @@ mkdir -p "$YAME_DATA_HOME/$scope"
 cp "$here/fixtures/Blacklist.20220304.cm" "$YAME_DATA_HOME/$scope/"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"
 "$YAME" fetch -l </dev/null 2> behind.err >/dev/null
-grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files come from an earlier release of zhou-lab/InfiniumAnnotation than this build pins (Blacklist.20220304.cm); replace them with: yame fetch -y -f $scope" behind.err ||
+## one block per directory: the sentence, one file per line, the command
+grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files come from an earlier release of zhou-lab/InfiniumAnnotation than this build pins:$" behind.err ||
   { echo "-l did not report the stale $scope"; cat behind.err; exit 1; }
-[ "$(grep -c "$scope" behind.err)" -eq 1 ] || { echo "$scope was reported more than once"; cat behind.err; exit 1; }
+grep -q '^      Blacklist.20220304.cm$' behind.err || { echo "the stale file is not listed on its own line"; cat behind.err; exit 1; }
+grep -q "^    replace them with: yame fetch -y -f $scope$" behind.err || { echo "the repair command is missing"; cat behind.err; exit 1; }
+[ "$(grep -c "^\[yame fetch\] $scope" behind.err)" -eq 1 ] || { echo "$scope was reported more than once"; cat behind.err; exit 1; }
 "$YAME" fetch </dev/null 2> bare.err >/dev/null
 grep -q 'from an earlier release' bare.err || { echo "bare fetch did not report the stale directory"; exit 1; }
 ## the listing says the same per file

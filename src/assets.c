@@ -973,28 +973,38 @@ static void dir_upstream(const yame_fetch_cfg_t *cfg, const char *sub,
 /* What to say about a directory holding stale files: which files, from
  * what, and the one command that replaces them. "Differ from this build"
  * was the old text, and nobody could tell from it what had happened. */
+/* `lines`: one file per line under the sentence, the command on its own
+ * line -- the report's shape. Otherwise one sentence, the files in
+ * parentheses and capped at three -- the advice a downstream tool prints
+ * inside its own output. */
 static void stale_dir_advice(const yame_fetch_cfg_t *cfg, const char *root,
                              const char *sub, size_t stale, size_t cnt,
-                             char *out, size_t n) {
+                             int lines, char *out, size_t n) {
   const char *tool = cfg->tool ? cfg->tool : "yame";
-  char up[160], names[512] = "";
+  char up[160], names[2048] = "";
   dir_upstream(cfg, sub, up, sizeof up);
   size_t dl = strlen(sub), listed = 0;
   for (size_t j = 0; j < cfg->n_files; ++j) {
     const yame_asset_file_t *g = &cfg->files[j];
     if (yame_file_dirlen(g) != dl || strncmp(g->store_path, sub, dl) != 0) continue;
     if (yame_file_state(root, g) != YAME_STORE_STALE) continue;
-    if (listed == 3) { strncat(names, ", ...", sizeof names - strlen(names) - 1); break; }
-    if (listed) strncat(names, ", ", sizeof names - strlen(names) - 1);
+    if (!lines && listed == 3) { strncat(names, ", ...", sizeof names - strlen(names) - 1); break; }
+    if (lines) strncat(names, "\n      ", sizeof names - strlen(names) - 1);
+    else if (listed) strncat(names, ", ", sizeof names - strlen(names) - 1);
     strncat(names, yame_file_name(g), sizeof names - strlen(names) - 1);
     ++listed;
   }
   /* "this build", not "this <tool>": a downstream tool pins the digests
    * but yame fetches, so naming one program in both halves was wrong for
    * every tool but yame itself. `tool` names the command only. */
-  snprintf(out, n, "%s: %zu of %zu files come from an earlier release of %s "
-           "than this build pins (%s); replace them with: %s fetch -y -f %s",
-           sub, stale, cnt, up, names, tool, sub);
+  if (lines)
+    snprintf(out, n, "%s: %zu of %zu files come from an earlier release of %s "
+             "than this build pins:%s\n    replace them with: %s fetch -y -f %s",
+             sub, stale, cnt, up, names, tool, sub);
+  else
+    snprintf(out, n, "%s: %zu of %zu files come from an earlier release of %s "
+             "than this build pins (%s); replace them with: %s fetch -y -f %s",
+             sub, stale, cnt, up, names, tool, sub);
 }
 
 yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *path,
@@ -1033,7 +1043,7 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
   dir_states(cfg, root, rel, &cnt, &present, &stale);
   if (!cnt) return YAME_STORE_NOT_CATALOGUED;
   if (stale) {
-    if (advice) stale_dir_advice(cfg, root, rel, stale, cnt, advice, n);
+    if (advice) stale_dir_advice(cfg, root, rel, stale, cnt, 0, advice, n);
     return YAME_STORE_STALE;
   }
   if (!present) {
@@ -1061,12 +1071,26 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FI
     size_t cnt, present, stale;
     dir_states(cfg, root, sub, &cnt, &present, &stale);
     if (!stale) continue;
-    char adv[1024];
-    stale_dir_advice(cfg, root, sub, stale, cnt, adv, sizeof adv);
+    char adv[4096];
+    stale_dir_advice(cfg, root, sub, stale, cnt, 1, adv, sizeof adv);
     fprintf(out, "[%s fetch] %s\n", tool, adv);
     ++said;
   }
   return said;
+}
+
+size_t yame_store_stale(const yame_fetch_cfg_t *cfg, const char *root_override,
+                        const yame_asset_file_t **out, size_t cap) {
+  char root[YAME_PATH_MAX];
+  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
+  size_t n = 0;
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *f = &cfg->files[j];
+    if (yame_file_state(root, f) != YAME_STORE_STALE) continue;
+    if (n < cap) out[n] = f;
+    ++n;
+  }
+  return n;
 }
 
 /* ------------------------------------------------ the tool's own registry */

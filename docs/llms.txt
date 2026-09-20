@@ -88,10 +88,13 @@ is no upstream manifest to trust first -- and `.part` files are renamed only
 after verification. The `SHA256SUMS` a directory keeps records what was
 verified there, one line per file; a file whose line records another digest
 is STALE (fetched by a build that pinned something else). A bare `fetch -l`
-reports it per directory -- which files, what they came from, and the `-f`
-command that repairs it -- and the browser prints the same after it closes,
-marks each stale file `stale` beside its size, and offers it again; the info
-pane says the same for that file. Only what differs is re-downloaded. `-f` re-downloads what is present and
+reports it per directory -- which files, one per line, what they came from,
+and the `-f` command that repairs it. On a terminal, bare `fetch` asks
+before the browser opens: the same listing, then "Replace them now? (size)
+[y/N]" -- `y` fetches exactly those files with -f, `n` opens the browser
+with each stale file marked `stale` beside its size and offered again; the
+info pane says the same for that file. `-q` skips the question. Only what
+differs is re-downloaded. `-f` re-downloads what is present and
 replaces stale files. `-c` writes to cwd without a manifest. `.idx`/`.tbi`
 companions are fetched with their data. Verify by hand with
 `shasum -a 256 -c SHA256SUMS` in any store directory: for a directory that is

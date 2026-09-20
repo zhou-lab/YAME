@@ -286,6 +286,12 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
 int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
                       FILE *out);
 
+/* The stale files themselves, in registry order, so a caller can offer to
+ * replace exactly those: `yame fetch` asks before its browser opens. Returns
+ * how many there are, filling up to `cap`. */
+size_t yame_store_stale(const yame_fetch_cfg_t *cfg, const char *root_override,
+                        const yame_asset_file_t **out, size_t cap);
+
 /* --------------------------------------------------------------- fetching */
 
 typedef struct {

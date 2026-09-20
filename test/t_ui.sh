@@ -261,26 +261,32 @@ if p.returncode < 0:
 if p.returncode == 0 and not p.stderr and not p.stdout:
     print("  FAIL no-tty: exited 0 with nothing said"); fails += 1
 
-# 19. stale files: counted on the unit row and the knowledgebase row, marked
-#     on the file row, explained in the info pane, and the report printed
-#     AFTER the browser closes, where it can be read. Staged as present files
-#     whose manifest line records another digest.
+# 19. stale files: the browser ASKS before it opens -- which files, under
+#     their directory, and whether to replace them now -- then, declined,
+#     counts them on the unit and knowledgebase rows, marks the file row
+#     and explains in the info pane. Staged as present files whose manifest
+#     line records another digest. (`y` would fetch; not driven here.)
 for sub, name in (("hg38", "cpg_nocontig.cr"), ("EPIC/KYCG", "Blacklist.20220304.cm")):
     sd = os.path.join(tmpd, sub); os.makedirs(sd, exist_ok=True)
     open(os.path.join(sd, name), "wb").close()
     open(os.path.join(sd, "SHA256SUMS"), "w").write("f" * 64 + "  " + name + "\n")
-code, out = drive(["fetch"], [b"/", b"cpg_nocontig", ENTER, ENTER, b"q"], "stale files in the browser")
+code, out = drive(["fetch"], [b"n\r", b"/", b"cpg_nocontig", ENTER, ENTER, b"q"], "stale files: dialog, then browser")
+frame_has(out, "2 directories hold files from an earlier release", "dialog names the count")
+frame_has(out, "      cpg_nocontig.cr", "dialog lists the file under its directory")
+frame_has(out, "Replace them now?", "dialog asks")
 frame_has(out, "1 stale: -f", "unit row counts its stale file")
 frame_has(out, "stale ", "stale file row is marked beside its size")
-frame_has(out, "earlier release of zhou-lab/genomes", "info pane explains the stale file")
-rep = out.find(b"[yame fetch] hg38: 1 of ")
-if rep < 0:
-    print("  FAIL stale report: not printed after the browser closed"); fails += 1
-elif rep < out.rfind(b"\x1b[2J"):
-    print("  FAIL stale report: printed before the last frame, not after"); fails += 1
-code, out = drive(["fetch"], [b"/", b"EPIC", ENTER, b"l", b"q"], "stale count on a knowledgebase row")
+frame_has(out, "earlier release", "info pane explains the stale file")   # wrapped, so two
+frame_has(out, "zhou-lab/genomes", "info pane names the upstream")           # pieces, not one
+if out.find(b"Replace them now?") > out.find(b"\x1b[2J"):
+    print("  FAIL dialog: asked after the browser's first frame, not before"); fails += 1
+code, out = drive(["fetch"], [b"n\r", b"/", b"EPIC", ENTER, b"l", b"q"], "stale count on a knowledgebase row")
 frame_has(out, "KYCG        sets", "the EPIC unit opened to its knowledgebase row")
 frame_has(out, "1 stale: -f", "knowledgebase row counts its stale file")
+# -q: no dialog, straight to the browser
+code, out = drive(["fetch", "-q"], [b"q"], "-q skips the dialog")
+if b"Replace them now?" in out:
+    print("  FAIL -q: the dialog was still asked"); fails += 1
 
 if fails:
     print(f"{fails} browser assertion(s) failed"); sys.exit(1)
