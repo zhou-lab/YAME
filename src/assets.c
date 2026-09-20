@@ -989,9 +989,12 @@ static void stale_dir_advice(const yame_fetch_cfg_t *cfg, const char *root,
     strncat(names, yame_file_name(g), sizeof names - strlen(names) - 1);
     ++listed;
   }
+  /* "this build", not "this <tool>": a downstream tool pins the digests
+   * but yame fetches, so naming one program in both halves was wrong for
+   * every tool but yame itself. `tool` names the command only. */
   snprintf(out, n, "%s: %zu of %zu files come from an earlier release of %s "
-           "than this %s pins (%s); replace them with: %s fetch -y -f %s",
-           sub, stale, cnt, up, tool, names, tool, sub);
+           "than this build pins (%s); replace them with: %s fetch -y -f %s",
+           sub, stale, cnt, up, names, tool, sub);
 }
 
 yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *path,
@@ -1019,8 +1022,8 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
         size_t dl = yame_file_dirlen(f);
         memcpy(sub, f->store_path, dl); sub[dl] = '\0';
         dir_upstream(cfg, sub, up, sizeof up);
-        snprintf(advice, n, "%s comes from an earlier release of %s than this %s "
-                 "pins; replace it with: %s fetch -y -f %s", rel, up, tool, tool, rel);
+        snprintf(advice, n, "%s comes from an earlier release of %s than this "
+                 "build pins; replace it with: %s fetch -y -f %s", rel, up, tool, rel);
       }
     }
     return st;

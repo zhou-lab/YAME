@@ -303,7 +303,7 @@ mkdir -p "$YAME_DATA_HOME/$scope"
 cp "$here/fixtures/Blacklist.20220304.cm" "$YAME_DATA_HOME/$scope/"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"
 "$YAME" fetch -l </dev/null 2> behind.err >/dev/null
-grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files come from an earlier release of zhou-lab/InfiniumAnnotation than this yame pins (Blacklist.20220304.cm); replace them with: yame fetch -y -f $scope" behind.err ||
+grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files come from an earlier release of zhou-lab/InfiniumAnnotation than this build pins (Blacklist.20220304.cm); replace them with: yame fetch -y -f $scope" behind.err ||
   { echo "-l did not report the stale $scope"; cat behind.err; exit 1; }
 [ "$(grep -c "$scope" behind.err)" -eq 1 ] || { echo "$scope was reported more than once"; cat behind.err; exit 1; }
 "$YAME" fetch </dev/null 2> bare.err >/dev/null
