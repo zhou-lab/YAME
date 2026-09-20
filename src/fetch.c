@@ -232,10 +232,10 @@ static const unit_t *find_unit(const char *dir) {
 }
 
 /* The pre-1.50 address, <source>/<target>: InfiniumAnnotation/EPICv2,
- * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted in 1.50 only,
- * so documented commands keep working for one release while each tool
- * rewrites its advice; 1.51 removes this function. The address is the
- * store path now.
+ * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted through 1.51,
+ * so documented commands keep working while each tool rewrites its advice
+ * at its bump; 1.52 removes this function. The address is the store path
+ * now.
  * Every old target was the store directory, except KYCGKB's, which named the
  * genome while the sets live under <genome>/KYCG. */
 static const unit_t *find_asset(const char *source, const char *target) {
@@ -696,16 +696,15 @@ static void unit_counts(const char *store_root, const char *unit,
  * now, and the files whose digest moved already read as missing, so the row's
  * ordinary gauge tells the truth and no marker is wanted.
  */
-static int unit_pin_conflict(const char *store_root, const char *unit) {
-  for (size_t i = 0; i < YAME_ASSETS_N; ++i) {
-    const unit_t *a = &YAME_ASSETS[i];
-    char u[256], sb[256];
-    unit_of(a, u, sizeof(u), sb, sizeof(sb));
-    if (strcmp(u, unit) != 0) continue;
-    for (size_t j = 0; j < a->n_files; ++j)
-      if (yame_file_state(store_root, a->files[j]) == YAME_STORE_STALE) return 1;
-  }
-  return 0;
+/* How many of a unit's own files are stale: on disk, recorded at a digest
+ * this build does not pin. */
+static size_t unit_stale_count(const char *store_root, const char *unit) {
+  const unit_t *a = find_unit(unit);
+  size_t n = 0;
+  if (!a) return 0;
+  for (size_t j = 0; j < a->n_files; ++j)
+    if (yame_file_state(store_root, a->files[j]) == YAME_STORE_STALE) ++n;
+  return n;
 }
 
 static void group_counts(const char *store_root, const char *group,
@@ -1036,12 +1035,18 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
            e->paired ? e->paired + 1 : "");
   /* Both fields fixed-width: the tail is right-aligned as a whole, so a size
    * that varies in width would walk the tag column left and right. */
-  snprintf(line, sizeof(line), "%s\t" TAIL_FMT, name, e->a->tag, sz);
+  /* A stale file -- on disk, but from a release this build does not pin --
+   * says so where the eye already is, and is offered again: green would
+   * mean "nothing to do here", which is the one thing it is not. */
+  int stale = yame_file_state(b->root, e->f) == YAME_STORE_STALE;
+  char tail[32];
+  snprintf(tail, sizeof(tail), "%s%s", stale ? "stale " : "", sz);
+  snprintf(line, sizeof(line), "%s\t" TAIL_FMT, name, e->a->tag, tail);
   snprintf(key, sizeof(key), "%zu|%s", idx, yame_file_name(e->f));
 
   out->rows[out->n]   = wzstrdup(line);
   out->keys[out->n]   = wzstrdup(key);
-  out->styles[out->n] = (unsigned char)(here ? YAME_ROW_HAVE
+  out->styles[out->n] = (unsigned char)(here && !stale ? YAME_ROW_HAVE
                                              : e->required ? YAME_ROW_REQUIRED
                                                            : YAME_ROW_MISSING);
   ++out->n;
@@ -1082,8 +1087,11 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
       unit_counts(b->root, p.unit, subs[i], 0, &total, &have);
       if (!total) continue;
 
-      char note[64], line[256];
+      char note[64], line[256], subdir[512];
       counts_note(total, have, note, sizeof(note));
+      snprintf(subdir, sizeof(subdir), "%s/%s", p.unit, subs[i]);
+      size_t stale = unit_stale_count(b->root, subdir);
+      if (stale) snprintf(note, sizeof(note), "%zu stale: -f", stale);
       snprintf(line, sizeof(line), SUB_ROW_FMT "\t" TAIL_FMT, subs[i], "sets",
                path_tag(p.unit, subs[i]), note);
 
@@ -1303,6 +1311,11 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
       lay_push(&L, "");
     }
     lay_provenance(&L, a, f, paired);
+    if (f) {
+      char adv[1024];
+      if (yame_store_state(cfg_, f->store_path, adv, sizeof adv) == YAME_STORE_STALE)
+        lay_wrap(&L, "in store", adv);
+    }
   }
 
   out->rows = wzmalloc((size_t)(L.n ? L.n : 1) * sizeof(char *));
@@ -1685,8 +1698,8 @@ static void root_row(browse_t *b, size_t i, const char *group,
     /* A conflicted directory cannot be written into at all, so the gauge
      * would be describing a fetch that is not on offer. Say what is actually
      * wrong, in the column the eye is already in. */
-    if (unit_pin_conflict(b->root, unit))
-      snprintf(note, sizeof(note), "%s", "stale tag: -f");
+    size_t stale = unit_stale_count(b->root, unit);
+    if (stale) snprintf(note, sizeof(note), "%zu stale: -f", stale);
     snprintf(line, sizeof(line), "%s\t%s\t" TAIL_FMT, unit,
              unit_is_array(unit) ? "array" : "genome", unit_tag(unit), note);
   } else {
@@ -2382,14 +2395,17 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   /* After the loop, not inside it, so `-l -d <dir>` reports presence against
    * the store that was actually asked for. Returning from the case label read
    * fine until -d could change the answer. */
-  /* A store that is behind this binary says so, once, on stderr -- before the
-   * listing and before the browser, and only when nothing was named, since a
-   * named fetch is already the fix. One line per directory, each naming the
-   * command that repairs it; a script sees them, a person sees them above
-   * the browser, and neither has to know to read a dir_state column. The
-   * store state comes from the same helper a downstream tool calls at load
-   * time, so yame and methscope describe the situation in the same words. */
-  if (optind >= argc && !quiet) {
+  /* A store that is behind this binary says so, once, on stderr -- before
+   * the listing, or AFTER the browser (below) -- and only when nothing was
+   * named, since a named fetch is already the fix. One line per directory,
+   * naming the files, what they came from and the command that repairs it;
+   * a script sees them, a person reads them, and neither has to know to
+   * read a dir_state column. The store state comes from the same helper a
+   * downstream tool calls at load time, so yame and methscope describe the
+   * situation in the same words. */
+  int browsing = optind >= argc && !list && !url && !sha && !dest &&
+                 isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+  if (optind >= argc && !quiet && !browsing) {
     if (yame_store_report(cfg_, dopt, stderr) > 0 && !list)
       fputc('\n', stderr);
   }
@@ -2445,7 +2461,13 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
     size_t n_l = sel_all(lsel, sizeof(lsel)/sizeof(lsel[0]));
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
       return dump_registry(dopt, lsel, n_l, filter);
-    if (browse_catalog(dopt, force) == 0) return 0;
+    if (browse_catalog(dopt, force) == 0) {
+      /* The report goes AFTER the browser: printed before, it sat under the
+       * first frame and was never read. Here it lands on the screen the
+       * person is looking at, and describes the store they just left. */
+      if (!quiet) yame_store_report(cfg_, dopt, stderr);
+      return 0;
+    }
     return dump_registry(dopt, lsel, n_l, filter); /* no terminal for the widget */
   }
 

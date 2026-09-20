@@ -47,7 +47,7 @@ mkdir -p "$METHPROBE_DATA_HOME/hg38/probe"
 : > "$METHPROBE_DATA_HOME/hg38/probe/one.cm"
 printf 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  one.cm\n' > "$METHPROBE_DATA_HOME/hg38/probe/SHA256SUMS"
 ./probe_fetch -l </dev/null 2> r.txt >/dev/null
-grep -q '^\[methprobe fetch\] hg38/probe: 1 of 1 files differ from this build; run: methprobe fetch -y -f hg38/probe' r.txt ||
+grep -q '^\[methprobe fetch\] hg38/probe: 1 of 1 files come from an earlier release of zhou-lab/probe than this methprobe pins (one.cm); replace them with: methprobe fetch -y -f hg38/probe' r.txt ||
   { echo "the stale-store line is not in the tool's voice"; cat r.txt; exit 1; }
 ## and the tool's store variable wins over YAME_DATA_HOME: nothing was read from ystore
 [ -z "$(find "$YAME_DATA_HOME" -type f)" ] || { echo "the tool read yame's store"; exit 1; }

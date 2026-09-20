@@ -290,31 +290,32 @@ fi
 
 ## ---- 12. a store with stale files says so, once, on stderr -----------------
 ## Bare `fetch` and `fetch -l` print one line per directory holding files whose
-## manifest line records a digest other than the one this build pins, naming
-## the command that repairs it (with -y, so it also works in a script). A
-## named fetch prints nothing extra, since it IS the repair, and -q is quiet.
+## manifest line records a digest other than the one this build pins: which
+## files, what they came from, and the command that repairs it (with -y, so
+## it also works in a script). A named fetch prints nothing extra, since it IS
+## the repair, and -q is quiet.
 rm -rf "$YAME_DATA_HOME"/*
 "$YAME" fetch -l </dev/null 2> quiet.err >/dev/null
-grep -q 'differ from this build' quiet.err && { echo "an empty store was reported as stale"; cat quiet.err; exit 1; }
+grep -q 'from an earlier release' quiet.err && { echo "an empty store was reported as stale"; cat quiet.err; exit 1; }
 
 ## Stage it: the file on disk, and a manifest recording it at another digest.
 mkdir -p "$YAME_DATA_HOME/$scope"
 cp "$here/fixtures/Blacklist.20220304.cm" "$YAME_DATA_HOME/$scope/"
 printf '%s  Blacklist.20220304.cm\n' "$(printf 'x%.0s' $(seq 1 64))" > "$YAME_DATA_HOME/$scope/SHA256SUMS"
 "$YAME" fetch -l </dev/null 2> behind.err >/dev/null
-grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files differ from this build; run: yame fetch -y -f $scope" behind.err ||
+grep -q "^\[yame fetch\] $scope: 1 of [0-9]* files come from an earlier release of zhou-lab/InfiniumAnnotation than this yame pins (Blacklist.20220304.cm); replace them with: yame fetch -y -f $scope" behind.err ||
   { echo "-l did not report the stale $scope"; cat behind.err; exit 1; }
 [ "$(grep -c "$scope" behind.err)" -eq 1 ] || { echo "$scope was reported more than once"; cat behind.err; exit 1; }
 "$YAME" fetch </dev/null 2> bare.err >/dev/null
-grep -q 'differ from this build' bare.err || { echo "bare fetch did not report the stale directory"; exit 1; }
+grep -q 'from an earlier release' bare.err || { echo "bare fetch did not report the stale directory"; exit 1; }
 ## the listing says the same per file
 "$YAME" fetch -l "$asset" </dev/null 2>/dev/null | tail -n +2 | cut -f8 | grep -qx stale ||
   { echo "-l does not mark the stale file as stale"; "$YAME" fetch -l "$asset" </dev/null 2>/dev/null; exit 1; }
 ## naming any target suppresses the report: the fetch is the repair
 "$YAME" fetch -n "$asset" </dev/null 2> named.err >/dev/null
-grep -q 'differ from this build' named.err && { echo "a named fetch printed the report"; cat named.err; exit 1; }
+grep -q 'from an earlier release' named.err && { echo "a named fetch printed the report"; cat named.err; exit 1; }
 "$YAME" fetch -q -l </dev/null 2> q.err >/dev/null
-grep -q 'differ from this build' q.err && { echo "-q did not silence the report"; exit 1; }
+grep -q 'from an earlier release' q.err && { echo "-q did not silence the report"; exit 1; }
 
 ## ---- 13. a stale file is refused without -f, replaced with it -----------------
 ## The staged store from 12 is still there: the file present, recorded at a

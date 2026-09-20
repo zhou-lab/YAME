@@ -955,6 +955,45 @@ static void dir_states(const yame_fetch_cfg_t *cfg, const char *root,
   }
 }
 
+/* The upstream a directory's files come from, for prose: the source out of
+ * the key, without the hf: host prefix. */
+static void dir_upstream(const yame_fetch_cfg_t *cfg, const char *sub,
+                         char *out, size_t n) {
+  size_t dl = strlen(sub);
+  out[0] = '\0';
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *g = &cfg->files[j];
+    if (yame_file_dirlen(g) != dl || strncmp(g->store_path, sub, dl) != 0) continue;
+    yame_key_source(g->key, out, n);
+    if (strncmp(out, "hf:", 3) == 0) memmove(out, out + 3, strlen(out + 3) + 1);
+    return;
+  }
+}
+
+/* What to say about a directory holding stale files: which files, from
+ * what, and the one command that replaces them. "Differ from this build"
+ * was the old text, and nobody could tell from it what had happened. */
+static void stale_dir_advice(const yame_fetch_cfg_t *cfg, const char *root,
+                             const char *sub, size_t stale, size_t cnt,
+                             char *out, size_t n) {
+  const char *tool = cfg->tool ? cfg->tool : "yame";
+  char up[160], names[512] = "";
+  dir_upstream(cfg, sub, up, sizeof up);
+  size_t dl = strlen(sub), listed = 0;
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *g = &cfg->files[j];
+    if (yame_file_dirlen(g) != dl || strncmp(g->store_path, sub, dl) != 0) continue;
+    if (yame_file_state(root, g) != YAME_STORE_STALE) continue;
+    if (listed == 3) { strncat(names, ", ...", sizeof names - strlen(names) - 1); break; }
+    if (listed) strncat(names, ", ", sizeof names - strlen(names) - 1);
+    strncat(names, yame_file_name(g), sizeof names - strlen(names) - 1);
+    ++listed;
+  }
+  snprintf(out, n, "%s: %zu of %zu files come from an earlier release of %s "
+           "than this %s pins (%s); replace them with: %s fetch -y -f %s",
+           sub, stale, cnt, up, tool, names, tool, sub);
+}
+
 yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *path,
                                     char *advice, size_t n) {
   if (advice && n) advice[0] = '\0';
@@ -975,9 +1014,14 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
     if (advice) {
       if (st == YAME_STORE_ABSENT)
         snprintf(advice, n, "%s is not in the store; run: %s fetch -y %s", rel, tool, rel);
-      else if (st == YAME_STORE_STALE)
-        snprintf(advice, n, "%s does not match the digest this %s pins; run: %s fetch -y -f %s",
-                 rel, tool, tool, rel);
+      else if (st == YAME_STORE_STALE) {
+        char sub[YAME_PATH_MAX], up[160];
+        size_t dl = yame_file_dirlen(f);
+        memcpy(sub, f->store_path, dl); sub[dl] = '\0';
+        dir_upstream(cfg, sub, up, sizeof up);
+        snprintf(advice, n, "%s comes from an earlier release of %s than this %s "
+                 "pins; replace it with: %s fetch -y -f %s", rel, up, tool, tool, rel);
+      }
     }
     return st;
   }
@@ -986,8 +1030,7 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
   dir_states(cfg, root, rel, &cnt, &present, &stale);
   if (!cnt) return YAME_STORE_NOT_CATALOGUED;
   if (stale) {
-    if (advice) snprintf(advice, n, "%s: %zu of %zu files differ from this build; run: %s fetch -y -f %s",
-                         rel, stale, cnt, tool, rel);
+    if (advice) stale_dir_advice(cfg, root, rel, stale, cnt, advice, n);
     return YAME_STORE_STALE;
   }
   if (!present) {
@@ -1015,8 +1058,9 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FI
     size_t cnt, present, stale;
     dir_states(cfg, root, sub, &cnt, &present, &stale);
     if (!stale) continue;
-    fprintf(out, "[%s fetch] %s: %zu of %zu files differ from this build; run: %s fetch -y -f %s\n",
-            tool, sub, stale, cnt, tool, sub);
+    char adv[1024];
+    stale_dir_advice(cfg, root, sub, stale, cnt, adv, sizeof adv);
+    fprintf(out, "[%s fetch] %s\n", tool, adv);
     ++said;
   }
   return said;

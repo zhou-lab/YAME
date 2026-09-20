@@ -67,7 +67,7 @@ Several names may be given, separated by spaces or commas. Options are
 accepted before or after the names, and the documented form leads with the
 options. Others: `-d <dir>` store root, `-q` no progress. The pre-1.50
 `<source>/<target>` spelling (`genomes/hg38`, `InfiniumAnnotation/EPICv2`)
-still resolves in 1.50 and is removed in 1.51.
+still resolves through 1.51 and is removed in 1.52.
 
 Off a terminal a fetch of a DIRECTORY will not proceed without `-y` — it prints
 the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or
@@ -83,9 +83,11 @@ Every file is verified against the digest this build carries for it -- there
 is no upstream manifest to trust first -- and `.part` files are renamed only
 after verification. The `SHA256SUMS` a directory keeps records what was
 verified there, one line per file; a file whose line records another digest
-is STALE (fetched by a build that pinned something else), a bare `fetch` or
-`fetch -l` reports it per directory with the `-f` command that repairs it,
-and only what differs is re-downloaded. `-f` re-downloads what is present and
+is STALE (fetched by a build that pinned something else). A bare `fetch -l`
+reports it per directory -- which files, what they came from, and the `-f`
+command that repairs it -- and the browser prints the same after it closes,
+marks each stale file `stale` beside its size, and offers it again; the info
+pane says the same for that file. Only what differs is re-downloaded. `-f` re-downloads what is present and
 replaces stale files. `-c` writes to cwd without a manifest. `.idx`/`.tbi`
 companions are fetched with their data. Verify by hand with
 `shasum -a 256 -c SHA256SUMS` in any store directory: for a directory that is

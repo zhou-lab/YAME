@@ -340,7 +340,7 @@ static void t_store_state(const char *store) {
   f = fopen(sums, "w"); fputs("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  a.cm\n", f); fclose(f);
   st = yame_store_state(&cfg, dir, adv, sizeof adv);
   CHECK(st == YAME_STORE_STALE, "a directory with a stale file is %d, want STALE", (int) st);
-  CHECK(strstr(adv, "1 of 1 files differ") && strstr(adv, "probe fetch -y -f hg38/probe"),
+  CHECK(strstr(adv, "1 of 1 files come from an earlier release of zhou-lab/probe") && strstr(adv, "(a.cm); replace them with: probe fetch -y -f hg38/probe"),
         "STALE advice is: %s", adv);
   st = yame_store_state(&cfg, afile, adv, sizeof adv);
   CHECK(st == YAME_STORE_STALE, "the stale file itself is %d, want STALE", (int) st);
@@ -373,7 +373,7 @@ static void t_store_state(const char *store) {
   char buf[2048]; FILE *mf = fmemopen(buf, sizeof buf, "w");
   int said = yame_store_report(&cfg, NULL, mf); fclose(mf);
   CHECK(said == 1, "report printed %d lines for one stale directory, want 1", said);
-  CHECK(strstr(buf, "[probe fetch] hg38/probe: 1 of 1 files differ from this build; run: probe fetch -y -f hg38/probe") != NULL,
+  CHECK(strstr(buf, "[probe fetch] hg38/probe: 1 of 1 files come from an earlier release of zhou-lab/probe than this probe pins (a.cm); replace them with: probe fetch -y -f hg38/probe") != NULL,
         "report line is: %s", buf);
   f = fopen(sums, "w"); fputs("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  a.cm\n", f); fclose(f);
   mf = fmemopen(buf, sizeof buf, "w");
