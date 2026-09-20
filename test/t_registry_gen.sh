@@ -78,7 +78,7 @@ EOF
   { echo "'EPICv2/**' should include EPICv2/KYCG/, got $(sed -n '4p' "$d/lib.out")"; exit 1; }
 [ "$(sed -n '5p' "$d/lib.out")" -gt 100 ] ||
   { echo "'*/KYCG/*' selected only $(sed -n '5p' "$d/lib.out") rows"; exit 1; }
-[ "$(sed -n '6,8p' "$d/lib.out" | paste -sd' ')" = "hf:zhou-lab/methscope v11 hg38_wg.updecx" ] ||
+[ "$(sed -n '6,8p' "$d/lib.out" | paste -sd' ' -)" = "hf:zhou-lab/methscope v11 hg38_wg.updecx" ] ||
   { echo "key_source/key_tag/key_path mis-split an hf: key"; sed -n '6,8p' "$d/lib.out"; exit 1; }
 [ "$(sed -n '9p' "$d/lib.out")" = "https://huggingface.co/zhou-lab/methscope/resolve/v11/hg38_wg.updecx" ] ||
   { echo "url_of mishandled an hf: key"; sed -n '9p' "$d/lib.out"; exit 1; }
@@ -93,7 +93,7 @@ grep -q '"hg38/KYCG/cpg_nocontig.cr"' "$root/src/registry.h" &&
 ## and the registry is exactly the table: one C row per data row
 n_tsv=$(grep -vc '^#' "$root/tools/registry/files.tsv")
 n_h=$(grep -c '^    { "' "$root/src/registry.h")
-n_ref=$(grep -c '^    { "[^"]*", "\(genome\|array\)", ' "$root/src/registry.h")
+n_ref=$(grep -cE '^    \{ "[^"]*", "(genome|array)", ' "$root/src/registry.h")
 [ "$((n_h - n_ref))" = "$n_tsv" ] ||
   { echo "registry.h has $((n_h - n_ref)) file rows; files.tsv has $n_tsv"; exit 1; }
 
