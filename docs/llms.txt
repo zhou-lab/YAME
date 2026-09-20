@@ -71,7 +71,7 @@ separated by spaces or commas. Options are
 accepted before or after the names, and the documented form leads with the
 options. Others: `-d <dir>` store root, `-q` no progress. The pre-1.50
 `<source>/<target>` spelling (`genomes/hg38`, `InfiniumAnnotation/EPICv2`)
-still resolves through 1.51 and is removed in 1.52.
+no longer resolves; the store path is the only address.
 
 Off a terminal a fetch of a DIRECTORY will not proceed without `-y` — it prints
 the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or

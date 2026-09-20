@@ -124,7 +124,6 @@ static int usage(void) {
   yame_usage_text("commas so a list fits an option that takes one argument. A");
   yame_usage_text("directory named twice is taken once, and naming it whole absorbs a");
   yame_usage_text("file picked out of it.");
-  yame_usage_text("The pre-1.50 <source>/<target> spelling still resolves, for one release.");
 
   yame_usage_sec("Browsing:");
   yame_usage_text("With no target on a terminal, opens a tree browser: species, then");
@@ -235,19 +234,6 @@ static const unit_t *find_unit(const char *dir) {
   return NULL;
 }
 
-/* The pre-1.50 address, <source>/<target>: InfiniumAnnotation/EPICv2,
- * genomes/hg38, KYCGKB/hg38, methscope/hg38/data. Accepted through 1.51,
- * so documented commands keep working while each tool rewrites its advice
- * at its bump; 1.52 removes this function. The address is the store path
- * now.
- * Every old target was the store directory, except KYCGKB's, which named the
- * genome while the sets live under <genome>/KYCG. */
-static const unit_t *find_asset(const char *source, const char *target) {
-  char dir[300];
-  if (strcmp(source, "KYCGKB") == 0) snprintf(dir, sizeof dir, "%s/KYCG", target);
-  else snprintf(dir, sizeof dir, "%s", target);
-  return find_unit(dir);
-}
 
 /* ------------------------------------------------------------ the browser
  *
@@ -2147,33 +2133,16 @@ static int resolve_spec(const char *arg,
   const unit_t *hits[64];
   const char *only = NULL;
 
-  /* Whatever the browser showed you is what you can type. The tree names a
-   * row as <unit>[/<folder>] -- hg38/data, EPIC/KYCG, hg38 -- while the
-   * registry names it <source>/<target>, and until now only the latter was
-   * accepted. That left the browser unable to tell you the command for the
-   * thing you were looking at: the source appears nowhere in the tree, so
-   * "hg38 > data" gave no hint that it is spelled methscope/hg38/data.
+  /* Whatever the browser showed you is what you can type: a row is named
+   * <unit>[/<folder>] -- hg38/data, EPIC/KYCG, hg38 -- and that is the
+   * store path, so the browser can always tell you the command for the
+   * thing you are looking at. (The registry's <source>/<target> was once a
+   * second spelling; it was accepted through 1.51 and is gone.)
    *
-   * Both spellings work. The browser path is tried first because it is the
-   * one a reader can see; the registry spelling stays valid for anything that
-   * already uses it, including the two error messages below and the second
-   * column of `fetch -l`. The two cannot be confused -- no browser path
-   * matches a source name -- and no browser path is claimed by two rows. */
-  /* A name is one store directory's own files -- "hg38" the annotation,
+   * A name is one store directory's own files -- "hg38" the annotation,
    * "hg38/data" the datasets -- or, with -R, that directory and every one
-   * beneath it. The registry's own <source>/<target> still resolves, for
-   * anything already written against it. */
+   * beneath it. */
   size_t n_sel = collect_scope(spec, hits, 64);
-
-  if (!n_sel) {
-    char *slash = strchr(spec, '/');
-    if (slash) {
-      *slash = '\0';
-      const unit_t *a = find_asset(spec, slash + 1);
-      if (a) { hits[0] = a; n_sel = 1; }
-      else *slash = '/';
-    }
-  }
 
   /* A file name, bare or with a scope in front. Someone copying a command
    * out of the documentation types the file it names; making them work out

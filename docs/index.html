@@ -375,9 +375,22 @@ EPIC          866,553   HM27           27,722</pre>
   <i>filtered</i> directory is still a directory, though, even when the filter
   leaves exactly one file, so the two <code class="inl">-g</code> lines below
   carry <code class="inl">-y</code>; with those, every fetch line on this page
-  runs in a script as it stands. Naming a target,
-  filtering it, dry runs and the rest:
-  <code class="inl">yame fetch -h</code>.</p>
+  runs in a script as it stands.</p>
+  <p><b>A name is a store path.</b> A directory name is that directory's
+  own files; a subdirectory is named to add it, or <code class="inl">-R</code>
+  takes everything beneath. One file needs no <code class="inl">-y</code>.
+  These are the forms, and the only spellings there are:</p>
+  <pre><code>yame <span class="sub">fetch</span> -l                          <span class="cm"># the catalogue as TSV, with what the store holds</span>
+yame <span class="sub">fetch</span> -n hg38/models               <span class="cm"># the plan for that directory; downloads nothing</span>
+yame <span class="sub">fetch</span> -n -R hg38                   <span class="cm"># -R: hg38 and every directory beneath it</span>
+yame <span class="sub">fetch</span> -y hg38/data                 <span class="cm"># a directory, in a script</span>
+yame <span class="sub">fetch</span> -y EPICv2 EPICv2/KYCG        <span class="cm"># two directories; names compose</span>
+yame <span class="sub">fetch</span> hg38/data/human_hg38_test.cg <span class="cm"># one file: its own confirmation</span>
+yame <span class="sub">fetch</span> -y -g CGI hg38/KYCG           <span class="cm"># a directory, filtered</span></code></pre>
+  <p>Everything else &mdash; <code class="inl">-c</code> for the current
+  directory, <code class="inl">-f</code> to replace a stale file,
+  <code class="inl">-d</code> for another store: <code class="inl">yame fetch
+  -h</code>.</p>
 </section>
 
 <section class="card">
