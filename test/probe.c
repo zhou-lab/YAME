@@ -317,6 +317,8 @@ static void t_refstore(const char *store) {
  * is used as given; a store path or a unique bare name finds the record and
  * reports its state with the advice; an unknown or ambiguous name says so. */
 static void t_store_resolve(const char *store) {
+  /* no terminal to ask on: a name reaching several files must refuse */
+  if (!freopen("/dev/null", "r", stdin)) return;
   static const yame_asset_file_t files[] = {
     { "zhou-lab/probe@v2:a.cm", "hg38/probe/a.cm", "http://x/a.cm",
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
@@ -397,26 +399,41 @@ static void t_store_resolve(const char *store) {
   st = yame_store_resolve(&cfg, "mm10/probe/two.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(st == YAME_STORE_ABSENT && rec == &files[2], "the store path of a twice-held name did not pick its record");
 
-  /* the set-name shorthand: newest of the dated pair, case-insensitive,
-   * never the index; a set name held by two directories is ambiguous */
-  st = yame_store_resolve(&cfg, "s", NULL, path, sizeof path, &rec, adv, sizeof adv);
-  CHECK(rec == &files[4], "shorthand 's' resolved to %s, want S.20230101.cm",
-        rec ? rec->store_path : "(none)");
+  /* the set-name shorthand, case-insensitive, never the index; a name that
+   * reaches several files is never guessed at -- off a terminal (stdin is
+   * /dev/null here) it is refused naming every candidate, dated or not */
   st = yame_store_resolve(&cfg, "A", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(rec == &files[0], "shorthand 'A' did not find a.cm");
+  st = yame_store_resolve(&cfg, "s", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && rec == NULL,
+        "a dated pair was guessed at: %d %s", (int) st, path);
+  CHECK(strstr(adv, "S.20220101.cm") && strstr(adv, "S.20230101.cm") && !strstr(adv, ".idx"),
+        "dated-pair advice is: %s", adv);
   st = yame_store_resolve(&cfg, "two", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && strstr(adv, "mm10/probe/two.cm"),
         "a set name held by two directories was not refused: %d %s", (int) st, adv);
-
-  /* a query and its truth share a stem in one directory: refused, both named,
-   * never guessed -- the guess would score an answer key against itself */
   st = yame_store_resolve(&cfg, "q", NULL, path, sizeof path, &rec, adv, sizeof adv);
-  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && rec == NULL,
-        "an undated same-stem pair was resolved: %d %s", (int) st, path);
-  CHECK(strstr(adv, "hg38/probe/q.cg") && strstr(adv, "hg38/probe/q.truth.cg") && strstr(adv, "file name"),
-        "same-stem advice is: %s", adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && strstr(adv, "q.cg") && strstr(adv, "q.truth.cg"),
+        "a query and its truth were not both named: %s", adv);
   st = yame_store_resolve(&cfg, "q.truth.cg", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(rec == &files[7], "the full file name of the truth did not pick it");
+
+  /* where several are allowed, the multi form expands: a name to every
+   * holder, a glob to every match (indexes included when the glob says so),
+   * an existing path to itself with no record */
+  char **paths = NULL; const yame_asset_file_t **recs = NULL; size_t np = 0;
+  CHECK(yame_store_resolve_multi(&cfg, "two", NULL, &paths, &recs, &np, adv, sizeof adv) == 0 && np == 2 &&
+        recs[0] == &files[1] && recs[1] == &files[2], "multi 'two' gave %zu", np);
+  CHECK(strstr(paths[1], "/mm10/probe/two.cm") != NULL, "multi path is %s", paths[1]);
+  yame_ref_paths_free(paths, np); free(recs);
+  CHECK(yame_store_resolve_multi(&cfg, "hg38/probe/S.*", NULL, &paths, &recs, &np, adv, sizeof adv) == 0 && np == 3,
+        "multi glob gave %zu, want 3", np);
+  yame_ref_paths_free(paths, np); free(recs);
+  CHECK(yame_store_resolve_multi(&cfg, afile, NULL, &paths, &recs, &np, adv, sizeof adv) == 0 && np == 1 &&
+        recs[0] == NULL && strcmp(paths[0], afile) == 0, "multi on an existing path gave %zu", np);
+  yame_ref_paths_free(paths, np); free(recs);
+  CHECK(yame_store_resolve_multi(&cfg, "nope*", NULL, &paths, &recs, &np, adv, sizeof adv) == -1 && np == 0 &&
+        strstr(adv, "nothing in the catalogue"), "multi on nothing: %zu %s", np, adv);
 
   /* nothing by that name */
   st = yame_store_resolve(&cfg, "nope.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);

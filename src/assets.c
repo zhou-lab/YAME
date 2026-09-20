@@ -27,11 +27,13 @@
  */
 
 #include "assets.h"
+#include "yame_ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <fnmatch.h>
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -1079,104 +1081,72 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FI
   return said;
 }
 
-/* Does `name` carry a date right after its set name: <set>.YYYYMMDD.<rest>? */
-static int dated_after(const char *name, size_t sl) {
-  if (name[sl] != '.') return 0;
-  for (size_t i = 1; i <= 8; ++i)
-    if (name[sl + i] < '0' || name[sl + i] > '9') return 0;
-  return name[sl + 9] == '.';
-}
-
-yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
-                                      const char *root_override,
-                                      char *path, size_t n,
-                                      const yame_asset_file_t **rec,
-                                      char *advice, size_t adv_n) {
-  if (rec) *rec = NULL;
-  if (advice && adv_n) advice[0] = '\0';
-  const char *tool = cfg->tool ? cfg->tool : "yame";
-
-  /* The ordinary spelling: a file that is there. */
-  if (yame_assets_is_file(spec)) {
-    snprintf(path, n, "%s", spec);
-    return YAME_STORE_CURRENT;
-  }
-
-  /* A store path exactly; else a NAME -- the file name, or the set name in
-   * front of its first dot, case-insensitive, the same shorthand `-m CGI`
-   * uses -- held by one directory. Where a directory holds several files of
-   * that set name (CGI.20220904.cm beside an older CGI), the newest by name
-   * wins, which for dated names is newest by date. An index (.idx, .tbi)
-   * never answers for its data file. */
-  const yame_asset_file_t *f = NULL;
+/* Every registry file a NAME reaches, in registry order: a store path
+ * exactly; else a file name or a set name (the part before the first dot,
+ * case-insensitive), any directory, never an index; else a glob (`*`, `?`,
+ * `[..]`, shell rules) over store paths and file names. */
+static size_t match_names(const yame_fetch_cfg_t *cfg, const char *spec,
+                          const yame_asset_file_t **cand, size_t cap) {
+  size_t n = 0;
   for (size_t j = 0; j < cfg->n_files; ++j)
-    if (strcmp(cfg->files[j].store_path, spec) == 0) { f = &cfg->files[j]; break; }
-  if (!f) {
-    /* Candidates, one per directory -- except that two files of one set
-     * name in the SAME directory are only a pair of dates (CGI.20220904.cm
-     * beside an older CGI) when both carry a date; otherwise they are
-     * different things sharing a stem (human_hg38_test.cg and its
-     * .truth.cg), and choosing between those would hand back an answer key
-     * for a query, silently. Such a directory is listed as ambiguous. */
-    const yame_asset_file_t *cand[64];
-    size_t n_cand = 0, n_dirs = 0;
-    int same_dir_clash = 0;
+    if (strcmp(cfg->files[j].store_path, spec) == 0) { if (cap) cand[0] = &cfg->files[j]; return 1; }
+  for (size_t j = 0; j < cfg->n_files; ++j) {
+    const yame_asset_file_t *g = &cfg->files[j];
+    const char *name = yame_file_name(g);
+    if (yame_assets_index_suffix(name)) continue;
+    const char *dot = strchr(name, '.');
+    size_t sl = dot ? (size_t)(dot - name) : strlen(name);
+    if (strcmp(name, spec) == 0 || (strlen(spec) == sl && strncasecmp(name, spec, sl) == 0)) {
+      if (n < cap) cand[n] = g;
+      ++n;
+    }
+  }
+  if (n) return n;
+  if (strpbrk(spec, "*?[")) {
     for (size_t j = 0; j < cfg->n_files; ++j) {
       const yame_asset_file_t *g = &cfg->files[j];
-      const char *name = yame_file_name(g);
-      if (yame_assets_index_suffix(name)) continue;
-      const char *dot = strchr(name, '.');
-      size_t sl = dot ? (size_t)(dot - name) : strlen(name);
-      int hit = strcmp(name, spec) == 0 ||
-                (strlen(spec) == sl && strncasecmp(name, spec, sl) == 0);
-      if (!hit) continue;
-      size_t dl = yame_file_dirlen(g), k;
-      for (k = 0; k < n_cand; ++k)
-        if (yame_file_dirlen(cand[k]) == dl &&
-            strncmp(cand[k]->store_path, g->store_path, dl) == 0) break;
-      if (k == n_cand) { if (n_cand < 64) cand[n_cand++] = g; ++n_dirs; continue; }
-      /* same directory: a dated pair keeps the newer; anything else clashes */
-      const char *have = yame_file_name(cand[k]);
-      if (dated_after(have, sl) && dated_after(name, sl)) {
-        if (strcmp(name, have) > 0) cand[k] = g;
-      } else {
-        same_dir_clash = 1;
-        if (n_cand < 64) cand[n_cand++] = g;
+      if (fnmatch(spec, g->store_path, 0) == 0 || fnmatch(spec, yame_file_name(g), 0) == 0) {
+        if (n < cap) cand[n] = g;
+        ++n;
       }
     }
-    if (n_cand == 1) f = cand[0];
-    else if (n_cand > 1) {
-      char held[2048] = "";
-      for (size_t k = 0; k < n_cand; ++k) {
-        if (k) strncat(held, ", ", sizeof held - strlen(held) - 1);
-        strncat(held, cand[k]->store_path, sizeof held - strlen(held) - 1);
-      }
-      if (advice) snprintf(advice, adv_n, "%s names several files (%s); "
-                           "give the %s", spec, held,
-                           n_dirs > 1 && !same_dir_clash ? "store path" : "file name");
-      path[0] = '\0';
-      return YAME_STORE_NOT_CATALOGUED;
-    }
   }
-  if (!f) {
-    /* Not a file, not a name: hand it back unchanged, so the caller's opener
-     * reports it in its own words -- a typo'd local filename should read
-     * "cannot open foo.clfx", not "not in the catalogue", since the person
-     * was not talking about the catalogue. An AMBIGUOUS name (above) leaves
-     * `path` empty instead; that is how a caller tells the two apart. */
-    if (advice) snprintf(advice, adv_n, "nothing in the catalogue is called %s; "
-                         "`%s fetch -l` lists what there is", spec, tool);
-    snprintf(path, n, "%s", spec);
-    return YAME_STORE_NOT_CATALOGUED;
-  }
+  return n;
+}
 
-  char root[YAME_PATH_MAX];
-  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
-  if (yame_assets_join(path, n, root, f->store_path) != 0) {
-    path[0] = '\0';
-    return YAME_STORE_NOT_CATALOGUED;
+/* The sentence for a name that reaches several files, and the choice a
+ * person makes on a terminal. Off a terminal there is no one to ask, and a
+ * script must spell the file. */
+static const yame_asset_file_t *pick_one(const char *spec,
+                                         const yame_asset_file_t **cand, size_t n,
+                                         char *advice, size_t adv_n) {
+  if (n > 64) n = 64;
+  if (yame_ui_interactive()) {
+    const char *items[64], *notes[64];
+    for (size_t k = 0; k < n; ++k) {
+      items[k] = cand[k]->store_path;
+      notes[k] = cand[k]->title ? cand[k]->title : "";
+    }
+    char title[512];
+    snprintf(title, sizeof title, "%s names %zu files -- which one?", spec, n);
+    long idx = yame_ui_choose(title, items, notes, n);
+    if (idx >= 0) return cand[idx];
   }
-  if (rec) *rec = f;
+  char held[2048] = "";
+  for (size_t k = 0; k < n; ++k) {
+    if (k) strncat(held, ", ", sizeof held - strlen(held) - 1);
+    strncat(held, cand[k]->store_path, sizeof held - strlen(held) - 1);
+  }
+  if (advice) snprintf(advice, adv_n, "%s names several files (%s); give the "
+                       "file name or the store path", spec, held);
+  return NULL;
+}
+
+/* One file's state, with the sentence to print when it is not there yet. */
+static yame_store_state_t file_state_advice(const yame_fetch_cfg_t *cfg, const char *root,
+                                            const yame_asset_file_t *f,
+                                            char *advice, size_t adv_n) {
+  const char *tool = cfg->tool ? cfg->tool : "yame";
   yame_store_state_t st = yame_file_state(root, f);
   if (advice && st != YAME_STORE_CURRENT) {
     /* The same words yame_store_state() uses for one file, so a tool that
@@ -1194,6 +1164,84 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
                f->store_path, up, tool, f->store_path);
   }
   return st;
+}
+
+yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
+                                      const char *root_override,
+                                      char *path, size_t n,
+                                      const yame_asset_file_t **rec,
+                                      char *advice, size_t adv_n) {
+  if (rec) *rec = NULL;
+  if (advice && adv_n) advice[0] = '\0';
+  const char *tool = cfg->tool ? cfg->tool : "yame";
+
+  /* The ordinary spelling: a file that is there. */
+  if (yame_assets_is_file(spec)) {
+    snprintf(path, n, "%s", spec);
+    return YAME_STORE_CURRENT;
+  }
+
+  const yame_asset_file_t *cand[64];
+  size_t nc = match_names(cfg, spec, cand, 64);
+  if (!nc) {
+    /* Not a file, not a name: hand it back unchanged, so the caller's opener
+     * reports it in its own words -- a typo'd local filename should read
+     * "cannot open foo.clfx", not "not in the catalogue", since the person
+     * was not talking about the catalogue. A name reaching SEVERAL files
+     * leaves `path` empty instead; that is how a caller tells the two apart. */
+    if (advice) snprintf(advice, adv_n, "nothing in the catalogue is called %s; "
+                         "`%s fetch -l` lists what there is", spec, tool);
+    snprintf(path, n, "%s", spec);
+    return YAME_STORE_NOT_CATALOGUED;
+  }
+  const yame_asset_file_t *f = nc == 1 ? cand[0] : pick_one(spec, cand, nc, advice, adv_n);
+  if (!f) { path[0] = '\0'; return YAME_STORE_NOT_CATALOGUED; }
+
+  char root[YAME_PATH_MAX];
+  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
+  if (yame_assets_join(path, n, root, f->store_path) != 0) {
+    path[0] = '\0';
+    return YAME_STORE_NOT_CATALOGUED;
+  }
+  if (rec) *rec = f;
+  return file_state_advice(cfg, root, f, advice, adv_n);
+}
+
+int yame_store_resolve_multi(const yame_fetch_cfg_t *cfg, const char *spec,
+                             const char *root_override,
+                             char ***paths, const yame_asset_file_t ***recs,
+                             size_t *n_out, char *advice, size_t adv_n) {
+  *paths = NULL; *recs = NULL; *n_out = 0;
+  if (advice && adv_n) advice[0] = '\0';
+  const char *tool = cfg->tool ? cfg->tool : "yame";
+
+  if (yame_assets_is_file(spec)) {
+    *paths = malloc(sizeof(char *)); *recs = calloc(1, sizeof(void *));
+    if (!*paths || !*recs) { free(*paths); free(*recs); *paths = NULL; *recs = NULL; return -1; }
+    (*paths)[0] = strdup(spec); (*recs)[0] = NULL; *n_out = 1;
+    return 0;
+  }
+  const yame_asset_file_t *cand[512];
+  size_t nc = match_names(cfg, spec, cand, 512);
+  if (!nc) {
+    if (advice) snprintf(advice, adv_n, "nothing in the catalogue is called %s; "
+                         "`%s fetch -l` lists what there is", spec, tool);
+    return -1;
+  }
+  if (nc > 512) nc = 512;
+  char root[YAME_PATH_MAX];
+  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
+  *paths = malloc(nc * sizeof(char *));
+  *recs  = malloc(nc * sizeof(void *));
+  if (!*paths || !*recs) { free(*paths); free(*recs); *paths = NULL; *recs = NULL; return -1; }
+  for (size_t k = 0; k < nc; ++k) {
+    char full[YAME_PATH_MAX];
+    if (yame_assets_join(full, sizeof full, root, cand[k]->store_path) != 0) full[0] = '\0';
+    (*paths)[k] = strdup(full);
+    (*recs)[k] = cand[k];
+  }
+  *n_out = nc;
+  return 0;
 }
 
 size_t yame_store_stale(const yame_fetch_cfg_t *cfg, const char *root_override,

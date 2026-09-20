@@ -294,29 +294,43 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
  * An existing path is used as given: `path` is that spelling, `*rec` is NULL,
  * the result is CURRENT -- the ordinary case, and it costs nothing. Anything
  * else is a NAME looked up in cfg->files: a store path ("hg38/models/x.clfx")
- * exactly, or a bare name if exactly one directory holds it -- the file name
- * ("x.clfx"), or the SET name in front of its first dot, case-insensitive
- * ("CGI" for CGI.20220904.cm, "hg38_celltype_lite" for the .clfx), the same
- * shorthand `-m` takes; several DATED files of one set name in a directory
- * (<set>.YYYYMMDD.<ext>) resolve to the newest, an index never answers for
- * its data file, and two undated files sharing a stem in one directory
- * (a query and its .truth) are refused as ambiguous rather than guessed.
- * `path` is then <store root>/<store_path>, `*rec` the record, and the
- * result is that file's state: CURRENT (use it), ABSENT (not fetched) or
- * STALE (on disk at a digest this build does not pin); for those two,
- * `advice` carries the sentence to print, with the `<tool> fetch` command
- * that repairs it. NOT_CATALOGUED: no such name -- `path` is then the spec
- * unchanged, so the caller's opener can report it in its own words -- or a
- * bare name held by several directories, in which case `path` is empty and
- * `advice` names them, so the caller can ask for the store path. The state
- * is returned, not enforced: whether to stop on STALE or warn and go on is
- * the caller's policy. Resolves only; never downloads.
+ * exactly; or a file name ("x.clfx") or SET name -- the part before the first
+ * dot, case-insensitive ("CGI" for CGI.20220904.cm, "hg38_celltype_lite" for
+ * the .clfx), the shorthand `-m` takes -- with an index never answering for
+ * its data file; or a glob over store paths and file names (`hg38/models/` followed by `*`).
+ * Reaching ONE file, `path` is <store root>/<store_path>, `*rec` the record,
+ * and the result is that file's state: CURRENT (use it), ABSENT (not
+ * fetched) or STALE (on disk at a digest this build does not pin); for those
+ * two, `advice` carries the sentence to print, with the `<tool> fetch`
+ * command that repairs it. Reaching SEVERAL, nothing is guessed -- not the
+ * newest, not the first: on a terminal the person is shown the candidates
+ * and picks one; off a terminal the call refuses, `path` empty and `advice`
+ * naming every candidate, so a script must spell the file. NOT_CATALOGUED
+ * also for no such name, with `path` the spec unchanged so the caller's
+ * opener can report it in its own words. The state is returned, not
+ * enforced: whether to stop on STALE or warn and go on is the caller's
+ * policy (the suite's: warn and go on; stop on ABSENT). Resolves only;
+ * never downloads.
  */
 yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
                                       const char *root_override,
                                       char *path, size_t n,
                                       const yame_asset_file_t **rec,
                                       char *advice, size_t adv_n);
+
+/**
+ * Where several files are allowed: everything a spec names, expanded. An
+ * existing path gives itself (one entry, its record NULL); a name or glob
+ * gives every file it reaches, in registry order, each with its store path
+ * and record. Returns 0 with `*paths`/`*recs` malloc'd arrays of `*n`
+ * entries -- release the paths with yame_ref_paths_free() and free(*recs)
+ * -- or -1 when nothing is called that, `advice` saying so. State per file
+ * is yame_file_state(); nothing is asked, nothing downloaded.
+ */
+int yame_store_resolve_multi(const yame_fetch_cfg_t *cfg, const char *spec,
+                             const char *root_override,
+                             char ***paths, const yame_asset_file_t ***recs,
+                             size_t *n, char *advice, size_t adv_n);
 
 /* The stale files themselves, in registry order, so a caller can offer to
  * replace exactly those: `yame fetch` asks before its browser opens. Returns
