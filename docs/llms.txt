@@ -55,6 +55,7 @@ Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
   yame fetch -g chromatin hg38/KYCG     # facet filter (name/source/
                                         #   collection/title/database)
   yame fetch -n hg38/models             # dry-run plan, exits 0
+  yame fetch -n -R hg38                 # -R: hg38 and every directory under it
   yame fetch -l -g methscope hg38       # the same set as TSV
   yame fetch -y hg38/data               # scripted/non-interactive
   yame fetch -c hg38/data/human_hg38_test.cg  # one named file, no -y needed
@@ -63,7 +64,10 @@ Root precedence: `-d` / tool-specific environment / `$YAME_DATA_HOME` /
 A name is a store directory or one file in it: `hg38` takes that directory's
 own files (the genome annotation -- not the knowledgebase and models beneath
 it, which are `hg38/KYCG` and `hg38/models`), `hg38/data/test.cg` one file.
-Several names may be given, separated by spaces or commas. Options are
+`-R` makes a directory name take every directory beneath it as well, so
+`-R hg38` is all four; it works with `-l` and `-n`, and `-n -R hg38` is how
+to see what that reaches before fetching it. Several names may be given,
+separated by spaces or commas. Options are
 accepted before or after the names, and the documented form leads with the
 options. Others: `-d <dir>` store root, `-q` no progress. The pre-1.50
 `<source>/<target>` spelling (`genomes/hg38`, `InfiniumAnnotation/EPICv2`)

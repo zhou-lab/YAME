@@ -386,6 +386,22 @@ if "$YAME" fetch -l "$scope/nope.cm" </dev/null >/dev/null 2>&1; then
   echo "-l of a nonexistent file name succeeded"; exit 1
 fi
 
+## ---- 14b. -R: a directory name reaches every directory beneath it ---------
+## Selection only. Without -R, `EPIC` is that directory's own files; with it,
+## EPIC/KYCG comes too, in table order. -l and -n take the flag as well.
+## Column 4 of -l is the store DIRECTORY, so a row under EPIC/KYCG says that.
+"$YAME" fetch -l EPIC </dev/null 2>/dev/null | tail -n +2 | cut -f4 > flat.txt
+grep -qx 'EPIC/KYCG' flat.txt && { echo "a bare directory name reached beneath itself"; exit 1; }
+"$YAME" fetch -l -R EPIC </dev/null 2>/dev/null | tail -n +2 | cut -f4 > deep.txt
+grep -qx 'EPIC/KYCG' deep.txt || { echo "-l -R EPIC did not reach EPIC/KYCG"; head -3 deep.txt; exit 1; }
+[ "$(grep -cx 'EPIC' deep.txt)" -eq "$(grep -cx 'EPIC' flat.txt)" ] ||
+  { echo "-R changed the directory's own file set"; exit 1; }
+[ "$(wc -l < deep.txt)" -gt "$(wc -l < flat.txt)" ] || { echo "-R listed no more than the flat form"; exit 1; }
+grep -q '^EPICv2' deep.txt && { echo "-R EPIC reached EPICv2, a prefix match rather than a path"; exit 1; }
+"$YAME" fetch -n -R EPIC </dev/null > deepn.log 2>&1 || { echo "fetch -n -R exited non-zero"; cat deepn.log; exit 1; }
+grep -q '2 directories' deepn.log || { echo "-n -R EPIC did not plan two directories"; cat deepn.log; exit 1; }
+[ -z "$(find "$YAME_DATA_HOME" -type f 2>/dev/null)" ] || { echo "fetch -n -R wrote files"; exit 1; }
+
 ## ---- 15. an option AFTER a name, which is what the docs promise ----------
 ## GNU getopt permutes arguments; BSD getopt, which macOS has, stops at the
 ## first non-option and hands the rest over as names. So `fetch <name> -g X`

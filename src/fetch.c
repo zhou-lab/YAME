@@ -180,6 +180,10 @@ static int usage(void) {
   yame_usage_opt("-d <dir>", "Store root, overriding the environment.");
   yame_usage_opt("-f", "Re-download what is present, and replace a file the store's");
   yame_usage_cont("manifest records at a different digest than this build pins.");
+  yame_usage_opt("-R", "A directory name also takes every directory beneath it:");
+  yame_usage_cont("`-R hg38` is hg38, hg38/KYCG, hg38/data and hg38/models.");
+  yame_usage_cont("Without it a name is one directory's own files. Works");
+  yame_usage_cont("with -l and -n, so `-n -R hg38` says what that reaches.");
   yame_usage_opt("-l", "Dump the registry as TSV and exit: one row per file, with");
   yame_usage_cont("its size, digest, description and whether the store has it.");
   yame_usage_cont("Takes the same <name> and -g a fetch does, so `-l -g");
@@ -455,16 +459,26 @@ static void unit_of(const unit_t *a, char *unit, size_t nu,
  * by two sources each, and as a scope those simply select both instead of
  * being ambiguous.
  */
+/* -R: a directory address also takes every directory beneath it. */
+static int recursive_ = 0;
+
 static size_t collect_scope(const char *path, const unit_t **out,
                             size_t cap) {
   /* A directory address is that directory's own files. `hg38` is the genome
    * annotation, not its knowledgebase and models beneath; `hg38/KYCG` is
    * addressed explicitly. (Decided 2026-09-19: a directory glob and a fetch
    * address select the same set, and sesame's "fetch the ordering" advice
-   * must not pull 45 MB of sets under it.) */
-  for (size_t i = 0; i < YAME_ASSETS_N && cap; ++i)
-    if (strcasecmp(YAME_ASSETS[i].dir, path) == 0) { out[0] = &YAME_ASSETS[i]; return 1; }
-  return 0;
+   * must not pull 45 MB of sets under it.) With -R the name reaches down:
+   * `hg38` is then hg38, hg38/KYCG, hg38/data and hg38/models, in table
+   * order, so "everything for hg38" is one name rather than four to know. */
+  size_t n = 0, pl = strlen(path);
+  for (size_t i = 0; i < YAME_ASSETS_N && n < cap; ++i) {
+    const char *d = YAME_ASSETS[i].dir;
+    if (strcasecmp(d, path) == 0 ||
+        (recursive_ && strncasecmp(d, path, pl) == 0 && d[pl] == '/'))
+      out[n++] = &YAME_ASSETS[i];
+  }
+  return n;
 }
 
 
@@ -2145,10 +2159,10 @@ static int resolve_spec(const char *arg,
    * already uses it, including the two error messages below and the second
    * column of `fetch -l`. The two cannot be confused -- no browser path
    * matches a source name -- and no browser path is claimed by two rows. */
-  /* A name is a scope. "hg38" takes the unit and everything under it, the
-   * same as ticking that folder in the browser; "hg38/data" takes one row.
-   * The registry's own <source>/<target> still resolves, for anything already
-   * written against it. */
+  /* A name is one store directory's own files -- "hg38" the annotation,
+   * "hg38/data" the datasets -- or, with -R, that directory and every one
+   * beneath it. The registry's own <source>/<target> still resolves, for
+   * anything already written against it. */
   size_t n_sel = collect_scope(spec, hits, 64);
 
   if (!n_sel) {
@@ -2367,6 +2381,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   cfg_ = cfg;
   build_units();
   optind = 1;                       /* a library entry: never trust the caller's */
+  recursive_ = 0;
   const char *dopt = NULL;
   const char *url = NULL, *sha = NULL, *dest = NULL;
   int force = 0, quiet = 0, list = 0, assume_yes = 0;
@@ -2374,12 +2389,13 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   const char *filter = NULL;
   int c;
 
-  permute_opts(argc, argv, "cd:flqu:s:o:yng:h");
-  while ((c = getopt(argc, argv, "cd:flqu:s:o:yng:h")) >= 0) {
+  permute_opts(argc, argv, "cd:flqu:s:o:yng:hR");
+  while ((c = getopt(argc, argv, "cd:flqu:s:o:yng:hR")) >= 0) {
     switch (c) {
     case 'c': here = 1; break;
     case 'd': dopt = optarg; break;
     case 'f': force = 1; break;
+    case 'R': recursive_ = 1; break;
     case 'l': list = 1; break;
     case 'g': filter = optarg; break;
     case 'n': dry_run = 1; break;
