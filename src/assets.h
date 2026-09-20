@@ -234,6 +234,15 @@ typedef struct {
   const char *tool;             /* "yame", "methscope": usage text, messages   */
   const char *tool_env;         /* NULL, or e.g. "METHSCOPE_DATA_HOME" -- read
                                  * ahead of $YAME_DATA_HOME for the store root */
+  int no_prompt;                /* never ask on a terminal: yame_store_resolve
+                                 * refuses an ambiguous name instead of showing
+                                 * a picker. A tool whose commands must not turn
+                                 * interactive (kycg annotate) sets it once.
+                                 * `fetch` itself never prompts over a name:
+                                 * one claimed by several directories is an
+                                 * error listing them, -y or not. Zero in a
+                                 * four-field initializer, so existing callers
+                                 * are unchanged. */
 } yame_fetch_cfg_t;
 
 /* ------------------------------------------ is the store what this build pins? */
@@ -304,8 +313,10 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
  * two, `advice` carries the sentence to print, with the `<tool> fetch`
  * command that repairs it. Reaching SEVERAL, nothing is guessed -- not the
  * newest, not the first: on a terminal the person is shown the candidates
- * and picks one; off a terminal the call refuses, `path` empty and `advice`
- * naming every candidate, so a script must spell the file. NOT_CATALOGUED
+ * and picks one; off a terminal, or with cfg->no_prompt set, the call
+ * refuses, `path` empty and `advice` naming every candidate, so a script
+ * must spell the file. The ABSENT advice for one file names it without -y
+ * (a single file is its own confirmation); a directory's carries -y. NOT_CATALOGUED
  * also for no such name, with `path` the spec unchanged so the caller's
  * opener can report it in its own words. The state is returned, not
  * enforced: whether to stop on STALE or warn and go on is the caller's

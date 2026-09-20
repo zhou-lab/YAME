@@ -16,6 +16,6 @@ static const yame_asset_file_t F[] = {
    * registry silently loses its last file. */
   { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL } };
 int main(int argc, char **argv) {
-  yame_fetch_cfg_t cfg = { F, YAME_NFILES(F), "methprobe", "METHPROBE_DATA_HOME" };
+  yame_fetch_cfg_t cfg = { F, YAME_NFILES(F), "methprobe", "METHPROBE_DATA_HOME", 0 };
   return yame_fetch_main(&cfg, argc, argv);
 }

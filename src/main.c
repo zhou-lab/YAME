@@ -50,7 +50,7 @@ int main_perturb(int argc, char *argv[]);
  * tools/registry/. Library code that needs the running tool's registry
  * (summary -b) gets it through the hook main() registers below -- never by
  * naming a symbol defined in this file, which no downstream links. */
-static const yame_fetch_cfg_t yame_cfg = { YAME_FILES, YAME_FILES_N, "yame", NULL };
+static const yame_fetch_cfg_t yame_cfg = { YAME_FILES, YAME_FILES_N, "yame", NULL, 0 };
 
 static int main_fetch(int argc, char *argv[]) {
   return yame_fetch_main(&yame_cfg, argc, argv);

@@ -365,7 +365,7 @@ static void t_store_resolve(const char *store) {
   CHECK(st == YAME_STORE_ABSENT, "bare name of an unfetched file is %d, want ABSENT", (int) st);
   CHECK(rec == &files[0], "bare name did not find its record");
   CHECK(strcmp(path, afile) == 0, "bare name resolved to %s, want %s", path, afile);
-  CHECK(strstr(adv, "probe fetch -y hg38/probe/a.cm") != NULL, "ABSENT advice is: %s", adv);
+  CHECK(strstr(adv, "probe fetch hg38/probe/a.cm") != NULL && !strstr(adv, "-y"), "ABSENT advice is: %s", adv);
 
   /* the store path spelling, same answer */
   st = yame_store_resolve(&cfg, "hg38/probe/a.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
@@ -417,6 +417,14 @@ static void t_store_resolve(const char *store) {
         "a query and its truth were not both named: %s", adv);
   st = yame_store_resolve(&cfg, "q.truth.cg", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(rec == &files[7], "the full file name of the truth did not pick it");
+
+  /* no_prompt: a tool that must never turn interactive refuses even where a
+   * terminal could have been asked (this test has none; the flag must give
+   * the same refusal, and the candidates) */
+  { yame_fetch_cfg_t quiet = cfg; quiet.no_prompt = 1;
+    st = yame_store_resolve(&quiet, "two", NULL, path, sizeof path, &rec, adv, sizeof adv);
+    CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && strstr(adv, "hg38/probe/two.cm"),
+          "no_prompt did not refuse an ambiguous name: %d %s", (int) st, adv); }
 
   /* where several are allowed, the multi form expands: a name to every
    * holder, a glob to every match (indexes included when the glob says so),
@@ -486,7 +494,7 @@ static void t_store_state(const char *store) {
   unlink(afile);
   st = yame_store_state(&cfg, afile, adv, sizeof adv);
   CHECK(st == YAME_STORE_ABSENT, "a listed file not on disk is %d, want ABSENT", (int) st);
-  CHECK(strstr(adv, "probe fetch -y hg38/probe/a.cm") != NULL, "absent-file advice is: %s", adv);
+  CHECK(strstr(adv, "probe fetch hg38/probe/a.cm") != NULL && !strstr(adv, "-y"), "absent-file advice is: %s", adv);
 
   st = yame_store_state(&cfg, "/nowhere/else", adv, sizeof adv);
   CHECK(st == YAME_STORE_NOT_CATALOGUED, "an uncatalogued path is %d", (int) st);

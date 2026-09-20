@@ -1028,7 +1028,7 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
     yame_store_state_t st = yame_file_state(root, f);
     if (advice) {
       if (st == YAME_STORE_ABSENT)
-        snprintf(advice, n, "%s is not in the store; run: %s fetch -y %s", rel, tool, rel);
+        snprintf(advice, n, "%s is not in the store; run: %s fetch %s", rel, tool, rel);
       else if (st == YAME_STORE_STALE) {
         char sub[YAME_PATH_MAX], up[160];
         size_t dl = yame_file_dirlen(f);
@@ -1117,11 +1117,11 @@ static size_t match_names(const yame_fetch_cfg_t *cfg, const char *spec,
 /* The sentence for a name that reaches several files, and the choice a
  * person makes on a terminal. Off a terminal there is no one to ask, and a
  * script must spell the file. */
-static const yame_asset_file_t *pick_one(const char *spec,
+static const yame_asset_file_t *pick_one(const yame_fetch_cfg_t *cfg, const char *spec,
                                          const yame_asset_file_t **cand, size_t n,
                                          char *advice, size_t adv_n) {
   if (n > 64) n = 64;
-  if (yame_ui_interactive()) {
+  if (!cfg->no_prompt && yame_ui_interactive()) {
     const char *items[64], *notes[64];
     for (size_t k = 0; k < n; ++k) {
       items[k] = cand[k]->store_path;
@@ -1156,7 +1156,7 @@ static yame_store_state_t file_state_advice(const yame_fetch_cfg_t *cfg, const c
     memcpy(sub, f->store_path, dl); sub[dl] = '\0';
     dir_upstream(cfg, sub, up, sizeof up);
     if (st == YAME_STORE_ABSENT)
-      snprintf(advice, adv_n, "%s is not in the store; run: %s fetch -y %s",
+      snprintf(advice, adv_n, "%s is not in the store; run: %s fetch %s",
                f->store_path, tool, f->store_path);
     else
       snprintf(advice, adv_n, "%s comes from an earlier release of %s than this "
@@ -1194,7 +1194,7 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
     snprintf(path, n, "%s", spec);
     return YAME_STORE_NOT_CATALOGUED;
   }
-  const yame_asset_file_t *f = nc == 1 ? cand[0] : pick_one(spec, cand, nc, advice, adv_n);
+  const yame_asset_file_t *f = nc == 1 ? cand[0] : pick_one(cfg, spec, cand, nc, advice, adv_n);
   if (!f) { path[0] = '\0'; return YAME_STORE_NOT_CATALOGUED; }
 
   char root[YAME_PATH_MAX];
