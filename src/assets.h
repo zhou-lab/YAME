@@ -236,7 +236,9 @@ typedef struct {
                                  * ahead of $YAME_DATA_HOME for the store root */
   int no_prompt;                /* never ask on a terminal: yame_store_resolve
                                  * refuses an ambiguous name instead of showing
-                                 * a picker. A tool whose commands must not turn
+                                 * a picker. Affects yame_store_resolve ONLY:
+                                 * the fetch browser and its confirmations are
+                                 * unaffected, so one cfg serves both. A tool whose commands must not turn
                                  * interactive (kycg annotate) sets it once.
                                  * `fetch` itself never prompts over a name:
                                  * one claimed by several directories is an
