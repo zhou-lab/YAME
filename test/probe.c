@@ -382,7 +382,8 @@ static void t_store_resolve(const char *store) {
 
   /* nothing by that name */
   st = yame_store_resolve(&cfg, "nope.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
-  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0', "an unknown name is %d", (int) st);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && strcmp(path, "nope.cm") == 0,
+        "an unknown name is %d with path %s; want NOT_CATALOGUED, spec unchanged", (int) st, path);
   CHECK(strstr(adv, "nothing in the catalogue is called nope.cm") && strstr(adv, "probe fetch -l"),
         "unknown-name advice is: %s", adv);
 

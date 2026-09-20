@@ -1117,9 +1117,14 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
     }
   }
   if (!f) {
+    /* Not a file, not a name: hand it back unchanged, so the caller's opener
+     * reports it in its own words -- a typo'd local filename should read
+     * "cannot open foo.clfx", not "not in the catalogue", since the person
+     * was not talking about the catalogue. An AMBIGUOUS name (above) leaves
+     * `path` empty instead; that is how a caller tells the two apart. */
     if (advice) snprintf(advice, adv_n, "nothing in the catalogue is called %s; "
                          "`%s fetch -l` lists what there is", spec, tool);
-    path[0] = '\0';
+    snprintf(path, n, "%s", spec);
     return YAME_STORE_NOT_CATALOGUED;
   }
 

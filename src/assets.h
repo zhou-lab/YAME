@@ -299,9 +299,12 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
  * result is that file's state: CURRENT (use it), ABSENT (not fetched) or
  * STALE (on disk at a digest this build does not pin); for those two,
  * `advice` carries the sentence to print, with the `<tool> fetch` command
- * that repairs it. NOT_CATALOGUED: no such name, or a bare name held by
- * several directories -- `advice` says which, so the caller can ask for the
- * store path. Resolves only; never downloads.
+ * that repairs it. NOT_CATALOGUED: no such name -- `path` is then the spec
+ * unchanged, so the caller's opener can report it in its own words -- or a
+ * bare name held by several directories, in which case `path` is empty and
+ * `advice` names them, so the caller can ask for the store path. The state
+ * is returned, not enforced: whether to stop on STALE or warn and go on is
+ * the caller's policy. Resolves only; never downloads.
  */
 yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
                                       const char *root_override,
