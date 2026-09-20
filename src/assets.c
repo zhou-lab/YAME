@@ -1079,6 +1079,14 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FI
   return said;
 }
 
+/* Does `name` carry a date right after its set name: <set>.YYYYMMDD.<rest>? */
+static int dated_after(const char *name, size_t sl) {
+  if (name[sl] != '.') return 0;
+  for (size_t i = 1; i <= 8; ++i)
+    if (name[sl + i] < '0' || name[sl + i] > '9') return 0;
+  return name[sl + 9] == '.';
+}
+
 yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
                                       const char *root_override,
                                       char *path, size_t n,
@@ -1104,8 +1112,15 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
   for (size_t j = 0; j < cfg->n_files; ++j)
     if (strcmp(cfg->files[j].store_path, spec) == 0) { f = &cfg->files[j]; break; }
   if (!f) {
-    const yame_asset_file_t *best[32];
-    size_t n_dirs = 0;
+    /* Candidates, one per directory -- except that two files of one set
+     * name in the SAME directory are only a pair of dates (CGI.20220904.cm
+     * beside an older CGI) when both carry a date; otherwise they are
+     * different things sharing a stem (human_hg38_test.cg and its
+     * .truth.cg), and choosing between those would hand back an answer key
+     * for a query, silently. Such a directory is listed as ambiguous. */
+    const yame_asset_file_t *cand[64];
+    size_t n_cand = 0, n_dirs = 0;
+    int same_dir_clash = 0;
     for (size_t j = 0; j < cfg->n_files; ++j) {
       const yame_asset_file_t *g = &cfg->files[j];
       const char *name = yame_file_name(g);
@@ -1116,21 +1131,29 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
                 (strlen(spec) == sl && strncasecmp(name, spec, sl) == 0);
       if (!hit) continue;
       size_t dl = yame_file_dirlen(g), k;
-      for (k = 0; k < n_dirs; ++k)
-        if (yame_file_dirlen(best[k]) == dl &&
-            strncmp(best[k]->store_path, g->store_path, dl) == 0) break;
-      if (k == n_dirs) { if (n_dirs < 32) best[n_dirs++] = g; }
-      else if (strcmp(name, yame_file_name(best[k])) > 0) best[k] = g;
-    }
-    if (n_dirs == 1) f = best[0];
-    else if (n_dirs > 1) {
-      char held[1024] = "";
-      for (size_t k = 0; k < n_dirs; ++k) {
-        if (k) strncat(held, ", ", sizeof held - strlen(held) - 1);
-        strncat(held, best[k]->store_path, sizeof held - strlen(held) - 1);
+      for (k = 0; k < n_cand; ++k)
+        if (yame_file_dirlen(cand[k]) == dl &&
+            strncmp(cand[k]->store_path, g->store_path, dl) == 0) break;
+      if (k == n_cand) { if (n_cand < 64) cand[n_cand++] = g; ++n_dirs; continue; }
+      /* same directory: a dated pair keeps the newer; anything else clashes */
+      const char *have = yame_file_name(cand[k]);
+      if (dated_after(have, sl) && dated_after(name, sl)) {
+        if (strcmp(name, have) > 0) cand[k] = g;
+      } else {
+        same_dir_clash = 1;
+        if (n_cand < 64) cand[n_cand++] = g;
       }
-      if (advice) snprintf(advice, adv_n, "%s is in several directories (%s); "
-                           "give the store path", spec, held);
+    }
+    if (n_cand == 1) f = cand[0];
+    else if (n_cand > 1) {
+      char held[2048] = "";
+      for (size_t k = 0; k < n_cand; ++k) {
+        if (k) strncat(held, ", ", sizeof held - strlen(held) - 1);
+        strncat(held, cand[k]->store_path, sizeof held - strlen(held) - 1);
+      }
+      if (advice) snprintf(advice, adv_n, "%s names several files (%s); "
+                           "give the %s", spec, held,
+                           n_dirs > 1 && !same_dir_clash ? "store path" : "file name");
       path[0] = '\0';
       return YAME_STORE_NOT_CATALOGUED;
     }

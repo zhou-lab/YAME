@@ -297,8 +297,10 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
  * exactly, or a bare name if exactly one directory holds it -- the file name
  * ("x.clfx"), or the SET name in front of its first dot, case-insensitive
  * ("CGI" for CGI.20220904.cm, "hg38_celltype_lite" for the .clfx), the same
- * shorthand `-m` takes; several dated files of one set name in a directory
- * resolve to the newest, and an index never answers for its data file.
+ * shorthand `-m` takes; several DATED files of one set name in a directory
+ * (<set>.YYYYMMDD.<ext>) resolve to the newest, an index never answers for
+ * its data file, and two undated files sharing a stem in one directory
+ * (a query and its .truth) are refused as ambiguous rather than guessed.
  * `path` is then <store root>/<store_path>, `*rec` the record, and the
  * result is that file's state: CURRENT (use it), ABSENT (not fetched) or
  * STALE (on disk at a digest this build does not pin); for those two,

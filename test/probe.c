@@ -337,6 +337,13 @@ static void t_store_resolve(const char *store) {
     { "zhou-lab/probe@v2:S.20230101.cm.idx", "hg38/probe/S.20230101.cm.idx", "http://x/S2i",
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
       "S", "its index", "probe", "-" },
+    /* a query and its answer key: one stem, no dates, one directory */
+    { "zhou-lab/probe@v2:q.cg", "hg38/probe/q.cg", "http://x/q",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "Q", "query", "probe", "-" },
+    { "zhou-lab/probe@v2:q.truth.cg", "hg38/probe/q.truth.cg", "http://x/qt",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "Q", "its truth", "probe", "-" },
     { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL } };
   yame_fetch_cfg_t cfg = { files, YAME_NFILES(files), "probe", "PROBE_DATA_HOME" };
   setenv("PROBE_DATA_HOME", store, 1);
@@ -400,6 +407,16 @@ static void t_store_resolve(const char *store) {
   st = yame_store_resolve(&cfg, "two", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && strstr(adv, "mm10/probe/two.cm"),
         "a set name held by two directories was not refused: %d %s", (int) st, adv);
+
+  /* a query and its truth share a stem in one directory: refused, both named,
+   * never guessed -- the guess would score an answer key against itself */
+  st = yame_store_resolve(&cfg, "q", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && rec == NULL,
+        "an undated same-stem pair was resolved: %d %s", (int) st, path);
+  CHECK(strstr(adv, "hg38/probe/q.cg") && strstr(adv, "hg38/probe/q.truth.cg") && strstr(adv, "file name"),
+        "same-stem advice is: %s", adv);
+  st = yame_store_resolve(&cfg, "q.truth.cg", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(rec == &files[7], "the full file name of the truth did not pick it");
 
   /* nothing by that name */
   st = yame_store_resolve(&cfg, "nope.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
