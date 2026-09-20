@@ -327,6 +327,16 @@ static void t_store_resolve(const char *store) {
     { "zhou-lab/probe@v2:mm10/two.cm", "mm10/probe/two.cm", "http://x/mm10/two.cm",
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
       "Two", "held twice", "probe", "-" },
+    /* one set name, two dates, and the newer one's index */
+    { "zhou-lab/probe@v2:S.20220101.cm", "hg38/probe/S.20220101.cm", "http://x/S1",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "S", "dated", "probe", "-" },
+    { "zhou-lab/probe@v2:S.20230101.cm", "hg38/probe/S.20230101.cm", "http://x/S2",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "S", "dated", "probe", "-" },
+    { "zhou-lab/probe@v2:S.20230101.cm.idx", "hg38/probe/S.20230101.cm.idx", "http://x/S2i",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "S", "its index", "probe", "-" },
     { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL } };
   yame_fetch_cfg_t cfg = { files, YAME_NFILES(files), "probe", "PROBE_DATA_HOME" };
   setenv("PROBE_DATA_HOME", store, 1);
@@ -379,6 +389,17 @@ static void t_store_resolve(const char *store) {
   /* and its store path picks one */
   st = yame_store_resolve(&cfg, "mm10/probe/two.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
   CHECK(st == YAME_STORE_ABSENT && rec == &files[2], "the store path of a twice-held name did not pick its record");
+
+  /* the set-name shorthand: newest of the dated pair, case-insensitive,
+   * never the index; a set name held by two directories is ambiguous */
+  st = yame_store_resolve(&cfg, "s", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(rec == &files[4], "shorthand 's' resolved to %s, want S.20230101.cm",
+        rec ? rec->store_path : "(none)");
+  st = yame_store_resolve(&cfg, "A", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(rec == &files[0], "shorthand 'A' did not find a.cm");
+  st = yame_store_resolve(&cfg, "two", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0' && strstr(adv, "mm10/probe/two.cm"),
+        "a set name held by two directories was not refused: %d %s", (int) st, adv);
 
   /* nothing by that name */
   st = yame_store_resolve(&cfg, "nope.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);

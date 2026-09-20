@@ -1094,22 +1094,41 @@ yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *s
     return YAME_STORE_CURRENT;
   }
 
-  /* A store path exactly, else a bare name held by one directory. */
+  /* A store path exactly; else a NAME -- the file name, or the set name in
+   * front of its first dot, case-insensitive, the same shorthand `-m CGI`
+   * uses -- held by one directory. Where a directory holds several files of
+   * that set name (CGI.20220904.cm beside an older CGI), the newest by name
+   * wins, which for dated names is newest by date. An index (.idx, .tbi)
+   * never answers for its data file. */
   const yame_asset_file_t *f = NULL;
-  size_t claims = 0;
-  char held[512] = "";
   for (size_t j = 0; j < cfg->n_files; ++j)
     if (strcmp(cfg->files[j].store_path, spec) == 0) { f = &cfg->files[j]; break; }
   if (!f) {
+    const yame_asset_file_t *best[32];
+    size_t n_dirs = 0;
     for (size_t j = 0; j < cfg->n_files; ++j) {
       const yame_asset_file_t *g = &cfg->files[j];
-      if (strcmp(yame_file_name(g), spec) != 0) continue;
-      if (!claims) f = g;
-      if (claims) strncat(held, ", ", sizeof held - strlen(held) - 1);
-      strncat(held, g->store_path, sizeof held - strlen(held) - 1);
-      ++claims;
+      const char *name = yame_file_name(g);
+      if (yame_assets_index_suffix(name)) continue;
+      const char *dot = strchr(name, '.');
+      size_t sl = dot ? (size_t)(dot - name) : strlen(name);
+      int hit = strcmp(name, spec) == 0 ||
+                (strlen(spec) == sl && strncasecmp(name, spec, sl) == 0);
+      if (!hit) continue;
+      size_t dl = yame_file_dirlen(g), k;
+      for (k = 0; k < n_dirs; ++k)
+        if (yame_file_dirlen(best[k]) == dl &&
+            strncmp(best[k]->store_path, g->store_path, dl) == 0) break;
+      if (k == n_dirs) { if (n_dirs < 32) best[n_dirs++] = g; }
+      else if (strcmp(name, yame_file_name(best[k])) > 0) best[k] = g;
     }
-    if (claims > 1) {
+    if (n_dirs == 1) f = best[0];
+    else if (n_dirs > 1) {
+      char held[1024] = "";
+      for (size_t k = 0; k < n_dirs; ++k) {
+        if (k) strncat(held, ", ", sizeof held - strlen(held) - 1);
+        strncat(held, best[k]->store_path, sizeof held - strlen(held) - 1);
+      }
       if (advice) snprintf(advice, adv_n, "%s is in several directories (%s); "
                            "give the store path", spec, held);
       path[0] = '\0';
