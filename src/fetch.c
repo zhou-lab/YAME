@@ -2216,8 +2216,9 @@ static int resolve_spec(const char *arg,
     fprintf(stderr,
             "%s fetch: nothing in the catalogue is called %s.\n"
             "  Name it the way the browser shows it: hg38, hg38/KYCG,\n"
-            "  hg38/data, EPIC. A name takes everything under it.\n"
-            "  `%s fetch -l` lists what there is.\n", TOOL, spec, TOOL);
+            "  hg38/data, EPIC. A name is one store directory's own files;\n"
+            "  name a subdirectory to add it: %s fetch -y EPICv2 EPICv2/KYCG.\n"
+            "  `%s fetch -l` lists what there is.\n", TOOL, spec, TOOL, TOOL);
     return 1;
   }
   for (size_t i = 0; i < n_sel; ++i) {
