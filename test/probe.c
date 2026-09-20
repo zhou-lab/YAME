@@ -186,7 +186,7 @@ static void t_parse_sums(void) {
 static void t_file_state(const char *store) {
   static const yame_asset_file_t f = {
     "zhou-lab/probe@v2:a.cm", "hg38/probe/a.cm", "http://x/a.cm",
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0, 1,
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
     "A", "a probe", "probe", "-" };
   char dir[4096], sums[4096], afile[4096];
   snprintf(dir, sizeof dir, "%s/hg38/probe", store);
@@ -313,12 +313,88 @@ static void t_refstore(const char *store) {
 /* The store-state helper, against a registry the PROBE defines -- which is
  * the point: a downstream tool passes its own, and gets advice spelled with
  * its own verb and carrying -y. A directory is the sum of its files. */
+/* yame_store_resolve: one path-or-name rule for every tool. An existing path
+ * is used as given; a store path or a unique bare name finds the record and
+ * reports its state with the advice; an unknown or ambiguous name says so. */
+static void t_store_resolve(const char *store) {
+  static const yame_asset_file_t files[] = {
+    { "zhou-lab/probe@v2:a.cm", "hg38/probe/a.cm", "http://x/a.cm",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "A", "a probe", "probe", "-" },
+    { "zhou-lab/probe@v2:two.cm", "hg38/probe/two.cm", "http://x/two.cm",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "Two", "held twice", "probe", "-" },
+    { "zhou-lab/probe@v2:mm10/two.cm", "mm10/probe/two.cm", "http://x/mm10/two.cm",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+      "Two", "held twice", "probe", "-" },
+    { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL } };
+  yame_fetch_cfg_t cfg = { files, YAME_NFILES(files), "probe", "PROBE_DATA_HOME" };
+  setenv("PROBE_DATA_HOME", store, 1);
+
+  char dir[4096]; snprintf(dir, sizeof dir, "%s/hg38/probe", store);
+  char sums[4096]; snprintf(sums, sizeof sums, "%s/SHA256SUMS", dir);
+  char afile[4096]; snprintf(afile, sizeof afile, "%s/a.cm", dir);
+  mkdir(dir, 0755);
+  unlink(sums); unlink(afile);
+
+  char path[4096], adv[1024];
+  const yame_asset_file_t *rec = (const yame_asset_file_t *)1;
+  yame_store_state_t st;
+
+  /* a name, not yet fetched */
+  st = yame_store_resolve(&cfg, "a.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_ABSENT, "bare name of an unfetched file is %d, want ABSENT", (int) st);
+  CHECK(rec == &files[0], "bare name did not find its record");
+  CHECK(strcmp(path, afile) == 0, "bare name resolved to %s, want %s", path, afile);
+  CHECK(strstr(adv, "probe fetch -y hg38/probe/a.cm") != NULL, "ABSENT advice is: %s", adv);
+
+  /* the store path spelling, same answer */
+  st = yame_store_resolve(&cfg, "hg38/probe/a.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_ABSENT && rec == &files[0] && strcmp(path, afile) == 0,
+        "store path did not resolve like the bare name");
+
+  /* fetched: CURRENT, no advice */
+  FILE *f = fopen(afile, "w"); fclose(f);
+  st = yame_store_resolve(&cfg, "a.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_CURRENT, "a fetched file is %d, want CURRENT", (int) st);
+  CHECK(adv[0] == '\0', "CURRENT left advice: %s", adv);
+
+  /* an existing path is used as given, whatever the registry says */
+  st = yame_store_resolve(&cfg, afile, NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_CURRENT && rec == NULL && strcmp(path, afile) == 0,
+        "an existing path was not used as given (%d, %s)", (int) st, path);
+
+  /* stale: on disk at another digest */
+  f = fopen(sums, "w"); fputs("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  a.cm\n", f); fclose(f);
+  st = yame_store_resolve(&cfg, "a.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_STALE, "a stale file is %d, want STALE", (int) st);
+  CHECK(strstr(adv, "earlier release of zhou-lab/probe than this build pins") &&
+        strstr(adv, "probe fetch -y -f hg38/probe/a.cm"), "STALE advice is: %s", adv);
+
+  /* a bare name two directories hold is refused, naming both */
+  st = yame_store_resolve(&cfg, "two.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && rec == NULL, "an ambiguous name is %d, want NOT_CATALOGUED", (int) st);
+  CHECK(strstr(adv, "hg38/probe/two.cm") && strstr(adv, "mm10/probe/two.cm") && strstr(adv, "store path"),
+        "ambiguity advice is: %s", adv);
+  /* and its store path picks one */
+  st = yame_store_resolve(&cfg, "mm10/probe/two.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_ABSENT && rec == &files[2], "the store path of a twice-held name did not pick its record");
+
+  /* nothing by that name */
+  st = yame_store_resolve(&cfg, "nope.cm", NULL, path, sizeof path, &rec, adv, sizeof adv);
+  CHECK(st == YAME_STORE_NOT_CATALOGUED && path[0] == '\0', "an unknown name is %d", (int) st);
+  CHECK(strstr(adv, "nothing in the catalogue is called nope.cm") && strstr(adv, "probe fetch -l"),
+        "unknown-name advice is: %s", adv);
+
+  unlink(sums); unlink(afile); rmdir(dir);
+}
+
 static void t_store_state(const char *store) {
   static const yame_asset_file_t files[] = {
     { "zhou-lab/probe@v2:a.cm", "hg38/probe/a.cm", "http://x/a.cm",
-      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0, 1,
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
       "A", "a probe", "probe", "-" },
-    { NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, NULL } };
+    { NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL } };
   yame_fetch_cfg_t cfg = { files, YAME_NFILES(files), "probe", "PROBE_DATA_HOME" };
 
   char dir[4096]; snprintf(dir, sizeof dir, "%s/hg38/probe", store);
@@ -385,7 +461,7 @@ static void t_store_state(const char *store) {
 
 int main(int argc, char **argv) {
   if (argc < 4) { fprintf(stderr, "usage: probe <one.cg> <three.cg> <bundle> <limit> [dir]\n"); return 2; }
-  if (argc > 5) { t_refstore(argv[5]); t_store_state(argv[5]); }
+  if (argc > 5) { t_refstore(argv[5]); t_store_state(argv[5]); t_store_resolve(argv[5]); }
   t_read(argv[1], 4, '3');
   t_read_cdata1(argv[2], 3);
   t_accessors(argv[1]);

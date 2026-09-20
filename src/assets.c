@@ -1079,6 +1079,76 @@ int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override, FI
   return said;
 }
 
+yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
+                                      const char *root_override,
+                                      char *path, size_t n,
+                                      const yame_asset_file_t **rec,
+                                      char *advice, size_t adv_n) {
+  if (rec) *rec = NULL;
+  if (advice && adv_n) advice[0] = '\0';
+  const char *tool = cfg->tool ? cfg->tool : "yame";
+
+  /* The ordinary spelling: a file that is there. */
+  if (yame_assets_is_file(spec)) {
+    snprintf(path, n, "%s", spec);
+    return YAME_STORE_CURRENT;
+  }
+
+  /* A store path exactly, else a bare name held by one directory. */
+  const yame_asset_file_t *f = NULL;
+  size_t claims = 0;
+  char held[512] = "";
+  for (size_t j = 0; j < cfg->n_files; ++j)
+    if (strcmp(cfg->files[j].store_path, spec) == 0) { f = &cfg->files[j]; break; }
+  if (!f) {
+    for (size_t j = 0; j < cfg->n_files; ++j) {
+      const yame_asset_file_t *g = &cfg->files[j];
+      if (strcmp(yame_file_name(g), spec) != 0) continue;
+      if (!claims) f = g;
+      if (claims) strncat(held, ", ", sizeof held - strlen(held) - 1);
+      strncat(held, g->store_path, sizeof held - strlen(held) - 1);
+      ++claims;
+    }
+    if (claims > 1) {
+      if (advice) snprintf(advice, adv_n, "%s is in several directories (%s); "
+                           "give the store path", spec, held);
+      path[0] = '\0';
+      return YAME_STORE_NOT_CATALOGUED;
+    }
+  }
+  if (!f) {
+    if (advice) snprintf(advice, adv_n, "nothing in the catalogue is called %s; "
+                         "`%s fetch -l` lists what there is", spec, tool);
+    path[0] = '\0';
+    return YAME_STORE_NOT_CATALOGUED;
+  }
+
+  char root[YAME_PATH_MAX];
+  yame_assets_root(root_override, cfg->tool_env, root, sizeof root);
+  if (yame_assets_join(path, n, root, f->store_path) != 0) {
+    path[0] = '\0';
+    return YAME_STORE_NOT_CATALOGUED;
+  }
+  if (rec) *rec = f;
+  yame_store_state_t st = yame_file_state(root, f);
+  if (advice && st != YAME_STORE_CURRENT) {
+    /* The same words yame_store_state() uses for one file, so a tool that
+     * resolves and one that checks describe the situation identically. */
+    char sub[YAME_PATH_MAX], up[160];
+    size_t dl = yame_file_dirlen(f);
+    memcpy(sub, f->store_path, dl); sub[dl] = '\0';
+    dir_upstream(cfg, sub, up, sizeof up);
+    if (st == YAME_STORE_ABSENT)
+      snprintf(advice, adv_n, "%s is not in the store; run: %s fetch -y %s",
+               f->store_path, tool, f->store_path);
+    else
+      snprintf(advice, adv_n, "%s comes from an earlier release of %s than this "
+               "build pins; replace it with: %s fetch -y -f %s",
+               f->store_path, up, tool, f->store_path);
+  }
+  return st;
+}
+
 size_t yame_store_stale(const yame_fetch_cfg_t *cfg, const char *root_override,
                         const yame_asset_file_t **out, size_t cap) {
   char root[YAME_PATH_MAX];

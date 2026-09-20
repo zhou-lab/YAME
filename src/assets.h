@@ -286,6 +286,29 @@ yame_store_state_t yame_store_state(const yame_fetch_cfg_t *cfg, const char *pat
 int yame_store_report(const yame_fetch_cfg_t *cfg, const char *root_override,
                       FILE *out);
 
+/**
+ * Turn a command-line argument into a store file, the one way for every tool
+ * in the suite -- a model for methscope, a platform's ordering for sesame, a
+ * knowledgebase set for kycg.
+ *
+ * An existing path is used as given: `path` is that spelling, `*rec` is NULL,
+ * the result is CURRENT -- the ordinary case, and it costs nothing. Anything
+ * else is a NAME looked up in cfg->files: a store path ("hg38/models/x.clfx")
+ * exactly, or a bare file name ("x.clfx") if exactly one directory holds it.
+ * `path` is then <store root>/<store_path>, `*rec` the record, and the
+ * result is that file's state: CURRENT (use it), ABSENT (not fetched) or
+ * STALE (on disk at a digest this build does not pin); for those two,
+ * `advice` carries the sentence to print, with the `<tool> fetch` command
+ * that repairs it. NOT_CATALOGUED: no such name, or a bare name held by
+ * several directories -- `advice` says which, so the caller can ask for the
+ * store path. Resolves only; never downloads.
+ */
+yame_store_state_t yame_store_resolve(const yame_fetch_cfg_t *cfg, const char *spec,
+                                      const char *root_override,
+                                      char *path, size_t n,
+                                      const yame_asset_file_t **rec,
+                                      char *advice, size_t adv_n);
+
 /* The stale files themselves, in registry order, so a caller can offer to
  * replace exactly those: `yame fetch` asks before its browser opens. Returns
  * how many there are, filling up to `cap`. */

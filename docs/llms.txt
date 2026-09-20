@@ -401,6 +401,13 @@ Reference data
   ./tools/make_registry.sh --check      # verify it matches the table
   ./tools/make_registry.sh --refresh    # fill blank digests/sizes from upstream, verify the rest
 
+A downstream tool turns a command-line argument into a store file with ONE
+call, `yame_store_resolve(cfg, spec, NULL, path, n, &rec, advice, n)`
+(assets.h): an existing path is used as given; otherwise a store path or a
+unique bare name finds the record, `path` is its place in the store, and the
+result is CURRENT, ABSENT or STALE with the sentence to print. The same rule
+for every tool -- a model, a platform's ordering, a knowledgebase set.
+
 `src/registry.h` is generated from `tools/registry/files.tsv` -- one row per
 file: key (`source@tag:remote_path`), store path, digest, size, and its
 prose -- so edit the table, then regenerate. The org-mode journal is the
