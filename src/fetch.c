@@ -1819,9 +1819,19 @@ static int browse_catalog(const char *dopt, int force) {
   b.n_roots = n_roots;
   refresh_roots(&b);
 
+  /* The title says where the store is and what decided that: the tool's own
+   * variable, a sibling tool's (inherited), -d, or the default. "yame fetch"
+   * in front of it said nothing the person did not already know. */
   static char title[4200];
-  snprintf(title, sizeof(title), "%s fetch   %s   %s", TOOL, yame_ui_bullet(),
-           b.root);
+  {
+    const char *var = dopt ? NULL : yame_assets_root_env(cfg_->tool_env);
+    const char *own = cfg_->tool_env ? cfg_->tool_env : "YAME_DATA_HOME";
+    if (dopt)          snprintf(title, sizeof(title), "-d: %s", b.root);
+    else if (!var)     snprintf(title, sizeof(title), "%s (default): %s", own, b.root);
+    else if (strcmp(var, own) == 0)
+                       snprintf(title, sizeof(title), "%s: %s", var, b.root);
+    else               snprintf(title, sizeof(title), "%s (inherited): %s", var, b.root);
+  }
 
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));

@@ -129,7 +129,7 @@ ESC, ENTER, BS = b"\x1b", b"\r", b"\x7f"
 
 # 1. open, render the header, quit with q
 code, out = drive(["fetch"], [b"q"], "open and quit")
-frame_has(out, "yame fetch", "header")
+frame_has(out, "YAME_DATA_HOME: ", "header")
 frame_has(out, "\x1b[?1049h", "alternate screen entered")
 frame_has(out, "\x1b[?1049l", "alternate screen left on exit")
 
@@ -141,7 +141,7 @@ drive(["fetch"], keys, "navigation keys")
 #    waits, and q is the way out. Encoded here so a change in that convention
 #    is a visible test change rather than a surprise.
 code, out = drive(["fetch"], [ESC, b"q"], "escape at top, then q")
-frame_has(out, "yame fetch", "redrawn after escape")
+frame_has(out, "YAME_DATA_HOME: ", "redrawn after escape")
 
 # 4. filtering: type, backspace, apply with Enter, clear with Escape, quit
 drive(["fetch"], [b"/", b"E", b"P", b"I", b"C", BS, ENTER, b"/", b"z", b"z", ESC, b"q"], "filter")
