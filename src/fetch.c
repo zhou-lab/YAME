@@ -2563,9 +2563,11 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
   /* Nothing to move is a finished job, not an empty plan: say so plainly and
    * stop, rather than printing a size of nothing and asking to confirm it. */
   if (n_have == n_files) {
-    fprintf(stderr, "%s%s%s: all %zu file%s already %s.\n", shown,
-            filter ? " -g " : "", filter ? filter : "", n_files,
-            n_files == 1 ? "" : "s", here ? "here" : "in the store");
+    /* The filter is a qualifier on the count, not part of the name: "hg38/KYCG
+     * -g TFBS:" read as a store path the page had just finished defining. */
+    fprintf(stderr, "%s: all %zu file%s%s%s already %s.\n", shown, n_files,
+            n_files == 1 ? "" : "s", filter ? " matching -g " : "",
+            filter ? filter : "", here ? "here" : "in the store");
     return 0;
   }
 
@@ -2582,9 +2584,9 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
    * among six small files is the thing worth seeing. Capped, because -g array
    * matches 225 files and a prompt nobody reads is not a confirmation. */
   {
-    fprintf(stderr, "%s%s%s: %zu file%s in %zu director%s", shown,
-            filter ? " -g " : "", filter ? filter : "",
+    fprintf(stderr, "%s: %zu file%s%s%s in %zu director%s", shown,
             n_files, n_files == 1 ? "" : "s",
+            filter ? " matching -g " : "", filter ? filter : "",
             n_dirs, n_dirs == 1 ? "y" : "ies");
     if (n_have)
       fprintf(stderr, " -- %zu already %s, %zu to fetch",
