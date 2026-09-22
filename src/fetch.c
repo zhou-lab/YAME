@@ -1490,9 +1490,12 @@ static int confirm_plan(browse_t *b) {
   for (size_t i = 0; i < b->n_pick; ++i) {
     size_t idx = b->pick[i].asset;
     if (idx >= YAME_ASSETS_N) continue;
-    ++n_files;
-
     const unit_t *a = &YAME_ASSETS[idx];
+    /* Count what the rows show. A .cm and its .idx are one row and one
+     * "x of y" everywhere else in the browser, so the header counts pairs
+     * too; the .idx is still a real download, so its bytes still count. */
+    if (!is_companion(a, b->pick[i].name)) ++n_files;
+
     uint64_t sz = 0;
     for (size_t j = 0; j < a->n_files; ++j)
       if (strcmp(yame_file_name(a->files[j]), b->pick[i].name) == 0) {
