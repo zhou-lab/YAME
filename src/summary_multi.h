@@ -1,6 +1,7 @@
 /* summary_multi.h -- summary accumulation that reads the query ONCE.
  *
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: LicenseRef-CHOP-Academic-BSD-2-Clause
+ * Copyright (C) 2021-present The Children's Hospital of Philadelphia; see LICENSE.
  *
  * WHAT THE OLD PATH COSTS. summarize1() takes one mask per call, so N masks
  * walk the query N times. Measured on the TFBS knowledgebase against a

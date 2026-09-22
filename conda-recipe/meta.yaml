@@ -80,8 +80,8 @@ test:
 
 about:
   home: https://github.com/zhou-lab/YAME
-  license: AGPL-3.0-or-later
-  license_family: AGPL
+  license: LicenseRef-CHOP-Academic-BSD-2-Clause
+  license_family: OTHER
   license_file: LICENSE
   summary: "YAME: Yet Another Methylation Encoder."
   description: |

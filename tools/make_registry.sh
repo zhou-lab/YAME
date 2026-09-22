@@ -130,8 +130,8 @@ emit_yame() {
  * own digest, and the SHA256SUMS a fetch writes beside it records what was
  * verified.
  *
- * SPDX-License-Identifier: AGPL-3.0-or-later
- * Copyright (C) 2021-present Wanding Zhou
+ * SPDX-License-Identifier: LicenseRef-CHOP-Academic-BSD-2-Clause
+ * Copyright (C) 2021-present The Children's Hospital of Philadelphia; see LICENSE.
  */
 #ifndef _YAME_REGISTRY_H
 #define _YAME_REGISTRY_H

@@ -1,6 +1,7 @@
 /* summary_multi.c -- see summary_multi.h.
  *
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: LicenseRef-CHOP-Academic-BSD-2-Clause
+ * Copyright (C) 2021-present The Children's Hospital of Philadelphia; see LICENSE.
  */
 #include <stdlib.h>
 #include <string.h>

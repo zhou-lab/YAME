@@ -6,9 +6,11 @@
 
 # YAME — Yet Another Methylation Encoder
 
-[![Install from zhou-lab](https://img.shields.io/badge/install-zhou--lab-brightgreen.svg)](https://anaconda.org/zhou-lab/yame)
-[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
+[![build](https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg)](https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml)
+[![conda](https://img.shields.io/conda/vn/zhou-lab/yame?label=conda)](https://anaconda.org/zhou-lab/yame)
+[![license](https://img.shields.io/badge/license-BSD--2--Clause%20(academic)%20%2F%20commercial-blue.svg)](LICENSE)
 [![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fzhou-lab.github.io%2FYAME%2Fcoverage.json)](https://github.com/zhou-lab/YAME/blob/main/test/run.sh)
+[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
 A bit-packer for DNA methylation data — arrays and whole genomes, where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.
 
@@ -55,16 +57,11 @@ Goldberg*, Fu*, Atkins, Moyer, Lee, Deng, Zhou† (2025). "KnowYourCG: Facilitat
 
 ## License
 
-YAME is dual-licensed:
-
-- **AGPL-3.0** for academic, educational, and non-profit research use
-- **Commercial License** for commercial applications
-
-### Academic & Non-Profit Use
-YAME is free to use for academic research, educational purposes, and non-profit organizations under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
-
-### Commercial Use
-If you wish to use YAME in commercial products or services, or if the AGPL-3.0 restrictions are not suitable for your use case, please contact us for a commercial license: [zhouw3@chop.edu]
+Use of this software is available to academic and non-profit institutions for
+research purposes under the [2-Clause BSD License](LICENSE). For use or
+transfers of the software to commercial entities, please inquire with
+Dr. Wanding Zhou at zhouw3@chop.edu. © 2021-present The Children's Hospital
+of Philadelphia.
 
 ---
 

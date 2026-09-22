@@ -1,6 +1,7 @@
 /* summary_index.h -- an INVERTED INDEX over the mask side of `yame summary`.
  *
- * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-License-Identifier: LicenseRef-CHOP-Academic-BSD-2-Clause
+ * Copyright (C) 2021-present The Children's Hospital of Philadelphia; see LICENSE.
  *
  * THE TWO SHAPES. The walk (summary_multi.h) is keyed by MASK: for each mask it
  * reads 64 rows at a time and popcounts against the query's coverage. Its cost
