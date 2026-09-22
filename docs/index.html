@@ -347,6 +347,10 @@
   collection or title, <code class="inl">x</code> takes a row (a folder takes
   everything under it) and <code class="inl">f</code> fetches. What the store
   already holds shows as present and cannot be re-taken.</p>
+  <p>Opened over a store that holds files from an earlier release than this
+  build pins, the browser first lists them under their directories and asks
+  whether to replace them now; declined, it marks each such file
+  <code class="inl">stale</code> beside its size and offers it again.</p>
   <p>Files land in a digest-verified store shared by every tool in the suite
   &mdash; <code class="inl">$YAME_DATA_HOME</code>, default
   <code class="inl">~/.local/share/yame</code> &mdash; so what you fetch here
