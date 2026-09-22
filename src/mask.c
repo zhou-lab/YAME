@@ -14,15 +14,22 @@
 #include "yame_ui.h"
 #include <sys/types.h>
 #include "cfile.h"
+#include "assets.h"
 
 static int usage() {
-  yame_usage_head("yame mask [options] <in.cg> <mask.cx>");
+  yame_usage_head("yame mask [options] <in.cg> <mask>");
+  yame_usage_text("Blank the sites the mask covers; every other site is left as it is.");
+  yame_usage_text("`mask x.cg Blacklist.cm` REMOVES the blacklisted sites; -v keeps only");
+  yame_usage_text("them. The mask may be format 0, 1, 3 (covered = M+U > 0) or 6 (covered");
+  yame_usage_text("= in the universe), so a methylome can mask another: `mask truth.cg");
+  yame_usage_text("query.cg` blanks the sites the query was shown. A bare name (CGI,");
+  yame_usage_text("Blacklist) resolves in the store for the input's row space, as -m does");
+  yame_usage_text("for summary. Row counts must match.");
   yame_usage_sec("Options:");
   yame_usage_opt("-o", "output cx file name. if missing, output to stdout without index.");
   yame_usage_opt("-c", "contextualize binary input to format 6 using '1's in mask.");
-  yame_usage_cont("if format 3 is used as mask, then use M+U>0 (coverage).");
   yame_usage_cont("implicit for format 6 input (output is always format 6).");
-  yame_usage_opt("-v", "reverse the mask (default is to mask '1's, if -v will mask '0's).");
+  yame_usage_opt("-v", "invert the mask: blank the sites it does NOT cover.");
   yame_usage_opt("-h", "This help");
   fprintf(stderr, "\n");
 
@@ -49,9 +56,13 @@ void mask_fmt0(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
   cdata_write1(fp_out, c);
 }
 
+/* Blank the sites the mask covers -- the same sense as the fmt3 and fmt0
+ * paths and as -h says. This branch used to do the opposite, keeping only
+ * the covered sites, so `mask -o clean.cg x.cg Blacklist.cm` on a fmt6 file
+ * kept the blacklist and blanked everything else (reported 2026-09-22). */
 void mask_fmt6(cdata_t *c, cdata_t c_mask, BGZF *fp_out) {
   for (uint64_t i = 0; i < c->n; ++i) {
-    if (!FMT6_IN_UNI(*c, i) || !FMT0_IN_SET(c_mask, i)) {
+    if (FMT6_IN_UNI(*c, i) && FMT0_IN_SET(c_mask, i)) {
       FMT6_SET_NA(*c, i);
     }
   }
@@ -97,11 +108,30 @@ int main_mask(int argc, char *argv[]) {
   char *fname = argv[optind];
   char *fname_mask = argv[optind+1];
 
-  cfile_t cf_mask = open_cfile(fname_mask);
+  /* A bare name resolves in the store for the input's row space, the same
+   * way summary -m does; an existing path is used as given. Before this,
+   * `mask x.cg Blacklist` died with "Error opening file Blacklist" while
+   * summary answered the same mistake with where to look. */
+  char resolved[4096];
+  const char *rname = NULL, *rfetch = NULL;
+  {
+    uint64_t rows = yame_ref_file_rows(fname);
+    int st = yame_ref_resolve(fname_mask, rows, NULL, NULL, resolved,
+                              sizeof(resolved), &rname, &rfetch);
+    if (st != YAME_REF_OK) {
+      yame_ref_explain_name(stderr, fname_mask, rows, st, rname, rfetch, "mask");
+      return 1;
+    }
+    if (strcmp(resolved, fname_mask) != 0)
+      fprintf(stderr, "[mask] %s -> %s\n", fname_mask, resolved);
+  }
+
+  cfile_t cf_mask = open_cfile(resolved);
   cdata_t c_mask = read_cdata1(&cf_mask);
-  if (c_mask.fmt == '1') convertToFmt0(&c_mask);
-  if (c_mask.fmt == '3') convertToFmt0(&c_mask);
-  if (c_mask.fmt != '0') wzfatal("Mask format not supported (only format 0 allowed).");
+  if (c_mask.fmt == '1' || c_mask.fmt == '3' || c_mask.fmt == '6') convertToFmt0(&c_mask);
+  if (c_mask.fmt != '0')
+    wzfatal("mask: %s is format %c; a mask must be format 0, 1, 3 or 6.\n",
+            resolved, c_mask.fmt);
   if (reverse) {
     for (uint64_t i=0; i<cdata_nbytes(&c_mask); ++i) {
       c_mask.s[i] = ~(c_mask.s[i]);

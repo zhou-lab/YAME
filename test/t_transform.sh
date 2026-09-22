@@ -87,6 +87,33 @@ paste masked.txt maskedv.txt |
   awk -F'\t' '$1 + $2 > 0 && $3 + $4 > 0 { bad++ } END { exit bad > 0 }' ||
   { echo "mask and mask -v both kept the same site"; exit 1; }
 
+## ---- 2b. the same sense for a format-6 input, and a format-6 mask --------
+## The fmt6 path once kept only the covered sites, the opposite of fmt3 and
+## fmt0, so masking a binarized methylome with a blacklist kept the blacklist.
+"$YAME" binarize -t 0.5 -c 1 mu.cg > bin.cg 2>/dev/null
+"$YAME" mask bin.cg msk.cg 2>/dev/null | "$YAME" unpack -f -1 - 2>/dev/null > masked6.txt
+"$YAME" unpack -f -1 bin.cg 2>/dev/null > bin.txt
+paste msk.txt bin.txt |
+  awk -F'\t' '{ if ($1 + $2 > 0) print "NA\t0"; else print $3 "\t" $4 }' > masked6.want
+diff masked6.want masked6.txt || { echo "fmt6 mask did not blank exactly the covered sites"; exit 1; }
+## a methylome as the mask: its universe is what it covers, so `mask truth
+## query` blanks the sites the query was shown
+"$YAME" mask mu.cg bin.cg 2>/dev/null | "$YAME" unpack -f -1 - 2>/dev/null > maskedq.txt
+paste bin.txt mu.txt |
+  awk -F'\t' '{ if ($1 != "NA") print "0\t0"; else print $3 "\t" $4 }' > maskedq.want
+diff maskedq.want maskedq.txt || { echo "a fmt6 mask did not reduce to its universe"; exit 1; }
+## a name that is not a file resolves in the store for this row space, and
+## the refusal says so rather than "Error opening file"
+"$YAME" mask mu.cg Blacklist > /dev/null 2> nm.err && { echo "an unresolvable mask name was accepted"; exit 1; }
+grep -q "Blacklist" nm.err || { echo "the refusal does not name the mask"; cat nm.err; exit 1; }
+grep -q "Error opening file" nm.err && { echo "a bare name still goes straight to fopen"; cat nm.err; exit 1; }
+## and a mask of the wrong format is named, with its format
+"$YAME" pack -f i <(awk 'BEGIN{for(i=0;i<48;i++) print i}') > f2.cg 2>/dev/null || true
+if [ -s f2.cg ]; then
+  "$YAME" mask mu.cg f2.cg > /dev/null 2> wf.err && { echo "a format-2 mask was accepted"; exit 1; }
+  grep -q "f2.cg is format" wf.err || { echo "the format refusal does not name the file and format"; cat wf.err; exit 1; }
+fi
+
 ## ---- 3. dsample: reproducible for a fixed seed, and a no-op at the edge ---
 "$YAME" dsample -s 42 -N 20 mu.cg > ds1.cg 2>/dev/null
 "$YAME" dsample -s 42 -N 20 mu.cg > ds2.cg 2>/dev/null

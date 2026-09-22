@@ -121,6 +121,7 @@ cdata_t fmt0_decompress(const cdata_t c) {
  * - Input format is '0': no further operation is performed.
  * - Input format is '1': if the value is 0, return 0 else 1.
  * - Input format is '3': if the M+U is 0, return 0 else 1
+ * - Input format is '6': 1 if the site is in the universe (covered), else 0
  * - Other input formats are not allowed.
  */
 cdata_t fmt3_decompress(const cdata_t c);
@@ -168,6 +169,20 @@ void convertToFmt0(cdata_t *c) {
         c_out.s[i>>3] |= (1<<(i&0x7));
       }
     }
+    free(expanded.s);
+    break;
+  }
+  case '6': {
+    /* The universe bit: the sites a binarized methylome was asked about.
+     * That is what "the sites the model was shown" means when a query is
+     * used as a mask, and what a blacklist packed as fmt6 covers. */
+    cdata_t expanded = decompress(*c);
+    c_out.fmt = '0';
+    c_out.compressed = 1;
+    c_out.n = expanded.n;
+    c_out.s = wzcalloc((c_out.n>>3)+1,1);
+    for (uint64_t i=0; i<expanded.n; ++i)
+      if (FMT6_IN_UNI(expanded, i)) c_out.s[i>>3] |= (1<<(i&0x7));
     free(expanded.s);
     break;
   }

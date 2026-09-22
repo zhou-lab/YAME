@@ -499,7 +499,7 @@ human_hg38_test.cg      1  CGI.20220904.cm  Island    29000    23857    2168    
   <p>A format 2 mask yields one row per state, so <code class='inl'>-m ChromHMM</code> tests every chromatin state at once. <code class='inl'>-b</code> picks the set in the browser instead.</p>
   <pre><code>yame <span class="sub">fetch</span> -c hg38/data/human_hg38_immune_mixture.cg
 yame <span class="sub">fetch</span> -c hg38/data/human_hg38_40_celltypes_chr20.cg
-yame <span class="sub">binarize</span> -t 0.5 -c 3 -o calls.cg human_hg38_immune_mixture.cg  <span class="cm"># M/U -&gt; set + universe</span>
+yame <span class="sub">binarize</span> -t 0.5 -c 1 -o calls.cg human_hg38_immune_mixture.cg  <span class="cm"># M/U -&gt; set + universe (one read per site here, so -c 1)</span>
 yame <span class="sub">subset</span> -o a.cg human_hg38_40_celltypes_chr20.cg GSM5652176_Adipocytes-Z000000T7
 yame <span class="sub">subset</span> -o b.cg human_hg38_40_celltypes_chr20.cg GSM5652181_Saphenous-Vein-Endothel-Z000000RM
 yame <span class="sub">pairwise</span> -H 1 -c 5 -d 0.2 a.cg b.cg  <span class="cm"># differential, fmt3 -&gt; fmt6</span>
@@ -528,6 +528,7 @@ noisy.cg      1     NA  global   29000    22953   29000      22953             N
   <p><b>Set <code class='inl'>-s</code>.</b> Without a fixed seed neither is reproducible, and the same seed reproduces a run only on the same build and platform &mdash; these counts come from Linux, and a macOS build of the same version draws different sites. <code class='inl'>mask</code> takes its mask as a positional argument, not <code class='inl'>-m</code>, and both files must have the same row count.</p>
   <pre><code>yame <span class="sub">fetch</span> -y -c -g blacklist hg38/KYCG
 yame <span class="sub">mask</span> -o clean.cg human_hg38_test.cg Blacklist.20220304.cm</code></pre>
+  <p><code class='inl'>mask</code> <b>blanks the sites the mask covers</b> and leaves the rest: the line above removes the blacklisted sites, and <code class='inl'>-v</code> would keep only them. The mask may be a set (<code class='inl'>.cm</code>) or another methylome, whose covered sites are the mask &mdash; which is what the imputation recipe above relies on. A bare name (<code class='inl'>Blacklist</code>) resolves in the store the way <code class='inl'>summary -m</code> does.</p>
 </section>
 </div>
 </div>

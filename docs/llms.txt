@@ -19,9 +19,15 @@ store are shared across those tools.
   conda install -c zhou-lab -c conda-forge yame
 
 Use zhou-lab rather than the older bioconda build for `fetch` and reference
-resolution. Source build: `make` (requires libcurl); `make CURL=0` intentionally
-builds without network fetching. For recent behavior use `~/repo/YAME/yame` or
-`yamedev`, not a copied `yame` on PATH.
+resolution. Source build:
+
+  git clone https://github.com/zhou-lab/YAME && cd YAME && make   # ./yame
+
+`make` needs libcurl and zlib; `make CURL=0` intentionally builds without
+network fetching (no `fetch`). The binary is `./yame` in the tree; nothing is
+installed. A `yame` already on PATH is whatever was installed there, so name
+the tree's binary explicitly when behaviour of the checked-out source is what
+you are after.
 
 ## Data model
 
@@ -310,15 +316,20 @@ Compare and summarize
                  beta is a ratio of small integers.
   binarize [-t 0.5] [-m Mmin] [-c cov] [-o out] <mu.cx>
         fmt3 -> fmt6. set = beta > -t, or M >= -m when -m > 0 (overrides -t);
-        universe = coverage >= -c.
+        universe = coverage >= -c. Mind the depth: a single-read methylome
+        (the immune mixture, one read per site) is all NA at -c 3; use -c 1.
 
 Perturb and mask (benchmarking)
-  mask [-o out] [-c] [-v] <in.cg> <mask.cx>
-        The mask is positional, not -m, and row counts must match. Data may be
-        fmt 0/1/3/6; the mask must reduce to fmt0 (fmt1/fmt3 are converted,
-        fmt3 by coverage M+U>0). -c contextualizes fmt0 data to fmt6 (implicit
-        for fmt6 input), -v inverts the mask. Deterministic and file-driven:
-        it decides which sites are valid.
+  mask [-o out] [-c] [-v] <in.cg> <mask>
+        Blanks the sites the mask covers and leaves the rest -- `mask x.cg
+        Blacklist.cm` REMOVES the blacklisted sites; -v keeps only them. The
+        mask is positional, not -m, and row counts must match. Data may be
+        fmt 0/1/3/6; the mask may be fmt 0, 1, 3 (covered = M+U > 0) or 6
+        (covered = in the universe), so a methylome can mask another: `mask
+        truth.cg query.cg` blanks the sites the query was shown. A bare name
+        resolves in the store for the input's row space, as summary -m does.
+        -c contextualizes fmt0 data to fmt6 (implicit for fmt6 input).
+        Deterministic and file-driven: it decides which sites are valid.
   dsample [-N 100] [-s seed] [-r reps] [-p prefix] [-b] [-o out] <in.cx>
         fmt3 and fmt6 only. fmt3 masks by setting M=U=0, fmt6 by clearing the
         universe bit. Stochastic: fix -s or it is not reproducible.
