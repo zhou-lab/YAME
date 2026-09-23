@@ -1,7 +1,4 @@
-<h1 align="center">
-  <img alt="Logo" src="https://github.com/user-attachments/assets/9384208f-deb3-4b2e-a574-b397dbc83ca4" height="64" align="absmiddle" />
-  YAME — Yet Another Methylation Encoder
-</h1>
+<h1 align="center">YAME — Yet Another Methylation Encoder</h1>
 
 <p align="center">
   <a href="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml"><img alt="build" src="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg" /></a>
