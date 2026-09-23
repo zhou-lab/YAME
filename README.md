@@ -1,4 +1,4 @@
-<h1 align="center">YAME — Yet Another Methylation Encoder</h1>
+<h1 align="center">YAME<br><sub>(Yet Another Methylation Encoder)</sub></h1>
 
 <p align="center">
 <a href="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml"><img alt="build" src="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg"></a>
