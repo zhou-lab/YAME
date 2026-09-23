@@ -21,8 +21,8 @@ printf '%s\n' "$help" | grep 'fetch available' >/dev/null ||
 d=$(mktemp -d); trap 'kill $srv 2>/dev/null; rm -rf "$d"' EXIT
 cd "$d"
 
-## ---- the mirror tree: /zhou-lab/InfiniumAnnotation/v8.1/EPIC/KYCG/ ----
-scope=EPIC/KYCG; tag=v8.1
+## ---- the mirror tree: /zhou-lab/InfiniumAnnotation/v8.2/EPIC/KYCG/ ----
+scope=EPIC/KYCG; tag=v8.2
 tree="mirror/zhou-lab/InfiniumAnnotation/$tag/$scope"
 mkdir -p "$tree"
 cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"

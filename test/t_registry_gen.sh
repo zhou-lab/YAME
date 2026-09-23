@@ -72,8 +72,8 @@ EOF
   { echo "lib.sh resolved the table against the caller, not itself"; sed -n '1p' "$d/lib.out"; exit 1; }
 [ "$(sed -n '2p' "$d/lib.out")" = "$(printf 'hg38/cpg_nocontig.cr\tgenome\thttps://raw.githubusercontent.com/zhou-lab/genomes/v4/hg38/cpg_nocontig.cr')" ] ||
   { echo "files_of / field / url_of did not agree on the coordinate stream"; sed -n '2p' "$d/lib.out"; exit 1; }
-[ "$(sed -n '3p' "$d/lib.out")" -eq 6 ] ||   # -eq: BSD wc pads its count
-  { echo "'EPICv2/*' should be that directory's 6 own files, got $(sed -n '3p' "$d/lib.out")"; exit 1; }
+[ "$(sed -n '3p' "$d/lib.out")" -eq 8 ] ||   # -eq: BSD wc pads its count
+  { echo "'EPICv2/*' should be that directory's 8 own files, got $(sed -n '3p' "$d/lib.out")"; exit 1; }
 [ "$(sed -n '4p' "$d/lib.out")" -gt 20 ] ||
   { echo "'EPICv2/**' should include EPICv2/KYCG/, got $(sed -n '4p' "$d/lib.out")"; exit 1; }
 [ "$(sed -n '5p' "$d/lib.out")" -gt 100 ] ||
