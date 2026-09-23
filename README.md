@@ -1,4 +1,4 @@
-<h1 align="center">YAME<br><sub>(Yet Another Methylation Encoder)</sub></h1>
+<h1 align="center">YAME</h1>
 
 <p align="center">
 <a href="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml"><img alt="build" src="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg"></a>
@@ -8,8 +8,8 @@
 <a href="https://zhou-lab.github.io/YAME/"><img alt="docs" src="https://img.shields.io/badge/docs-online-blueviolet"></a>
 </p>
 
-<p align="center"><b>A bit-packer for DNA methylation data</b> — arrays and whole genomes,
-where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.</p>
+<p align="center"><b>Yet Another Methylation Encoder</b> — a bit-packer for DNA methylation data,
+arrays and whole genomes, where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.</p>
 
 <p align="center">
 📖 <b><a href="https://zhou-lab.github.io/YAME/">Documentation</a></b> ·
