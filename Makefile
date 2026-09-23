@@ -76,7 +76,7 @@ else ifneq ($(CURL),0)
   endif
 endif
 
-.PHONY: all build debug clean lib test
+.PHONY: all build debug clean lib test docs docs-check
 
 
 all: build
@@ -86,6 +86,16 @@ all: build
 ## data store, and conda-recipe/build.sh runs it on every platform it builds.
 test: $(PROG)
 	bash test/run.sh
+
+# docs/index.html's Catalogue and Reference tabs are generated: the first
+# from tools/registry/files.tsv, the second from every command's -h in THIS
+# binary (docs/build_docs.py). `make docs` writes them; `make docs-check`
+# fails when the page is behind either source.
+docs: $(PROG)
+	@python3 docs/build_docs.py
+
+docs-check: $(PROG)
+	@python3 docs/build_docs.py --check
 
 build: exportcf $(PROG) yame-config
 

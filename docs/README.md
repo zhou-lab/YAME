@@ -25,6 +25,13 @@ on any push to `main` that touches `docs/`.
 - **The filter must open what it matches.** A closed `<details>` still holds
   its text, so a filter that only hid sections would claim a hit the reader
   cannot see. There is exactly one `input` listener; keep it that way.
+- **Two tabs are generated, never edited.** Catalogue is rendered from
+  `tools/registry/files.tsv` and Reference from every command's `-h`, by
+  `docs/build_docs.py` between the `data:` and `help:` marker comments.
+  Run `make docs` after a registry or help-text change; `make docs-check`
+  fails when the page is behind. A `yame <span class="sub">cmd</span>` in
+  an example is written `<a class="sub" href="#ref-cmd">`, so it opens
+  that command's entry.
 - **Flags are not documented here.** The page points at `yame <command> -h`,
   which is printed by the code that parses them and so cannot drift. A flag
   table would be a second source of truth that silently goes stale — the old
