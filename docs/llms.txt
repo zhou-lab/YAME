@@ -11,7 +11,7 @@ storage and bitwise processing of DNA methylation data. A file stores rows, not
 coordinates: row i is defined by a reference row space. Arrays and whole-genome
 CpG tracks therefore use the same pack/subset/summary operations.
 
-Used by kycg, sesame-cli and methscope-cli; `libyame.a` and the verified asset
+Used by kycg, sesame (zhou-lab/sesame) and methscope-cli; `libyame.a` and the verified asset
 store are shared across those tools.
 
 ## Install/build
