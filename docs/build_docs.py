@@ -5,9 +5,9 @@ Neither tab is written by hand, so neither can drift from what it describes:
 
   Data       from tools/registry/files.tsv, the table `yame fetch` is
              compiled from. One card per upstream host (GitHub repo or
-             HuggingFace repo, at its pinned tag), a folded drawer per store
-             directory listing its files and, in one line, the works
-             they cite.
+             HuggingFace repo, at its pinned tag, with any Zenodo
+             archive), a folded drawer per store directory listing its
+             files and, in one line, the works they cite.
   Reference  from `./yame <command> -h`, for every command the `yame`
              banner lists, grouped as the banner groups them. Each entry
              has the id `ref-<command>`, so a link to #ref-pack opens it.
@@ -141,34 +141,19 @@ def build_data():
     for r in rows: hosts.setdefault((r["src"], r["tag"]), []).append(r)
     out = [DATA_BEGIN]
 
-    ## one card per upstream host: where fetch downloads from
-    out.append('<section class="card">\n  <h2>Hosts <span class="m">— where'
-               ' <code class="inl">fetch</code> downloads from</span></h2>\n'
-               '  <p>Every file is pinned to an immutable upstream tag and'
-               ' verified against its SHA-256 on arrival. %d files, %s in all.</p>'
-               % (len(rows), human(sum(r["size"] for r in rows))))
-    out.append('  <table class="data"><tr><th>repo @ tag</th><th>host</th>'
-               '<th>archive</th><th>files</th><th>size</th></tr>')
-    for (src, tag), rs in hosts.items():
-        label, repo, tagurl = host(src, tag)
-        name = src[3:] if src.startswith("hf:") else src
-        out.append('  <tr><td><a href="%s" rel="noopener">%s</a> @ <a href="%s"'
-                   ' rel="noopener">%s</a></td><td>%s</td><td>%s</td>'
-                   '<td class="n">%d</td><td class="n">%s</td></tr>'
-                   % (attr(repo), esc(name), attr(tagurl), esc(tag), label,
-                      " ".join('<a href="https://doi.org/%s" rel="noopener"'
-                               ' title="%s">%s</a>' % (d, d, d.split("/")[1]) for d in zenodo(rs)),
-                      len(rs), human(sum(r["size"] for r in rs))))
-    out.append('  </table>\n</section>')
-
     ## one card per host, a drawer per store directory
     for (src, tag), rs in hosts.items():
         label, repo, tagurl = host(src, tag)
         name = src[3:] if src.startswith("hf:") else src
         dirs = OrderedDict()
         for r in rs: dirs.setdefault(r["dir"], []).append(r)
-        out.append('<section class="card">\n  <h2>%s <span class="m">— %s @ %s</span></h2>'
-                   % (esc(name), label, esc(tag)))
+        ## the heading links the repo and its pinned tag; a Zenodo archive
+        ## the files cite, if any, follows it
+        arch = "".join(' · <a href="https://doi.org/%s" rel="noopener">%s</a>'
+                       % (d, d.split("/")[1]) for d in zenodo(rs))
+        out.append('<section class="card">\n  <h2><a href="%s" rel="noopener">%s</a>'
+                   ' <span class="m">— %s @ <a href="%s" rel="noopener">%s</a>%s</span></h2>'
+                   % (attr(repo), esc(name), label, attr(tagurl), esc(tag), arch))
         for d, fs in dirs.items():
             out.append('  <details class="dir" id="data-%s">\n'
                        '    <summary><code class="inl">%s/</code> <span class="m">— %d files, %s</span></summary>\n'
