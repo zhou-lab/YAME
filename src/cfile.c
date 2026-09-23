@@ -407,8 +407,12 @@ void cdata_write(char *fname_out, cdata_t *c, const char *mode, int verbose) {
   else fp = yame_bgzf_stdout(mode, "yame");
   
   if (fp == NULL) {
-    fprintf(stderr, "Error opening file for writing: %s\n", fname_out);
-    return;
+    /* Fatal, not a warning: pack, chunk, rowop and split all call this and
+     * went on to exit 0 with nothing written, so a script under `set -e`
+     * learned of the missing output directory three steps later. */
+    fprintf(stderr, "Error opening file for writing: %s\n", fname_out ? fname_out : "<stdout>");
+    fflush(stderr);
+    exit(1);
   }
   cdata_write1(fp, c);
   bgzf_close(fp);

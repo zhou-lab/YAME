@@ -300,6 +300,16 @@ int main_index(int argc, char *argv[]) {
         insert_index(idx, snames.s[i], addr);
         addr = bgzf_tell(cf.fh);
       }
+      /* Names pair to records BY POSITION, so a list shorter than the file
+       * would label the first records and silently leave the rest; refuse,
+       * as the shorter-file case above already is. A list in the wrong
+       * ORDER cannot be caught here -- keep it in the file's record order. */
+      if (read_cdata2(&cf, &c)) {
+        fprintf(stderr, "[Error] Data has more records than the sample name list (%d names); "
+                "names pair to records by position, so give one name per record.\n", snames.n);
+        fflush(stderr);
+        exit(1);
+      }
       
     } else {                    /* sample names are unknown */
 

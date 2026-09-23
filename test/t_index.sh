@@ -147,3 +147,13 @@ cat s1.cg s2.cg > two.cg
 if "$YAME" index -s dupnames.txt two.cg 2>err.txt; then
   echo "index -s accepted a duplicate sample name"; exit 1
 fi
+
+## ---- 8. a list shorter than the file is refused, as a longer one already is
+## Names pair to records by position, so a short list would label the first
+## records and silently leave the rest; a reordered list cannot be caught.
+printf 'only_one\n' > short.txt
+if "$YAME" index -s short.txt two.cg 2>err.txt; then
+  echo "index -s accepted a name list shorter than the file"; exit 1
+fi
+grep -q "more records than the sample name list" err.txt ||
+  { echo "the short-list refusal does not say why"; cat err.txt; exit 1; }

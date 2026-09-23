@@ -89,7 +89,11 @@
  */
 typedef struct cdata_t {
   uint8_t *s;       /* byte buffer */
-  uint64_t n;       /* length in bytes (compressed) or #units (uncompressed) */
+  uint64_t n;       /* length in bytes (compressed) or #units (uncompressed).
+                     * NOT the row count of a format-7 record as read_cdata1()
+                     * returns it: that n is the delta stream's byte length
+                     * (36.4M for hg38/cpg_nocontig.cr, whose universe is
+                     * 29.4M rows). Rows of a .cr come from fmt7_rows(). */
   int compressed;   /* 1=compressed stream, 0=indexed/decompressed */
   char fmt;         /* format code '0'..'7' */
   uint8_t unit;     /* size of each decompressed unit (0 for bit-packed fmt0/1/6) */
@@ -290,6 +294,11 @@ static inline cdata_t cdata_duplicate(cdata_t c) {
 }
 
 uint64_t fmt7_data_length(const cdata_t *c);
+/* The row count of a format-7 record -- the size of the universe it
+ * defines -- counted by walking the stream (works compressed). Named for
+ * what it returns: c->n on a .cr is the byte length, and allocating a target
+ * at c->n builds a file 6.9M rows too long that nothing then accepts. */
+static inline uint64_t fmt7_rows(const cdata_t *c) { return fmt7_data_length(c); }
 cdata_t fmt7_sliceToBlock(cdata_t *cr, uint64_t beg, uint64_t end);
 cdata_t fmt7_sliceToIndices(cdata_t *cr, int64_t *row_indices, int64_t n_indices);
 cdata_t fmt7_sliceToMask(cdata_t *cr, cdata_t *c_mask);

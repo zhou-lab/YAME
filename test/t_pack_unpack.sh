@@ -135,3 +135,13 @@ for pair in "a f3.txt -f -1" "b f4.txt" "c f2.txt"; do
   diff "$want" one.txt >/dev/null ||
     { echo "record $name did not survive a mixed-format store"; exit 1; }
 done
+
+## ---- an output that cannot be opened is an error, not a warning ------------
+## pack used to print "Error opening file for writing" and exit 0, so a script
+## under set -e learned of a missing output directory three steps later.
+if "$YAME" pack -f m f3.txt nodir/out.cg 2>perr.txt; then
+  echo "pack exited 0 with its output unopenable"; exit 1
+fi
+grep -q "Error opening file for writing: nodir/out.cg" perr.txt ||
+  { echo "pack did not say which file it could not open"; cat perr.txt; exit 1; }
+[ ! -e nodir ] || { echo "pack created the missing directory"; exit 1; }

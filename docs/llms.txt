@@ -398,7 +398,17 @@ Reference data
 - `subset -l` and `unpack -l` emit records in **list order**, not store order.
   That is the useful behaviour, but `yame index -s names.txt` pairs names to
   records **positionally**, so a name list in store order applied to output in
-  list order silently mispairs every sample with someone else's data.
+  list order silently mispairs every sample with someone else's data. The
+  same applies to `cat *.cg > all.cg` followed by `index -s`: the list must be
+  in the glob's order. `index -s` refuses when the list and the file differ
+  in LENGTH (either way round); a wrong ORDER it cannot see.
+- A command that cannot open its output exits 1 with "Error opening file for
+  writing: <path>" -- `pack` into a directory that does not exist is an error
+  a `set -e` script stops on, not a line in the log.
+- `row_finder_search()` returns 0 for a chromosome the coordinate track does
+  not carry (an alt contig against cpg_nocontig.cr) or a position beyond it;
+  it never exits. A format-7 record's `c.n` is the delta stream's byte length,
+  not its row count -- `fmt7_rows()` gives the rows.
 - `yame fetch` with no target opens the browser on a terminal but dumps the
   registry TSV when piped or redirected, so a script never blocks. Off a
   terminal a fetch still refuses to download without `-y`. `NO_COLOR` disables

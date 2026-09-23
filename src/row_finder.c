@@ -56,18 +56,14 @@ row_finder_t init_finder(cdata_t *cr) {
 
 uint64_t row_finder_search(char *chrm, uint64_t beg1, row_finder_t *fdr, cdata_t *cr) {
 
+  /* A lookup that can fail returns 0, the documented not-found value, and
+   * lets the caller decide. This used to exit(1) on a chromosome the track
+   * does not carry -- ordinary for a query on an alt contig against
+   * cpg_nocontig.cr -- which killed a linked program (sesame) mid-run. */
   khiter_t k = kh_get(str2int, fdr->h, chrm);
-  if (k == kh_end(fdr->h)) {
-    fprintf(stderr, "[%s:%d] Chromosome %s not found.\n", __func__, __LINE__, chrm);
-    fflush(stderr);
-    exit(1);
-  }
+  if (k == kh_end(fdr->h)) return 0;
   chromosome_t chrmt = fdr->chrms[kh_value(fdr->h, k)];
-  if ((beg1>>17) >= chrmt.n) {
-    fprintf(stderr, "[%s:%d] Coordinate %"PRIu64" is too big (max: %"PRIu64")\n", __func__, __LINE__, beg1, chrmt.n);
-    fflush(stderr);
-    exit(1);
-  }
+  if ((beg1>>17) >= chrmt.n) return 0;
 
   row_reader_t rdr = {0};
   uint64_t i = (beg1>>17);

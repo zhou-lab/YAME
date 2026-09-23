@@ -249,7 +249,8 @@ static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int6
     indices = realloc(indices, ((*n_indices)+1)*sizeof(int64_t));
     indices[(*n_indices)] = row_finder_search(chrm, beg1, &fdr, cr);
     if (!indices[(*n_indices)]) {
-      fprintf(stderr, "[%s:%d] Cannot find coordinate: %s\n", __func__, __LINE__, line);
+      fprintf(stderr, "[%s:%d] Cannot find coordinate: %s (chromosome not in the "
+              "coordinate track, or position beyond it)\n", __func__, __LINE__, line);
       fflush(stderr);
       exit(1);
     }
