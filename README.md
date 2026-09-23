@@ -1,16 +1,15 @@
+<h1 align="center">
+  <img alt="Logo" src="https://github.com/user-attachments/assets/9384208f-deb3-4b2e-a574-b397dbc83ca4" height="64" align="absmiddle" />
+  YAME — Yet Another Methylation Encoder
+</h1>
+
 <p align="center">
-  <a href="">
-    <img alt="Logo" src="https://github.com/user-attachments/assets/9384208f-deb3-4b2e-a574-b397dbc83ca4" height="240" />
-  </a>
+  <a href="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml"><img alt="build" src="https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg" /></a>
+  <a href="https://anaconda.org/zhou-lab/yame"><img alt="conda" src="https://img.shields.io/conda/vn/zhou-lab/yame?label=conda" /></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-BSD--2--Clause%20(academic)%20%2F%20commercial-blue.svg" /></a>
+  <a href="https://github.com/zhou-lab/YAME/blob/main/test/run.sh"><img alt="coverage" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fzhou-lab.github.io%2FYAME%2Fcoverage.json" /></a>
+  <a href="https://zhou-lab.github.io/YAME/"><img alt="Documentation" src="https://img.shields.io/badge/docs-online-blue.svg" /></a>
 </p>
-
-# YAME — Yet Another Methylation Encoder
-
-[![build](https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml/badge.svg)](https://github.com/zhou-lab/YAME/actions/workflows/conda-build.yml)
-[![conda](https://img.shields.io/conda/vn/zhou-lab/yame?label=conda)](https://anaconda.org/zhou-lab/yame)
-[![license](https://img.shields.io/badge/license-BSD--2--Clause%20(academic)%20%2F%20commercial-blue.svg)](LICENSE)
-[![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fzhou-lab.github.io%2FYAME%2Fcoverage.json)](https://github.com/zhou-lab/YAME/blob/main/test/run.sh)
-[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://zhou-lab.github.io/YAME/)
 
 A bit-packer for DNA methylation data — arrays and whole genomes, where analysis is bitwise, and so stays fast from 28K probes to 29M CpGs.
 
