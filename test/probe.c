@@ -316,6 +316,16 @@ static void t_refstore(const char *store) {
 /* yame_store_resolve: one path-or-name rule for every tool. An existing path
  * is used as given; a store path or a unique bare name finds the record and
  * reports its state with the advice; an unknown or ambiguous name says so. */
+/* yame_human_size: the suite's one byte ladder. */
+static void t_human_size(void) {
+  char b[32];
+  yame_human_size(0, b, sizeof b);            CHECK(strcmp(b, "") == 0, "zero prints '%s', want ''", b);
+  yame_human_size(663, b, sizeof b);          CHECK(strcmp(b, "663 B") == 0, "663 prints '%s'", b);
+  yame_human_size(7756709, b, sizeof b);      CHECK(strcmp(b, "7.4 MB") == 0, "7756709 prints '%s'", b);
+  yame_human_size(2866632834ULL, b, sizeof b); CHECK(strcmp(b, "2.7 GB") == 0, "2866632834 prints '%s'", b);
+  yame_human_size(1024, b, sizeof b);         CHECK(strcmp(b, "1.0 KB") == 0, "1024 prints '%s'", b);
+}
+
 static void t_store_resolve(const char *store) {
   /* no terminal to ask on: a name reaching several files must refuse */
   if (!freopen("/dev/null", "r", stdin)) return;
@@ -525,6 +535,7 @@ static void t_store_state(const char *store) {
 
 int main(int argc, char **argv) {
   if (argc < 4) { fprintf(stderr, "usage: probe <one.cg> <three.cg> <bundle> <limit> [dir]\n"); return 2; }
+  t_human_size();
   if (argc > 5) { t_refstore(argv[5]); t_store_state(argv[5]); t_store_resolve(argv[5]); }
   t_read(argv[1], 4, '3');
   t_read_cdata1(argv[2], 3);

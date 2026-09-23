@@ -381,13 +381,9 @@ static int file_present(const char *store_root, const unit_t *a,
   return !file_superseded(dir, name, f ? f->sha256 : NULL);
 }
 
+/* One ladder for the whole suite: yame_human_size() in assets.c. */
 static void human_size(uint64_t b, char *out, size_t n) {
-  static const char *u[] = { "B", "KB", "MB", "GB" };
-  double v = (double)b; int i = 0;
-  while (v >= 1024.0 && i < 3) { v /= 1024.0; ++i; }
-  if (!b) snprintf(out, n, "%s", "");
-  else if (i == 0) snprintf(out, n, "%.0f %s", v, u[i]);
-  else snprintf(out, n, "%.1f %s", v, u[i]);
+  yame_human_size(b, out, n);
 }
 
 /* ---- how the catalogue is arranged ----

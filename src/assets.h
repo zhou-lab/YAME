@@ -339,6 +339,16 @@ int yame_store_resolve_multi(const yame_fetch_cfg_t *cfg, const char *spec,
                              char ***paths, const yame_asset_file_t ***recs,
                              size_t *n, char *advice, size_t adv_n);
 
+/**
+ * A byte count for a person: "663 B", "7.4 MB", "2.9 GB". Steps of 1024
+ * labelled B / KB / MB / GB -- the `ls -h` convention, decided for the whole
+ * suite on 2026-09-22 -- one decimal above bytes, and "" for zero (a size
+ * upstream did not publish, which callers print as nothing). Public so that
+ * a tool prints the same digits and unit words yame does instead of keeping
+ * a ladder of its own; methscope had two.
+ */
+void yame_human_size(uint64_t bytes, char *out, size_t n);
+
 /* The stale files themselves, in registry order, so a caller can offer to
  * replace exactly those: `yame fetch` asks before its browser opens. Returns
  * how many there are, filling up to `cap`. */

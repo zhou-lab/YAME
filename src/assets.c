@@ -1236,6 +1236,15 @@ int yame_store_resolve_multi(const yame_fetch_cfg_t *cfg, const char *spec,
   return 0;
 }
 
+void yame_human_size(uint64_t b, char *out, size_t n) {
+  static const char *u[] = { "B", "KB", "MB", "GB" };
+  double v = (double)b; int i = 0;
+  while (v >= 1024.0 && i < 3) { v /= 1024.0; ++i; }
+  if (!b) snprintf(out, n, "%s", "");
+  else if (i == 0) snprintf(out, n, "%.0f %s", v, u[i]);
+  else snprintf(out, n, "%.1f %s", v, u[i]);
+}
+
 size_t yame_store_stale(const yame_fetch_cfg_t *cfg, const char *root_override,
                         const yame_asset_file_t **out, size_t cap) {
   char root[YAME_PATH_MAX];
