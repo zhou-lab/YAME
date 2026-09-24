@@ -3198,6 +3198,12 @@ Purpose:
                     which are inferred when -R is not given.
                     Order preserved; no sorting required.
   -1                If -R is provided, emit the subsetted row coordinates as the FIRST dataset.
+  Neighbourhood and row map (with -l or -L):
+  -w &lt;N&gt;            Keep rows [i-N, i+N] around each selected row i, clipped to
+                    its chromosome; one window per query, in query order, overlaps
+                    kept. Needs coordinates (inferred like -L); not for array rows.
+  -M &lt;map.tsv&gt;      Write one line per output row: query, offset from the
+                    query's own row (0 without -w), 1-based row.
   (C) Mask-based filtering (binary mask):
   -m &lt;mask.cx&gt;      Mask file (format 0/1 only). Rows with bit=1 are kept.
   (D) Contiguous block by absolute row range (0-based):

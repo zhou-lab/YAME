@@ -49,6 +49,14 @@
  *   - We resolve each coordinate to a row index using row_finder_search(), then slice.
  *   - -1 optionally prepends the subsetted coordinate dataset as the first output record.
  *
+ * Neighbourhood (-w N) and row map (-M)
+ *   - -w widens every selected row i to rows [i-N, i+N] of the SAME
+ *     chromosome, one window per query in query order, overlaps kept, so
+ *     each window stays whole and its rows line up with the map.
+ *   - -M writes one line per output row: query, offset from the query's own
+ *     row (0 without -w), and the 1-based row -- the only way to tell, after
+ *     clipping at a chromosome end, which row answers which query.
+ *
  * (C) Binary mask (-m)
  *   - Mask must be fmt 0/1; it is converted to fmt0 bitset.
  *   - Keep rows where mask bit is 1.
@@ -127,6 +135,12 @@ static int usage(config_t *config) {
   yame_usage_cont("which are inferred when -R is not given.");
   yame_usage_cont("Order preserved; no sorting required.");
   yame_usage_opt("-1", "If -R is provided, emit the subsetted row coordinates as the FIRST dataset.");
+  yame_usage_text("Neighbourhood and row map (with -l or -L):");
+  yame_usage_opt("-w <N>", "Keep rows [i-N, i+N] around each selected row i, clipped to");
+  yame_usage_cont("its chromosome; one window per query, in query order, overlaps");
+  yame_usage_cont("kept. Needs coordinates (inferred like -L); not for array rows.");
+  yame_usage_opt("-M <map.tsv>", "Write one line per output row: query, offset from the");
+  yame_usage_cont("query's own row (0 without -w), 1-based row.");
   yame_usage_text("(C) Mask-based filtering (binary mask):");
   yame_usage_opt("-m <mask.cx>", "Mask file (format 0/1 only). Rows with bit=1 are kept.");
   yame_usage_text("(D) Contiguous block by absolute row range (0-based):");
@@ -155,7 +169,7 @@ static int usage(config_t *config) {
   return 1;
 }
 
-static int64_t *load_row_indices(char *fname, int64_t *n) {
+static int64_t *load_row_indices(char *fname, int64_t *n, char ***names) {
 
   int64_t *indices = NULL;
   /* snames_t snames = {0}; */
@@ -185,8 +199,9 @@ static int64_t *load_row_indices(char *fname, int64_t *n) {
         fflush(stderr);
         exit(1);
       }
+      *names = wzrealloc(*names, sizeof(char*)*((*n)+1));
+      (*names)[*n] = field;     /* the query, as written, for -M */
       indices[(*n)++] = strtoll(field, NULL, 10);
-      free(field);
     }
   }
   free(line);
@@ -216,7 +231,8 @@ static int split_string_and_number(const char* input, char** out_string, uint64_
   return 0; // success
 }
 
-static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int64_t *n_indices) {
+static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int64_t *n_indices,
+                                          char ***names) {
   int64_t *indices = NULL;
   /* snames_t snames = {0}; */
   if (fname_rnindex == NULL) { *n_indices = 0; return indices; }
@@ -247,6 +263,8 @@ static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int6
       exit(1);
     }
     indices = realloc(indices, ((*n_indices)+1)*sizeof(int64_t));
+    *names = wzrealloc(*names, ((*n_indices)+1)*sizeof(char*));
+    (*names)[*n_indices] = wzstrdup(line);
     indices[(*n_indices)] = row_finder_search(chrm, beg1, &fdr, cr);
     if (!indices[(*n_indices)]) {
       fprintf(stderr, "[%s:%d] Cannot find coordinate: %s (chromosome not in the "
@@ -261,6 +279,57 @@ static int64_t *load_row_indices_by_names(char *fname_rnindex, cdata_t *cr, int6
   free(line);
   gzclose(fp);
   return indices;
+}
+
+/**
+ * -w: widen each selected row i to [i-w, i+w], clipped to i's chromosome.
+ *
+ * One window per query, in query order, overlaps kept rather than merged:
+ * merging would make a row's offset depend on its neighbours' queries, and
+ * the point of the window is the position relative to ONE query. The
+ * chromosome of a row comes from the coordinate track's own boundaries, one
+ * pass over it.
+ */
+static void widen_rows(int64_t **idx, char ***names, int64_t **off, int64_t *n,
+                       int64_t w, cdata_t *cr) {
+  uint64_t *first = NULL, *last = NULL; int m = 0;
+  row_reader_t rdr = {0}; char *chrm = NULL;
+  while (row_reader_next_loc(&rdr, cr)) {
+    if (rdr.chrm != chrm) {
+      chrm = rdr.chrm;
+      first = wzrealloc(first, (m+1)*sizeof(uint64_t));
+      last = wzrealloc(last, (m+1)*sizeof(uint64_t));
+      first[m] = rdr.index; ++m;
+    }
+    last[m-1] = rdr.index;
+  }
+  int64_t n2 = 0, cap = 0;
+  int64_t *idx2 = NULL, *off2 = NULL; char **nm2 = NULL;
+  for (int64_t i = 0; i < *n; ++i) {
+    uint64_t r = (uint64_t) (*idx)[i];
+    if (!m || r < first[0] || r > last[m-1])
+      wzfatal("[rowsub] Row %"PRIu64" is outside the coordinate track (%"PRIu64" rows).\n",
+              r, m ? last[m-1] : 0);
+    int lo = 0, hi = m - 1;                     /* last chromosome with first <= r */
+    while (lo < hi) { int mid = (lo + hi + 1) / 2; if (first[mid] <= r) lo = mid; else hi = mid - 1; }
+    uint64_t a = r > first[lo] + (uint64_t) w ? r - (uint64_t) w : first[lo];
+    uint64_t b = r + (uint64_t) w < last[lo] ? r + (uint64_t) w : last[lo];
+    for (uint64_t x = a; x <= b; ++x) {
+      if (n2 == cap) {
+        cap = cap ? cap * 2 : 1024;
+        idx2 = wzrealloc(idx2, cap*sizeof(int64_t));
+        off2 = wzrealloc(off2, cap*sizeof(int64_t));
+        nm2 = wzrealloc(nm2, cap*sizeof(char*));
+      }
+      idx2[n2] = (int64_t) x; off2[n2] = (int64_t) x - (int64_t) r;
+      nm2[n2] = (*names)[i];                    /* shared; freed with the originals */
+      ++n2;
+    }
+  }
+  free(first); free(last);
+  free(*idx); free(*off);
+  *idx = idx2; *off = off2; *n = n2;
+  *names = nm2;   /* a view: the strings stay owned by the caller's originals */
 }
 
 static cdata_t sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n) {
@@ -510,7 +579,8 @@ int main_rowsub(int argc, char *argv[]) {
   int c; char *fname_row = NULL; char *fname_mask = NULL;
   char *fname_rnindex = NULL; int add_row_coordinates = 0;
   char *B_option = NULL, *I_option = NULL;
-  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:h"))>=0) {
+  int64_t window = -1; char *fname_map = NULL;
+  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:w:M:h"))>=0) {
     switch (c) {
     case '1': add_row_coordinates = 1; break;
     case 'R': fname_row = wzstrdup(optarg); break;
@@ -519,6 +589,8 @@ int main_rowsub(int argc, char *argv[]) {
     case 'L': fname_rnindex = wzstrdup(optarg); break;
     case 'B': B_option = wzstrdup(optarg); break;
     case 'I': I_option = wzstrdup(optarg); break;
+    case 'w': window = (int64_t) parse_row_index(optarg, "-w"); break;
+    case 'M': fname_map = wzstrdup(optarg); break;
     case 'h': return usage(&config); break;
     default: usage(&config); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -568,10 +640,19 @@ int main_rowsub(int argc, char *argv[]) {
   }
   char *fname = argv[optind];
 
+  /* -w and -M describe rows that answer queries, so they need a query list */
+  if ((window >= 0 || fname_map) && !config.fname_rindex && !fname_rnindex)
+    wzfatal("[rowsub] -w and -M work on the rows -l or -L selects; give one of those.\n");
+
   int64_t *row_indices = NULL;
   int64_t n_indices=0;
+  char **qnames = NULL;         /* the query each row answers; owned */
+  int64_t n_qnames = 0;
+  char **qnames_view = NULL;    /* per output row; points into qnames */
+  int64_t *row_offsets = NULL;  /* per output row, from -w; NULL means 0 */
   if (config.fname_rindex) {
-    row_indices = load_row_indices(config.fname_rindex, &n_indices);
+    row_indices = load_row_indices(config.fname_rindex, &n_indices, &qnames);
+    n_qnames = n_indices;
   }
 
   cdata_t c_mask = {0};
@@ -612,7 +693,7 @@ int main_rowsub(int argc, char *argv[]) {
     fname_row = wzstrdup(resolved);
   }
 
-  if ((fname_rnindex || add_row_coordinates) && !fname_row) {
+  if ((fname_rnindex || add_row_coordinates || window >= 0) && !fname_row) {
     uint64_t rows = yame_ref_file_rows(argv[optind]);
     char path[4096];
     const char *rname = NULL, *rfetch = NULL;
@@ -631,7 +712,12 @@ int main_rowsub(int argc, char *argv[]) {
     cfile_t cf_row = open_cfile(fname_row);
     cdata_t cr = read_cdata1(&cf_row);
     if (!row_indices && fname_rnindex) {
-      row_indices = load_row_indices_by_names(fname_rnindex, &cr, &n_indices);
+      row_indices = load_row_indices_by_names(fname_rnindex, &cr, &n_indices, &qnames);
+      n_qnames = n_indices;
+    }
+    if (window >= 0) {
+      qnames_view = qnames;
+      widen_rows(&row_indices, &qnames_view, &row_offsets, &n_indices, window, &cr);
     }
     if (add_row_coordinates) {
       cdata_t cr2;
@@ -646,6 +732,17 @@ int main_rowsub(int argc, char *argv[]) {
     bgzf_close(cf_row.fh);
   }
   
+  if (fname_map) {
+    FILE *fm = fopen(fname_map, "w");
+    if (!fm) wzfatal("[rowsub] Cannot write -M %s: %s\n", fname_map, strerror(errno));
+    char **nm = qnames_view ? qnames_view : qnames;
+    for (int64_t i = 0; i < n_indices; ++i)
+      fprintf(fm, "%s\t%"PRId64"\t%"PRId64"\n", nm[i],
+              row_offsets ? row_offsets[i] : 0, row_indices[i]);
+    if (fclose(fm) != 0)
+      wzfatal("[rowsub] Writing -M %s failed: %s\n", fname_map, strerror(errno));
+  }
+
   while (1) {
     cdata_t c = read_cdata1(&cf);
     if (c.n == 0) break;
@@ -673,7 +770,10 @@ int main_rowsub(int argc, char *argv[]) {
   bgzf_close(cf.fh);
   bgzf_close(fp_out);
 
-  if (n_indices) free(row_indices);
+  free(row_indices); free(row_offsets);
+  if (qnames_view != qnames) free(qnames_view);
+  for (int64_t i = 0; i < n_qnames; ++i) free(qnames[i]);
+  free(qnames); free(fname_map); free(config.fname_rindex);
   if (fname_row) free(fname_row);
   if (fname_rnindex) free(fname_rnindex);
   

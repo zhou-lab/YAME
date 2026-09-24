@@ -817,6 +817,7 @@ cdata_t fmt7_sliceToIndices(cdata_t *c, int64_t *row_indices, int64_t n_indices)
     last = loc;
   }
   free(chrms);
+  free(inflated.s);   /* locs_beg and chrms pointed into it */
 
   cdata_t c_out = {0};
   c_out.s = s_out;

@@ -68,3 +68,40 @@ if "$YAME" rowsub -m short.cg all.cg >/dev/null 2>err.txt; then
   echo "-m accepted a mask shorter than the data"; exit 1
 fi
 [ -s err.txt ] || { echo "a short mask failed silently"; exit 1; }
+
+## ---- 6. -w: a neighbourhood per query, clipped to its chromosome ----------
+## chr1 rows 1-10, chr2 rows 11-16, 100 bp apart; the beta names the row.
+awk 'BEGIN { OFS = "\t"
+  for (i = 1; i <= 10; i++) print "chr1", i * 100, i * 100 + 2
+  for (i = 1; i <= 6; i++)  print "chr2", i * 100, i * 100 + 2 }' > ref.bed
+"$YAME" pack -f r ref.bed > ref.cr
+awk 'BEGIN { for (i = 1; i <= 16; i++) print i "\t" (100 - i) }' > d.txt
+"$YAME" pack -f m d.txt > d.cg
+## chr1_901 is row 9 (clipped at chr1's last row, 10); chr2_101 is row 11
+## (clipped at chr2's first); chr1_501 is row 5 and overlaps chr1_901 at 7
+printf 'chr1_901\nchr2_101\nchr1_501\n' > q.txt
+"$YAME" rowsub -R ref.cr -L q.txt -w 2 -M map.tsv -1 d.cg > w.cg 2>/dev/null
+printf '%s\n' 'chr1_901	-2	7' 'chr1_901	-1	8' 'chr1_901	0	9' 'chr1_901	1	10' \
+  'chr2_101	0	11' 'chr2_101	1	12' 'chr2_101	2	13' \
+  'chr1_501	-2	3' 'chr1_501	-1	4' 'chr1_501	0	5' 'chr1_501	1	6' \
+  'chr1_501	2	7' > map.want
+diff map.want map.tsv || { echo "-w 2 -M: wrong windows or offsets"; exit 1; }
+## the data rows, and the -1 coordinates, follow the map one-to-one
+"$YAME" unpack -a -f -1 w.cg 2>/dev/null | cut -f1,2,4 > w.txt
+cut -f3 map.tsv | while read -r r; do
+  sed -n "${r}p" ref.bed | cut -f1,2 | tr '\n' '\t'; echo "$r"
+done > w.want
+diff w.want w.txt || { echo "-w 2: data or -1 coordinates do not follow the map"; exit 1; }
+
+## -l takes a window too, and -M without -w reports offset 0
+printf '3\n' | "$YAME" rowsub -R ref.cr -l - -w 1 -M m1.tsv d.cg 2>/dev/null |
+  "$YAME" unpack -f -1 - 2>/dev/null | cut -f1 | tr '\n' ' ' > l.txt
+[ "$(cat l.txt)" = "2 3 4 " ] || { echo "-l 3 -w 1 gave rows $(cat l.txt)"; exit 1; }
+printf 'chr2_301\n' | "$YAME" rowsub -R ref.cr -L - -M m0.tsv d.cg >/dev/null 2>&1
+[ "$(cat m0.tsv)" = "$(printf 'chr2_301\t0\t13')" ] || { echo "-M without -w: $(cat m0.tsv)"; exit 1; }
+
+## -w with no query list has nothing to widen
+if "$YAME" rowsub -R ref.cr -w 2 d.cg >/dev/null 2>err.txt; then
+  echo "-w without -l/-L was accepted"; exit 1
+fi
+[ -s err.txt ] || { echo "-w without -l/-L failed silently"; exit 1; }

@@ -214,6 +214,12 @@ Subset
         -B beg0[_end1] half-open block; -I blockIdx0[_blockSize] (default
         1000000). Precedence: -l/-L > -m > -B/-I. Order is preserved and no
         sorting is required; fmt2 keys survive the slice.
+        -w <N> (with -l/-L) keeps rows [i-N, i+N] around each selected row i,
+        clipped to i's chromosome: one window per query, in query order,
+        overlapping windows kept whole (a row can appear twice). Needs
+        coordinates, inferred like -L. -M <map.tsv> writes one line per
+        output row: query, offset from the query's own row (0 without -w),
+        1-based row -- the way to tell which row answers which query.
   chunk [-s size] [-v] <in.cx> [outdir]   fixed row blocks; fatal on fmt2/fmt7
 
 Compare and summarize
@@ -353,6 +359,10 @@ Reference data
 
   ## per-CpG M and U for a region, with coordinates
   yame rowsub -R hg38 -L coords.txt -1 in.cg | yame unpack -a -f -1 -
+
+  ## the 15 CpGs on either side of each coordinate, with a row map
+  yame rowsub -R hg38 -L coords.txt -w 15 -M map.tsv -1 in.cg > win.cg
+  yame unpack -a -f -1 win.cg | paste map.tsv - | head
 
   ## enrichment against a knowledgebase set
   yame fetch -y -g CGI hg38/KYCG
