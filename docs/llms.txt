@@ -338,7 +338,7 @@ Perturb and mask (benchmarking)
         resolves in the store for the input's row space, as summary -m does.
         -c contextualizes fmt0 data to fmt6 (implicit for fmt6 input).
         Deterministic and file-driven: it decides which sites are valid.
-  dsample [-N 100] [-s seed] [-r reps] [-p prefix] [-b] [-o out] <in.cx>
+  dsample [-N 100] [-s seed] [-r reps] [-p prefix] [-b] [-o out] <in.cx> [out.cx]
         fmt3 and fmt6 only. fmt3 masks by setting M=U=0, fmt6 by clearing the
         universe bit. Stochastic: fix -s or it is not reproducible.
   perturb [-p 0.05] [-s seed] [-o out] <in.cx>

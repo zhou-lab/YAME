@@ -102,8 +102,19 @@ cdata_t dsample_fmt3(cdata_t *c, uint64_t N,
     if (f3_get_mu(&cout, i))
       N_indices++;
 
-  // If we want >= all available entries, do nothing (keep all)
-  if (N >= N_indices) return cout;
+  /* N reaches every covered site: nothing to drop. -b still has to binarize
+   * them -- returning here used to hand back the raw M/U, so `-b` silently
+   * did nothing whenever N was at least the coverage. */
+  if (N >= N_indices) {
+    if (f3_rand_binarize)
+      for (uint64_t i = 0; i < cout.n; ++i) {
+        uint64_t mu = f3_get_mu(&cout, i);
+        if (!mu) continue;
+        if (random_zero_to_one() < MU2beta(mu)) f3_set_mu(&cout, i, 1, 0);
+        else f3_set_mu(&cout, i, 0, 1);
+      }
+    return cout;
+  }
 
   // Collect indices of eligible sites
   uint64_t j = 0;
@@ -336,6 +347,18 @@ int main_dsample(int argc, char *argv[]) {
   }
 
   char *fname = argv[optind];
+  /* `dsample in.cx out.cx`, as the usage line says (and as pack and rowop
+   * take theirs). It used to be ignored: the data went to stdout, exit 0,
+   * and out.cx never appeared. */
+  if (optind + 2 == argc) {
+    if (fname_out && strcmp(fname_out, argv[optind + 1]))
+      wzfatal("[dsample] Two outputs: -o %s and %s. Give one.\n",
+              fname_out, argv[optind + 1]);
+    if (!fname_out) fname_out = wzstrdup(argv[optind + 1]);
+  } else if (optind + 2 < argc) {
+    usage();
+    wzfatal("[dsample] Too many arguments: one input and at most one output.\n");
+  }
   BGZF* fp_out;
   if (fname_out) fp_out = bgzf_open2(fname_out, "wb");
   else fp_out = yame_bgzf_stdout("wb", "dsample");
@@ -352,6 +375,7 @@ int main_dsample(int argc, char *argv[]) {
   
   uint64_t *indices = NULL;
   uint8_t *to_include = NULL;
+  uint64_t cap = 0;             /* rows the two buffers above can hold */
 
   int64_t n_samples = 0;
   
@@ -365,16 +389,14 @@ int main_dsample(int argc, char *argv[]) {
     decompress_in_situ(&c_in);
     uint64_t n_positions = c_in.n;
 
-    if (!indices) {
-      indices = (uint64_t *) calloc(n_positions, sizeof(uint64_t));
-      if (!indices) {
-        wzfatal("Failed to allocate indices buffer.");
-      }
-      uint64_t nbytes = (n_positions + 7) / 8;
-      to_include = (uint8_t *) calloc(nbytes, 1);
-      if (!to_include) {
-        wzfatal("Failed to allocate bitset buffer.");
-      }
+    /* Sized for the longest record so far, not the first: a store whose
+     * records differ in length (a mixed store, or a probe file beside a
+     * genome one) wrote past both buffers on the first longer record. */
+    if (n_positions > cap) {
+      free(indices); free(to_include);
+      indices = wzcalloc(n_positions, sizeof(uint64_t));
+      to_include = wzcalloc((n_positions + 7) / 8, 1);
+      cap = n_positions;
     }
 
     /* For each requested replicate, independently downsample and write. */
