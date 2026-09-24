@@ -103,6 +103,10 @@ jobs:
           ## summary sum (the walk and the inverted index); methscope calls
           ## both from its featurizer, so their signatures are a contract too.
           ##
+          ## yame_ui.h is the terminal UI kycg builds its own browser on (it
+          ## dropped its fork of ui.c for this header), so a change to a widget,
+          ## a callback or the tree spec is a contract change there too.
+          ##
           ## src/registry.h is deliberately NOT here. No downstream includes
           ## YAME's copy; each tool generates its own. It is data, not an
           ## interface, and it changes on every pin bump, so gating it would
@@ -110,7 +114,8 @@ jobs:
           surface=$(python3 - <<'PY'
           import re, os
           seen, todo = [], ["src/cdata.h", "src/cfile.h", "src/assets.h",
-                            "src/summary_multi.h", "src/summary_index.h"]
+                            "src/summary_multi.h", "src/summary_index.h",
+                            "src/yame_ui.h"]
           while todo:
               h = todo.pop(0)
               if h in seen or not os.path.exists(h): continue

@@ -154,19 +154,6 @@ typedef enum {
   YAME_ROW_PARTIAL,
 } yame_row_style_t;
 
-/**
- * Scrollable in-place viewer for tabular output.
- *
- * `header` is a column header held fixed above the rows; it and `rows` are
- * tab-separated and rendered into aligned columns. `styles` may be NULL, or
- * one yame_row_style_t per row. Returns 0 when the viewer ran, -1 when the
- * terminal cannot support it and the caller should print plainly instead.
- * Never call this when stdout is redirected: piped output must stay
- * machine-readable.
- */
-int yame_ui_browse(const char *title, const char *header,
-                   const char **rows, const unsigned char *styles, size_t n);
-
 /** Child rows of one expanded node, owned by the caller of the expand fn. */
 typedef struct {
   char **rows;            /* preformatted lines; the tree indents, not aligns */

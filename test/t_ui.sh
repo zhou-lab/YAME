@@ -291,3 +291,82 @@ if b"Replace them now?" in out:
 if fails:
     print(f"{fails} browser assertion(s) failed"); sys.exit(1)
 PY
+
+## ---- the parts of yame_ui.h only a downstream caller reaches -------------
+## yame never asks for text inside a widget and never takes a signal in one,
+## so yame_ui_panel_ask and the raw-mode signal handler had no coverage --
+## and kycg asks for its store with the first and relies on the second to
+## hand a Ctrl-C'd terminal back. test/probe_ui.c is the smallest caller of
+## both, built against libyame.a as t_probe.sh builds its probe.
+root=$(cd "$(dirname "$0")/.." && pwd)
+if [ ! -f "$root/libyame.a" ] || [ ! -x "$root/yame-config" ]; then
+  echo "skip: probe_ui needs libyame.a (run 'make lib')" >&2; exit 0
+fi
+## ${CC:-cc}: the coverage run instruments libyame.a; see t_probe.sh
+${CC:-cc} -O1 -g -std=gnu99 $("$root/yame-config" --cflags) -o "$d/probe_ui" \
+  "$root/test/probe_ui.c" $("$root/yame-config" --libs) 2>"$d/cc.err" ||
+  { echo "probe_ui did not build"; cat "$d/cc.err"; exit 1; }
+
+python3 - "$d/probe_ui" "$d" <<'PY'
+import os, pty, sys, time, select, signal, termios
+PROBE, D = sys.argv[1], sys.argv[2]
+_SLOW = float(os.environ.get("YAME_UI_SLOW", "1"))
+fails = 0
+
+def run(keys, arg=None, cols="100", interrupt=False):
+    """Run the probe on a pty, feed keys, and return (status, output, log,
+    the pty's local modes after the probe is gone)."""
+    log = os.path.join(D, "ask.log")
+    if os.path.exists(log): os.remove(log)
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.environ.update(TERM="xterm", COLUMNS=cols, LINES="20", PROBE_UI_LOG=log)
+        os.environ.pop("NO_COLOR", None)
+        os.execv(PROBE, [PROBE] + ([arg] if arg else []))
+    out = b""
+    def pump(t):
+        nonlocal out
+        end = time.time() + t * _SLOW
+        while time.time() < end:
+            r, _, _ = select.select([fd], [], [], 0.05)
+            if r:
+                try: out += os.read(fd, 65536)
+                except OSError: return
+    pump(1.0)                                   # the tree's first frame
+    for k in keys:
+        os.write(fd, k); pump(0.3)
+    if interrupt:
+        os.kill(pid, signal.SIGINT); pump(0.5)
+    lflag = termios.tcgetattr(fd)[3]
+    _, st = os.waitpid(pid, 0)
+    return st, out, (open(log).read() if os.path.exists(log) else ""), lflag
+
+def check(cond, what):
+    global fails
+    if not cond: print("  FAIL " + what); fails += 1
+
+## edit: three backspaces take /old to /, then type new; Enter accepts.
+## Then a second ask, typed into and cancelled with Escape: rc 0.
+st, out, log, _ = run([b"s", b"\x7f\x7f\x7f", b"new", b"\r", b"s", b"xx", b"\x1b", b"q"])
+check(os.waitstatus_to_exitcode(st) == 0, "probe_ui did not exit 0")
+check("RESULT rc=1 buf=[/new]" in log, "panel_ask: backspace and typing did not give /new: " + log)
+check("RESULT rc=0 buf=" in log, "panel_ask: Escape did not return 0: " + log)
+check(b"store:" in out, "panel_ask: the prompt was never drawn")
+
+## a value longer than the line shows its tail, where the cursor is
+long = "a" * 60 + "TAILEND"
+st, out, log, _ = run([b"s", b"\r", b"q"], arg=long, cols="40")
+check("buf=[" + long + "]" in log, "panel_ask: a long value did not come back whole")
+check(b"TAILEND" in out and (b"a" * 60) not in out, "panel_ask: a long value was not shown by its tail")
+
+## Ctrl-C while the widget holds the terminal: the process still dies of the
+## signal, but only after leaving the alternate screen and restoring cooked
+## mode -- or the user's shell is left raw and blank
+st, out, log, lflag = run([], interrupt=True)
+check(os.WIFSIGNALED(st) and os.WTERMSIG(st) == signal.SIGINT, "SIGINT did not end the probe by SIGINT")
+check(b"\x1b[?1049l" in out, "SIGINT: the alternate screen was not left")
+check(bool(lflag & termios.ICANON) and bool(lflag & termios.ECHO), "SIGINT: the terminal was left in raw mode")
+
+if fails:
+    print(f"{fails} probe_ui assertion(s) failed"); sys.exit(1)
+PY
