@@ -69,6 +69,34 @@ mkdir cwd && ( cd cwd && "$YAME" fetch -y -c "$asset" </dev/null > ../f3.log 2>&
 cmp -s cwd/Blacklist.20220304.cm "$here/fixtures/Blacklist.20220304.cm" || { echo "fetch -c bytes differ"; exit 1; }
 [ ! -e cwd/SHA256SUMS ] || { echo "fetch -c wrote a manifest it says it does not"; exit 1; }
 
+## ---- 4b. a set NAMED to summary resolves in the query's row space ----------
+## An EPIC-sized query (866,553 rows) says which row space it lives in, so
+## `-m Blacklist` finds the file just fetched, in EPIC's knowledgebase, with
+## no path. Without the store holding it, the same name is refused by name.
+awk 'BEGIN { for (i = 0; i < 866553; i++) print (i % 3 ? 1 : 0) }' | "$YAME" pack -f b - epic_q.cg
+"$YAME" summary -m Blacklist epic_q.cg </dev/null > sm.txt 2> sm.err ||
+  { echo "summary -m Blacklist failed"; cat sm.err; exit 1; }
+grep -q -- "-m Blacklist -> .*$scope/Blacklist.20220304.cm" sm.err ||
+  { echo "-m Blacklist did not resolve to the stored file"; cat sm.err; exit 1; }
+[ "$(tail -n +2 sm.txt | cut -f3 | sort -u)" = "Blacklist.20220304.cm" ] ||
+  { echo "summary did not report the resolved mask"; cat sm.txt; exit 1; }
+if YAME_DATA_HOME="$d/empty_store" "$YAME" summary -m Blacklist epic_q.cg </dev/null >/dev/null 2>sm.err; then
+  echo "-m Blacklist resolved in a store that does not hold it"; exit 1
+fi
+grep -q 'Blacklist' sm.err || { echo "an unresolvable -m name failed without naming it"; exit 1; }
+## a file that is not a CX stream is not a mask: plain gzip fails at the BGZF
+## layer, and a valid BGZF file with no record in it is named as such
+printf 'chr1\t1\t2\n' | gzip > notmask.bed.gz
+if "$YAME" summary -m notmask.bed.gz epic_q.cg </dev/null >/dev/null 2>sm.err; then
+  echo "a .bed.gz was accepted as a mask"; exit 1
+fi
+grep -q 'not a readable CX stream' sm.err || { echo "a gzip mask failed without saying why"; cat sm.err; exit 1; }
+python3 -c 'open("empty.cm","wb").write(bytes.fromhex("1f8b08040000000000ff0600424302001b0003000000000000000000"))'
+if "$YAME" summary -m empty.cm epic_q.cg </dev/null >/dev/null 2>sm.err; then
+  echo "a mask with no record was accepted"; exit 1
+fi
+grep -q 'holds no CX record' sm.err || { echo "an empty mask failed without saying why"; cat sm.err; exit 1; }
+
 ## ---- 5. a file the mirror corrupts is refused, and not kept -----------------
 rm -rf "$YAME_DATA_HOME"/*
 printf 'not the blacklist\n' > "$tree/Blacklist.20220304.cm"
@@ -429,5 +457,57 @@ unset POSIXLY_CORRECT
 if YAME_DATA_HOME="$empty" "$YAME" fetch -n -- -nosuch </dev/null >/dev/null 2>&1; then
   echo "a nonexistent name after -- was accepted"; exit 1
 fi
+
+## ---- 16. store edges ---------------------------------------------------------
+## -c with the right bytes already in the current directory: nothing to move
+mkdir -p c16 && cp "$here/fixtures/Blacklist.20220304.cm" c16/
+n0=$(grep -c 'Blacklist.20220304.cm' server.log)
+( cd c16 && "$YAME" fetch -y -c "$asset" </dev/null > ../f16.log 2>&1 ) || { echo "fetch -c over a present file failed"; cat f16.log; exit 1; }
+grep -q 'already here' f16.log || { echo "fetch -c did not see the file already here"; cat f16.log; exit 1; }
+[ "$(grep -c 'Blacklist.20220304.cm' server.log)" -eq "$n0" ] || { echo "fetch -c downloaded a file it had"; exit 1; }
+## names separated by commas are several names
+"$YAME" fetch -n EPIC,MSA </dev/null > f16.log 2>&1 || { echo "fetch -n EPIC,MSA failed"; cat f16.log; exit 1; }
+grep -q 'in 2 directories' f16.log || { echo "EPIC,MSA did not plan two directories"; cat f16.log; exit 1; }
+## a file name several directories publish is refused, with every one listed
+if "$YAME" fetch -n CGI.20220904.cm </dev/null > f16.log 2>&1; then echo "an ambiguous file name was accepted"; exit 1; fi
+grep -q 'directories publish a file called CGI.20220904.cm' f16.log && grep -q 'EPICv2/KYCG/CGI.20220904.cm' f16.log ||
+  { echo "the ambiguous name did not list its directories"; cat f16.log; exit 1; }
+## the single-file form needs all three of -u -s -o ...
+if "$YAME" fetch -u http://127.0.0.1:1/x </dev/null > f16.log 2>&1; then echo "-u alone was accepted"; exit 1; fi
+grep -q 'go together' f16.log || { echo "-u alone failed without saying why"; exit 1; }
+## ... and finding the right bytes at -o already, downloads nothing
+sha=$(sha256sum "$here/fixtures/Blacklist.20220304.cm" | cut -c1-64)
+cp "$here/fixtures/Blacklist.20220304.cm" there.cm
+n0=$(grep -c 'Blacklist.20220304.cm' server.log)
+"$YAME" fetch -u "$YAME_ASSETS_MIRROR/zhou-lab/InfiniumAnnotation/$tag/$asset" -s "$sha" -o there.cm </dev/null >/dev/null 2>&1 ||
+  { echo "the single-file form failed over a file it already had"; exit 1; }
+[ "$(grep -c 'Blacklist.20220304.cm' server.log)" -eq "$n0" ] || { echo "-o over the right bytes downloaded again"; exit 1; }
+## a store that cannot be written is refused before anything moves
+mkdir -p ro && chmod a-w ro
+if YAME_DATA_HOME="$d/ro/sub" "$YAME" fetch -y "$asset" </dev/null > f16.log 2>&1; then
+  chmod u+w ro; echo "a read-only store was fetched into"; exit 1
+fi
+chmod u+w ro
+grep -q 'is not writable' f16.log || { echo "a read-only store failed without saying why"; exit 1; }
+## a store that does not exist yet, several levels down, is made
+YAME_DATA_HOME="$d/new/deeper/store" "$YAME" fetch -y "$asset" </dev/null >/dev/null 2>&1 ||
+  { echo "fetch into a new nested store failed"; exit 1; }
+[ -f "$d/new/deeper/store/$asset" ] || { echo "the new nested store did not get the file"; exit 1; }
+## no store variable at all: the default under $HOME, and one notice that an
+## old per-tool cache there is no longer read
+mkdir -p "$d/h/.cache/kycg"
+env -u YAME_DATA_HOME -u XDG_DATA_HOME -u METHSCOPE_DATA_HOME HOME="$d/h" \
+  "$YAME" fetch -y "$asset" </dev/null > f16.log 2>&1 || { echo "fetch with no store variable failed"; cat f16.log; exit 1; }
+[ -f "$d/h/.local/share/yame/$asset" ] || { echo "the default store is not ~/.local/share/yame"; exit 1; }
+grep -q 'older per-tool cache' f16.log || { echo "no notice about the old cache"; cat f16.log; exit 1; }
+## a partial download older than a day is swept on the next fetch there; a
+## recent one might belong to a fetch still running, and stays
+kd="$YAME_DATA_HOME/EPIC/KYCG"; mkdir -p "$kd"
+touch -d '3 days ago' "$kd/old.cm.99.part" 2>/dev/null || touch -t 200001010000 "$kd/old.cm.99.part"
+touch "$kd/new.cm.98.part"
+"$YAME" fetch -y -f "$asset" </dev/null >/dev/null 2>&1 || { echo "fetch -f failed"; exit 1; }
+[ ! -e "$kd/old.cm.99.part" ] || { echo "a day-old .part was not swept"; exit 1; }
+[ -e "$kd/new.cm.98.part" ] || { echo "a fresh .part was swept"; exit 1; }
+rm -f "$kd/new.cm.98.part"
 
 echo "ok: t_fetch"

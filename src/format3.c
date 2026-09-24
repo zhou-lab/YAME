@@ -154,9 +154,9 @@ cdata_t* fmt3_read_raw(char *fname, uint8_t unit, int verbose) {
   char **fields; int nfields;
   while (gzFile_read_line(fh, &line) > 0) {
     line_get_fields(line, "\t", &fields, &nfields);
-    if (nfields < 2) wzfatal("Number of fields <2. Abort.");
+    if (nfields < 2) wzfatal("[pack -f m] fewer than 2 fields in \"%s\": need M and U.\n", line);
     if (!is_int(fields[0]) || !is_int(fields[1]))
-      wzfatal("Field 1 or 2 is not a nonnegative integer.");
+      wzfatal("[pack -f m] M or U in \"%s\" is not a nonnegative integer.\n", line);
     uint64_t M = atol(fields[0]);
     uint64_t U = atol(fields[1]);
     s = wzrealloc(s, (n+1)*unit);

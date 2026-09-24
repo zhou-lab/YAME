@@ -171,3 +171,33 @@ else
       { echo "a starved unpack did not say it ran out of memory"; head -3 oom.err; exit 1; }
   fi
 fi
+
+## ---- 6. well-formed BGZF around a bad record --------------------------------
+## Truncating the compressed file (section 1) breaks the BGZF layer first, so
+## the record reader's own checks never see it. These are valid BGZF members
+## whose CONTENT is wrong: a signature that is not a CX one, a signature cut
+## short, a signature and nothing else, and a header promising more data than
+## follows. Each must fail and say which.
+if command -v python3 >/dev/null; then
+  python3 - <<'PY'
+import struct, zlib
+def bgzf(payload, name):
+    c = zlib.compressobj(6, zlib.DEFLATED, -15); co = c.compress(payload) + c.flush()
+    bs = 12 + 6 + len(co) + 8
+    hdr = struct.pack("<BBBBIBBHBBHH", 31, 139, 8, 4, 0, 0, 255, 6, 66, 67, 2, bs - 1)
+    eof = bytes.fromhex("1f8b08040000000000ff0600424302001b0003000000000000000000")
+    open(name, "wb").write(hdr + co + struct.pack("<II", zlib.crc32(payload) & 0xffffffff,
+                                                  len(payload)) + eof)
+SIG = struct.pack("<Q", 266563789635)
+bgzf(b"\x01" * 8 + b"3" + struct.pack("<Q", 4) + b"\0" * 4, "badsig.cg")
+bgzf(SIG[:5], "shortsig.cg")
+bgzf(SIG, "sigonly.cg")
+bgzf(SIG + b"0" + struct.pack("<Q", 31) + b"\0\0\0", "shortbody.cg")
+PY
+  for pair in "badsig:Unmatched signature" "shortsig:Truncated record header" \
+              "sigonly:Truncated record header" "shortbody:does not hold"; do
+    f=${pair%%:*}; msg=${pair#*:}
+    if "$YAME" unpack $f.cg >/dev/null 2>err.txt; then echo "$f.cg read as if whole"; exit 1; fi
+    grep -q "$msg" err.txt || { echo "$f.cg failed without saying '$msg'"; cat err.txt; exit 1; }
+  done
+fi

@@ -481,9 +481,19 @@ int main_unpack(int argc, char *argv[]) {
       else if (pfmt.ref == 1) fputs("chrm\tbeg0\tend0", stdout);
       else fputs("chrm_beg1", stdout);
     }
+    /* One name per COLUMN, not per record: -f with a negative value prints
+     * two columns for a format 3 record (M, U) and a format 6 one (set,
+     * universe), and a single name over two columns shifted every name after
+     * it onto the wrong data. */
     for (int i=0; i<snames.n; ++i) {
       if (fname_row || col1_is_row_index || i) fputc('\t', stdout);
-      fputs(snames.s[i], stdout);
+      char f = (uint64_t) i < cs->size ? ref_cdata_v(cs, i)->fmt : 0;
+      if (pfmt.data < 0 && f == '3')
+        fprintf(stdout, "%s_M\t%s_U", snames.s[i], snames.s[i]);
+      else if (pfmt.data < 0 && f == '6')
+        fprintf(stdout, "%s_set\t%s_uni", snames.s[i], snames.s[i]);
+      else
+        fputs(snames.s[i], stdout);
     }
     fputc('\n', stdout);
   }

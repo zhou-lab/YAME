@@ -165,7 +165,9 @@ Text in and out
         -C names the columns); -l <list>; -H <N> first N; -T <N> last N (index).
         -R <rows.cx|name> prepend coordinates (never inferred here);
         -r 0 chrm/beg0/end1 (cg-style, default), 1 chrm/beg0/end0 (allc),
-        else chrm_beg1. -C header line. -u <bytes> unit override.
+        else chrm_beg1. -C header line, one name per printed column: with
+        -f -1 a fmt3 record is <name>_M <name>_U, a fmt6 one <name>_set
+        <name>_uni. -u <bytes> unit override.
         -f <N>: REQUIRED for fmt3, which has no default print mode -- unpack
         refuses rather than guess: 0 packed (M<<32)|U (raw storage, not a
         beta), <0 M<TAB>U, >0 beta with NA below coverage N; fmt6 — 0 prints 0/1 with NA as '2', <0 value<TAB>universe,
@@ -231,7 +233,9 @@ Compare and summarize
         picks masks in the browser and fetches what is missing, and -m beside
         it names sets that arrive checked (`-b -m CGI,ChromHMM`). In either
         browser, d changes the store. Every query
-        sample is summarized against every mask sample. A fmt2 mask emits one
+        sample is summarized against every mask sample. A fmt2 query emits one row
+        per state, named by the state (-T prefixes the record's name, e.g.
+        1-A), whatever the mask. A fmt2 mask emits one
         row per state. With no mask, Mask is 'global' and the universe plays
         the mask: N_mask = N_univ and N_overlap = N_query, for every query
         format. A binary (fmt0/1) query is a set, so its Beta is NA.

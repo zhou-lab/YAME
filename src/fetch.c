@@ -857,19 +857,6 @@ static const char *group_mark(void) {
   return yame_ui_unicode() ? "▪ " : "= ";
 }
 
-static int is_group_row(const char *path) {
-  const char *m = group_mark();
-  return strncmp(path, m, strlen(m)) == 0;
-}
-
-/* The group a heading row names, lowercased back from its display form. */
-static void group_of_row(const char *path, char *out, size_t n) {
-  const char *p = path + strlen(group_mark());
-  size_t i = 0;
-  for (; p[i] && i + 1 < n; ++i)
-    out[i] = (p[i] >= 'A' && p[i] <= 'Z') ? (char)(p[i] - 'A' + 'a') : p[i];
-  out[i] = '\0';
-}
 
 /* Defined below, beside the -g filter they serve; the listing wants the same
  * matching so that -l is the dry run for a fetch. */
@@ -1234,28 +1221,10 @@ static void bx_detail(void *ctx, const char *path, const char *key, int cols,
 
   const char *bar = key ? strchr(key, '|') : NULL;
 
-  if (is_group_row(path)) {
-    /* A species heading. */
-    char group[64];
-    group_of_row(path, group, sizeof(group));
-
-    char units[32][256], list[512] = "";
-    size_t nu = group_units(group, units, 32);
-    for (size_t i = 0; i < nu; ++i) {
-      strncat(list, units[i], sizeof(list) - strlen(list) - 1);
-      if (i + 1 < nu) strncat(list, ", ", sizeof(list) - strlen(list) - 1);
-    }
-
-    size_t total, have;
-    group_counts(b->root, group, &total, &have);
-
-    lay_head(&L, group, "genome builds and array platforms");
-    lay_wrap(&L, NULL, list);
-    char buf[128];
-    snprintf(buf, sizeof(buf), "%zu of %zu files already in the store",
-             have, total);
-    lay_wrap(&L, "in store", buf);
-  } else if (!bar) {
+  /* No branch for a species heading: the cursor never lands on one (a
+   * heading never opens and is stepped over), so the pane is never asked
+   * about it. */
+  if (!bar) {
     /* A unit, or the knowledgebase inside one. */
     size_t total, have;
     unit_counts(b->root, p.unit, p.sub, p.sub[0] ? 0 : 1, &total, &have);

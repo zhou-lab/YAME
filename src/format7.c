@@ -228,9 +228,9 @@ cdata_t *fmt7_read_raw(char *fname, int verbose) {
   uint64_t last = 0;
   while (gzFile_read_line(fh, &line)>0) {
     line_get_fields(line, "\t", &fields, &nfields);
-    if (nfields < 2) wzfatal("Number of fields <2. Abort.");
+    if (nfields < 2) wzfatal("[pack -f r] fewer than 2 fields in \"%s\": need chromosome and start.\n", line);
     if (!is_nonnegative_int(fields[1]))
-      wzfatal("Field 1 or 2 is not a nonnegative integer.");
+      wzfatal("[pack -f r] the start in \"%s\" is not a nonnegative integer.\n", line);
 
     uint64_t loc = atol(fields[1])+1;
     if (!chrm || strcmp(chrm, fields[0]) != 0 ||

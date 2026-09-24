@@ -99,6 +99,24 @@ static void t_read_cdata1(const char *path, int want_records) {
   bgzf_close(cf.fh);
 }
 
+/* read_cdata(beg, end): a slice of the stream's records, 0-based and
+ * inclusive, end < 0 meaning to the end. Declared in cfile.h and called by
+ * nothing in YAME, so this is its only test. */
+static void t_read_cdata(const char *path) {
+  cfile_t cf = open_cfile((char *) path);
+  cdata_v *cs = read_cdata(&cf, 1, 2);
+  CHECK(cs->size == 2, "read_cdata(1, 2) held %d records, want 2", (int) cs->size);
+  for (size_t i = 0; i < cs->size; ++i) free_cdata(ref_cdata_v(cs, i));
+  free_cdata_v(cs);
+  bgzf_close(cf.fh);
+  cf = open_cfile((char *) path);
+  cs = read_cdata(&cf, 0, -1);
+  CHECK(cs->size == 3, "read_cdata(0, -1) held %d records, want all 3", (int) cs->size);
+  for (size_t i = 0; i < cs->size; ++i) free_cdata(ref_cdata_v(cs, i));
+  free_cdata_v(cs);
+  bgzf_close(cf.fh);
+}
+
 /* The accessors a consumer does arithmetic with. */
 static void t_accessors(const char *path) {
   cfile_t cf = open_cfile((char *) path);
@@ -539,6 +557,7 @@ int main(int argc, char **argv) {
   if (argc > 5) { t_refstore(argv[5]); t_store_state(argv[5]); t_store_resolve(argv[5]); }
   t_read(argv[1], 4, '3');
   t_read_cdata1(argv[2], 3);
+  t_read_cdata(argv[2]);
   t_accessors(argv[1]);
   t_sha256();
   {   /* the directory the running binary sits in -- used to find a store

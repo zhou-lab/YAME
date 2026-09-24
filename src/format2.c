@@ -538,9 +538,15 @@ stats_t* summarize1_queryfmt2(
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
       st[k].sm = wzstrdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
+      /* The state names the row, as with no mask and with a state mask;
+       * -T prefixes the record's name. This branch used to prefix always. */
+      if (config->section_name) {
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+        st[k].sq = tmp.s;
+      } else {
+        st[k].sq = wzstrdup(aux->keys[k]);
+      }
     }
     free(cnts);
     free(cnts_q);
@@ -567,9 +573,15 @@ stats_t* summarize1_queryfmt2(
       st[k].n_o = cnts[k];
       st[k].n_m = n_m;
       st[k].sm = wzstrdup(sm);
-      kstring_t tmp = {0};
-      ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
-      st[k].sq = tmp.s;
+      /* The state names the row, as with no mask and with a state mask;
+       * -T prefixes the record's name. This branch used to prefix always. */
+      if (config->section_name) {
+        kstring_t tmp = {0};
+        ksprintf(&tmp, "%s-%s", sq, aux->keys[k]);
+        st[k].sq = tmp.s;
+      } else {
+        st[k].sq = wzstrdup(aux->keys[k]);
+      }
     }
     free(cnts);
     free(cnts_q);

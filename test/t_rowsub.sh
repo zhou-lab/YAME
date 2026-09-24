@@ -105,3 +105,38 @@ if "$YAME" rowsub -R ref.cr -w 2 d.cg >/dev/null 2>err.txt; then
   echo "-w without -l/-L was accepted"; exit 1
 fi
 [ -s err.txt ] || { echo "-w without -l/-L failed silently"; exit 1; }
+
+## ---- 7. -1 with the other selections, and what rowsub refuses --------------
+## -1 prepends the selected rows' coordinates; with -l/-L that was tested
+## above, with a mask and a block it never was. ref.cr and d.cg are the
+## 16-row chr1/chr2 fixture of section 6.
+awk 'BEGIN { for (i = 1; i <= 16; i++) print (i % 4 == 0) }' | "$YAME" pack -f b - m4.cm
+"$YAME" rowsub -R ref.cr -m m4.cm -1 d.cg 2>/dev/null | "$YAME" unpack -a -f -1 - 2>/dev/null |
+  cut -f1,2,4 > m1.txt
+[ "$(paste -sd' ' m1.txt)" = "$(printf 'chr1\t400\t4 chr1\t800\t8 chr2\t200\t12 chr2\t600\t16')" ] ||
+  { echo "-1 with -m: coordinates and rows disagree"; cat m1.txt; exit 1; }
+"$YAME" rowsub -R ref.cr -B 10_12 -1 d.cg 2>/dev/null | "$YAME" unpack -a -f -1 - 2>/dev/null |
+  cut -f1,2,4 > b1.txt
+[ "$(paste -sd' ' b1.txt)" = "$(printf 'chr2\t100\t11 chr2\t200\t12')" ] ||
+  { echo "-1 with -B: coordinates and rows disagree"; cat b1.txt; exit 1; }
+## -B with one index is that one row
+[ "$("$YAME" rowsub -B 3 d.cg 2>/dev/null | "$YAME" unpack -f -1 - 2>/dev/null)" = "$(printf '4\t96')" ] ||
+  { echo "-B 3 is not the single row 3 (0-based)"; exit 1; }
+
+refuse() {      # <what the message must say> <args...>
+  local msg=$1; shift
+  if "$YAME" rowsub "$@" >/dev/null 2>err.txt; then echo "rowsub $* was accepted"; exit 1; fi
+  grep -q "$msg" err.txt || { echo "rowsub $* failed without saying '$msg'"; cat err.txt; exit 1; }
+}
+refuse 'selects nothing' -B 3_0 d.cg
+refuse 'overflows a row index' -I 4294967296_4294967296 d.cg
+for i in $(seq 16); do echo A; done | "$YAME" pack -f s - s16.cm
+refuse 'not binary' -m s16.cm d.cg
+printf 'chr1-100\n' > badc.txt
+refuse 'Failed to extract coordinate' -R ref.cr -L badc.txt d.cg
+refuse 'cannot open file' -l no_such_file d.cg
+printf '99\n' > far.txt
+refuse 'outside the coordinate track' -R ref.cr -l far.txt -w 1 d.cg
+## no -R and a row count no reference has: say so rather than guess
+printf 'chr1_101\n' > one.txt
+refuse 'matches no reference' -L one.txt d.cg

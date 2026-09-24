@@ -20,8 +20,23 @@ if [ -n "${YAME_SKIP_UI:-}" ]; then
 fi
 command -v python3 >/dev/null || { echo "skip: no python3 for the pty" >&2; exit 0; }
 
-d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+d=$(mktemp -d); srv=; trap '[ -n "$srv" ] && kill $srv 2>/dev/null; rm -rf "$d"' EXIT
 export YAME_DATA_HOME="$d/store"; mkdir -p "$YAME_DATA_HOME"
+
+## A local mirror serving the one real set the repo carries, so a picker run
+## can choose it and have it fetched, as t_fetch.sh does, with no network.
+here=$(cd "$(dirname "$0")" && pwd)
+tree="$d/mirror/zhou-lab/InfiniumAnnotation/v8.2/EPIC/KYCG"
+mkdir -p "$tree" && cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
+port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+( cd "$d/mirror" && exec python3 -m http.server --bind 127.0.0.1 "$port" ) >"$d/server.log" 2>&1 &
+srv=$!
+for i in $(seq 1 50); do
+  python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$port/', timeout=1)" 2>/dev/null && break
+  sleep 0.1
+done
+export YAME_ASSETS_MIRROR="http://127.0.0.1:$port"
+export FIXTURES="$here/fixtures"
 
 python3 - "$YAME" <<'PY'
 import os, pty, sys, time, select, signal
@@ -243,6 +258,20 @@ subprocess.run(f"awk 'BEGIN{{for(i=0;i<27722;i++) print (i%2)}}' | {YAME} pack -
 code, out = drive(["summary", "-b", "-m", "cgi", cg27], [b"q"], "summary -b -m preselects", want_exit=1)
 frame_has(out, "[x] CGI.", "the -m set arrives checked")
 frame_has(out, "[ ] HM27.ordering", "what -m did not name stays unchecked")
+# 13c. choose with u: the picker fetches what is missing (from the mirror),
+#      then summary runs once per chosen mask under a single header. An
+#      EPIC-sized query opens EPIC; -m blacklist arrives checked.
+cgE = os.path.join(tmpd, "qE.cg")
+subprocess.run(f"awk 'BEGIN{{for(i=0;i<866553;i++) print (i%3?1:0)}}' | {YAME} pack -f b - > {cgE}",
+               shell=True, check=True)
+code, out = drive(["summary", "-b", "-m", "blacklist", cgE], [b"u"], "summary -b: u fetches and summarizes",
+                  settle=SETTLE * 3)
+frame_has(out, "QFile", "the summary table was printed")
+if out.count(b"QFile") != 1:
+    print(f"  FAIL summary -b printed the header {out.count(b'QFile')} times, want once"); fails += 1
+frame_has(out, "Blacklist.20220304.cm", "the chosen mask was summarized")
+if not os.path.exists(os.path.join(tmpd, "EPIC", "KYCG", "Blacklist.20220304.cm")):
+    print("  FAIL summary -b: the chosen set was not fetched into the store"); fails += 1
 
 # 14. the help screen, reached with h and listing the key groups it documents
 code, out = drive(["fetch"], [b"h", ESC, b"q"], "help screen")
@@ -308,6 +337,34 @@ if b"Proceed?" in out:
 # names in two units cannot open as one tree: the prompt stays, n declines
 code, out = drive(["fetch", "EPIC", "MSA"], [b"n\r"], "two units keep the prompt", want_exit=1)
 frame_has(out, "Proceed?", "two units are confirmed with the prompt")
+
+# 22. y to the stale dialog replaces those files -- here from the local
+#     mirror -- and then the browser opens over a current store
+import shutil
+shutil.rmtree(os.path.join(tmpd, "hg38"), ignore_errors=True)   # 19's stale file: not mirrored
+sd = os.path.join(tmpd, "EPIC", "KYCG"); os.makedirs(sd, exist_ok=True)
+open(os.path.join(sd, "Blacklist.20220304.cm"), "wb").write(b"stale bytes")
+open(os.path.join(sd, "SHA256SUMS"), "w").write("0" * 64 + "  Blacklist.20220304.cm\n")
+code, out = drive(["fetch"], [b"y\r", b"q"], "stale dialog: y replaces", settle=SETTLE * 3)
+frame_has(out, "Replace them now?", "the dialog asked")
+fixture = open(os.path.join(os.environ["FIXTURES"], "Blacklist.20220304.cm"), "rb").read()
+if open(os.path.join(sd, "Blacklist.20220304.cm"), "rb").read() != fixture:
+    print("  FAIL y to the stale dialog did not replace the file"); fails += 1
+
+# 23. a one-file fetch on a terminal draws a progress line
+os.remove(os.path.join(sd, "Blacklist.20220304.cm"))
+code, out = drive(["fetch", "EPIC/KYCG/Blacklist.20220304.cm"], [], "CLI fetch progress", settle=SETTLE * 3)
+frame_has(out, "[1/1]", "the progress line counts the file")
+frame_has(out, "100%", "the progress line reaches 100%")
+
+# 25. a store set only by a sibling tool's variable is named as inherited
+env_backup = dict(os.environ)
+os.environ["METHSCOPE_DATA_HOME"] = os.environ.pop("YAME_DATA_HOME")
+try:
+    code, out = drive(["fetch", "-q"], [b"q"], "an inherited store")
+    frame_has(out, "METHSCOPE_DATA_HOME (inherited)", "the title says whose variable set the store")
+finally:
+    os.environ.clear(); os.environ.update(env_backup)
 
 # 20. d: point the browser at another store without leaving it. The second
 #     store holds one stale file, so the switch shows in the rows as well as
