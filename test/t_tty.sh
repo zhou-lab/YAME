@@ -9,7 +9,7 @@
 ##   1. a CX stream must never land on a terminal. Compressed binary garbles
 ##      the display. The page prints `yame pairwise -H 1 -c 5 -d 0.2 a.cg b.cg`
 ##      with no -o, so a reader copying it got exactly that.
-##   2. hprint must not colour a pipe or a file, and must honour NO_COLOR.
+##   2. hprint must not colour a pipe or a file; -c turns it off at a terminal.
 set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
 
@@ -62,10 +62,6 @@ case $tty_out in
   *) echo "hprint did not colour a terminal: $tty_out"; exit 1 ;;
 esac
 
-nc=$(NO_COLOR=1 script -qec "$YAME hprint b.cg" /dev/null 2>/dev/null | cat -v || true)
-case $nc in
-  *"^["*) echo "hprint ignored NO_COLOR on a terminal: $nc"; exit 1 ;;
-esac
 
 ## -c still forces plain, terminal or not
 fc=$(onpty "$YAME hprint -c b.cg" | cat -v || true)

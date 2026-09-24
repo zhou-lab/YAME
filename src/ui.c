@@ -37,8 +37,8 @@
  * DEGRADATION
  *   Off a TTY: no escape sequences, no spinner, one plain line per event.
  *   Without a UTF-8 locale: ASCII glyphs ([ok], [xx], -) and an ASCII spinner.
- *   With NO_COLOR set or TERM=dumb: the full-screen widgets are skipped
- *   entirely and callers print plainly instead.
+ *   With TERM=dumb: the full-screen widgets are skipped entirely and callers
+ *   print plainly instead. NO_COLOR is not read (see yame_ui_fancy).
  *   The information content is identical in every mode -- only the ink differs.
  *
  * TWO KINDS OF DRAWING
@@ -86,8 +86,10 @@ int yame_ui_fancy(void) {
   if (cached_fancy >= 0) return cached_fancy;
 
   const char *term = getenv("TERM");
+  /* NO_COLOR is not consulted: the browser is coloured by default, and a
+   * script or a user who wants none has -y, -l or a pipe (Wanding,
+   * 2026-09-24, over splitting colour from the widget). */
   int ok = isatty(STDERR_FILENO)
-        && !getenv("NO_COLOR")
         && !(term && strcmp(term, "dumb") == 0);
   cached_fancy = ok;
   return ok;

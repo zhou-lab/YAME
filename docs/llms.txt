@@ -189,9 +189,9 @@ Inspect and index
         does not carry, so this is how a streamed view gets labels; a count
         that disagrees with the records is an error. Without -s the plain dump
         has NO label column, so its byte offsets are unchanged.
-        -c never colour. Colour is on only when stdout is a TERMINAL, and
-        NO_COLOR or TERM=dumb turns it off as well, so redirecting or piping
-        gives plain text without asking.
+        -c never colour. Colour is on only when stdout is a TERMINAL (and
+        TERM is not dumb), so redirecting or piping gives plain text without
+        asking. NO_COLOR is not read.
         -r chr16 or chr16:10000000-10100000, reference inferred from the row
         count; -R gives the whole-genome window view; neither = full-dataset
         dump, one glyph per row with no windowing (fmt0/3/4/6, fmt6 keeping
@@ -431,8 +431,9 @@ Reference data
   not its row count -- `fmt7_rows()` gives the rows.
 - `yame fetch` with no target opens the browser on a terminal but dumps the
   registry TSV when piped or redirected, so a script never blocks. Off a
-  terminal a fetch still refuses to download without `-y`. `NO_COLOR` disables
-  ANSI output.
+  terminal a fetch still refuses to download without `-y`. `NO_COLOR` is not
+  read: the browser is coloured on a terminal, and `-y`, `-l` or a pipe give
+  plain output.
 
 ## Development
 

@@ -23,8 +23,8 @@
  * a correctness property and not a nicety.
  */
 
-/** Is the terminal capable of animation / color? (stderr is a TTY, TERM sane,
- *  NO_COLOR unset.) */
+/** Is the terminal capable of animation / colour? (stderr is a TTY and TERM
+ *  is not dumb. NO_COLOR is not read.) */
 int yame_ui_fancy(void);
 
 /** Can we ask the user a question? (stdin AND stderr are TTYs.) */

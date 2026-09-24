@@ -54,8 +54,8 @@ static int usage(void) {
   yame_usage_text("(neither)         Full-dataset dump: every row, no windowing. fmt0/3/4/6.");
   yame_usage_sec("Options:");
   yame_usage_opt("-c", "Never colour. Colour is on only when stdout is a "
-                 "terminal, and NO_COLOR or TERM=dumb turns it off too, so a "
-                 "redirect or a pipe is plain text already.");
+                 "terminal (and TERM is not dumb), so a redirect or a pipe "
+                 "is plain text already.");
   yame_usage_opt("-g", "Granular output: 0-9 deciles instead of H/M/L");
   yame_usage_opt("-s <file>", "Record names for the input, one per line, in order,");
   yame_usage_cont("the same file `index -s` takes. Names live in the .idx");
@@ -635,11 +635,10 @@ int main_hprint(int argc, char *argv[]) {
   int c;
   /* Colour follows the OUTPUT, not a fixed default. Piped or redirected there
    * is no terminal to colour, and the escapes land in the file: `hprint x.cg
-   * > panel.txt` produced a file full of \x1b[34m, and NO_COLOR was ignored
-   * outright. Reported by a reader, 2026-09-17. -c still forces it off. */
+   * > panel.txt` produced a file full of \x1b[34m. Reported by a reader,
+   * 2026-09-17. -c forces it off at a terminal; NO_COLOR is not read. */
   const char *term_env = getenv("TERM");
   int color = isatty(STDOUT_FILENO)
-           && !getenv("NO_COLOR")
            && !(term_env && strcmp(term_env, "dumb") == 0);
   int label_w = 20, tick_every = 10, max_cols = 80, granular = 0;
   char *fname_cr = NULL, *region = NULL, *fname_snames = NULL;

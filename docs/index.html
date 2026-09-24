@@ -3068,7 +3068,7 @@ Modes:
   (neither)         Full-dataset dump: every row, no windowing. fmt0/3/4/6.
 
 Options:
-  -c                Never colour. Colour is on only when stdout is a terminal, and NO_COLOR or TERM=dumb turns it off too, so a redirect or a pipe is plain text already.
+  -c                Never colour. Colour is on only when stdout is a terminal (and TERM is not dumb), so a redirect or a pipe is plain text already.
   -g                Granular output: 0-9 deciles instead of H/M/L
   -s &lt;file&gt;         Record names for the input, one per line, in order,
                     the same file `index -s` takes. Names live in the .idx
