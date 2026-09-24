@@ -6,8 +6,10 @@ Neither tab is written by hand, so neither can drift from what it describes:
   Data       from tools/registry/files.tsv, the table `yame fetch` is
              compiled from. One card per upstream host (GitHub repo or
              HuggingFace repo, at its pinned tag, with any Zenodo
-             archive), a folded drawer per store directory listing its
-             files and, in one line, the works they cite.
+             archive), a folded drawer per store directory, and in it a
+             folded entry per file: its description split into labelled
+             paragraphs at its [Label] markers, then source and citation.
+             One line under each directory lists the works it cites.
   Reference  from `./yame <command> -h`, for every command the `yame`
              banner lists, grouped as the banner groups them. Each entry
              has the id `ref-<command>`, so a link to #ref-pack opens it.
@@ -117,6 +119,40 @@ def zenodo(rs):
     return list(OrderedDict.fromkeys(
         d for r in rs for d in re.findall(r"10\.5281/zenodo\.\d+", r["citation"])))
 
+## A description is one TSV field, so its sections are marked inline, as a
+## bracketed label at a sentence start ("... [Training] Trained on ...").
+## The text before the first label is what the file IS. Same rule as
+## methscope's docs/build_models.py, so a model reads the same on both pages.
+SECTION = re.compile(r"(?:^|\s)\[([A-Z][A-Za-z ]{1,30})\] ")
+
+def sections(text):
+    """[(label, text)]: 'What it is' first, then one per [Label], in order."""
+    parts = SECTION.split(text)
+    out = [("What it is", parts[0].strip())]
+    out += [(parts[i], parts[i + 1].strip()) for i in range(1, len(parts), 2)]
+    return [(l, t) for l, t in out if t]
+
+def linked(text):
+    """Escape, then link every `doi:10.x/y` and bare Zenodo DOI."""
+    return re.sub(r"(doi:)?(10\.(?:5281/zenodo\.\d+|\S+?(?=[,;)]|\s|$)))",
+                  lambda m: '<a href="https://doi.org/%s" rel="noopener">%s</a>'
+                  % (attr(m.group(2)), m.group(0))
+                  if m.group(1) or "zenodo" in m.group(2) else m.group(0),
+                  esc(text))
+
+def file_entry(f):
+    """One file: a one-line summary (name, title, size) that opens onto its
+    description, a labelled paragraph per section, then source and citation."""
+    body = ['      <p><b>%s.</b> %s</p>' % (esc(l), esc(t))
+            for l, t in sections(f["description"])]
+    if f["source"]: body.append('      <p><b>Source.</b> %s</p>' % esc(f["source"]))
+    if f["citation"]: body.append('      <p><b>Citation.</b> %s</p>' % linked(f["citation"]))
+    return ('    <details class="file">\n'
+            '      <summary><code>%s</code><span>%s</span><span class="n">%s</span></summary>\n'
+            '%s\n    </details>'
+            % (esc(os.path.basename(f["store_path"])), esc(f["title"]),
+               human(f["size"]), "\n".join(body)))
+
 def cites(fs):
     """The works a directory's files cite, as short linked labels
     (`Zheng 2019`), deduplicated in table order. A Zenodo archive note is
@@ -156,18 +192,10 @@ def build_data():
                    % (attr(repo), esc(name), label, attr(tagurl), esc(tag), arch))
         for d, fs in dirs.items():
             out.append('  <details class="dir" id="data-%s">\n'
-                       '    <summary><code class="inl">%s/</code> <span class="m">— %d files, %s</span></summary>\n'
-                       '    <table class="data">'
+                       '    <summary><code class="inl">%s/</code> <span class="m">— %d files, %s</span></summary>'
                        % (attr(d.replace("/", "-")), esc(d), len(fs),
                           human(sum(f["size"] for f in fs))))
-            for f in fs:
-                tip = f["description"]
-                if f["citation"]: tip += "\n\nCite: " + f["citation"]
-                out.append('    <tr title="%s"><td><code>%s</code></td><td>%s</td>'
-                           '<td class="n">%s</td></tr>'
-                           % (attr(tip), esc(os.path.basename(f["store_path"])),
-                              esc(f["title"]), human(f["size"])))
-            out.append('    </table>')
+            for f in fs: out.append(file_entry(f))
             c = cites(fs)
             if c: out.append('    <p class="cites">Cites: %s</p>' % c)
             out.append('  </details>')
