@@ -67,7 +67,7 @@ for v in "2 2 0 1 1 0 1" \
          "$(python3 -c 'print(" ".join(["2"]*130 + ["1", "0"]))')" \
          "1 0 1 2 2 2" "0 1 1 0 1 2" "2 1 2 0 2 1 2"; do
   python3 "$here/make_fmt5.py" re.cg $v > re.line
-  n=$(wc -w < re.line)
+  n=$(( $(wc -w < re.line) ))              # BSD wc pads its count
   "$YAME" rowsub -B 0_$n re.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null | paste -sd' ' - > re.got
   diff re.line re.got >/dev/null ||
     { echo "format 5 did not survive re-encoding: $(head -c 60 re.line)..."; diff re.line re.got; exit 1; }

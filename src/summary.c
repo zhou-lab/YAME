@@ -361,20 +361,31 @@ static int summary_reentry = 0;
  * made in the browser wins over anything already on the command line, however
  * that was spelled.
  */
-static int summarize_each(int argc, char *argv[], char **masks, size_t n) {
+static int summarize_each(int argc, char *argv[], int first_file,
+                          char **masks, size_t n) {
   int rc = 0;
   char **av = calloc((size_t)argc + 8, sizeof(char *));
   if (!av) return 1;
 
   for (size_t i = 0; i < n; ++i) {
+    /* The options, then the chosen mask, then the files. The mask goes AFTER
+     * the caller's options, so it is the last -m getopt sees and wins; and
+     * BEFORE the files, because a POSIX getopt (macOS) stops at the first
+     * non-option -- appended at the end, `-m <mask>` was read there as a
+     * second query file. GNU getopt permutes, which is why Linux never saw
+     * it. `first_file` is the caller's optind: where the files start. */
     int ac = 0;
-    for (int k = 0; k < argc; ++k) av[ac++] = argv[k];
+    for (int k = 0; k < first_file; ++k) av[ac++] = argv[k];
     if (i) av[ac++] = (char *)"-H";       /* one header for the whole run */
     av[ac++] = (char *)"-m";
     av[ac++] = masks[i];
+    for (int k = first_file; k < argc; ++k) av[ac++] = argv[k];
     av[ac] = NULL;
 
     optind = 1;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    optreset = 1;                         /* BSD getopt keeps its own state */
+#endif
     summary_reentry = 1;
     rc |= main_summary(ac, av);
     summary_reentry = 0;
@@ -451,7 +462,7 @@ int main_summary(int argc, char *argv[]) {
         fprintf(stderr, "[summary] nothing chosen.\n");
       return 1;
     }
-    int rc = summarize_each(argc, argv, masks, n);
+    int rc = summarize_each(argc, argv, optind, masks, n);
     for (size_t i = 0; i < n; ++i) free(masks[i]);
     free(masks);
     return rc;
