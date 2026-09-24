@@ -504,6 +504,11 @@ void yame_ref_paths_free(char **paths, size_t n);
 /** Rows in a CX file's first record, or 0 if it cannot be read. */
 uint64_t yame_ref_file_rows(const char *path);
 
+/** Rows in a named row space ("EPIC" 866,553, "hg38" 29,401,795), ignoring
+ *  case, or 0 for a name that is not one. What a browser shows beside a unit,
+ *  so a knowledgebase can be matched to a query before anything is fetched. */
+uint64_t yame_ref_rows_by_name(const char *name);
+
 /** Print why a name did not resolve. */
 void yame_ref_explain_name(FILE *out, const char *spec, uint64_t rows,
                            int status, const char *name, const char *fetch,

@@ -338,6 +338,13 @@ if b"Proceed?" in out:
 code, out = drive(["fetch", "EPIC", "MSA"], [b"n\r"], "two units keep the prompt", want_exit=1)
 frame_has(out, "Proceed?", "two units are confirmed with the prompt")
 
+# 26. each platform and genome row shows its row-space size, so a knowledge-
+#     base can be matched to a query before anything is fetched
+code, out = drive(["fetch", "-q"], [b"q"], "ROWS column")
+frame_has(out, "ROWS", "the header names the ROWS column")
+frame_has(out, "866,553", "EPIC's row shows its 866,553 probes")
+frame_has(out, "29,401,795", "hg38's row shows its CpG count")
+
 # 22. y to the stale dialog replaces those files -- here from the local
 #     mirror -- and then the browser opens over a current store
 import shutil

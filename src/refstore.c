@@ -199,6 +199,13 @@ int yame_ref_resolve(const char *spec, uint64_t rows, const char *store_override
   return YAME_REF_NO_NAME;
 }
 
+uint64_t yame_ref_rows_by_name(const char *name) {
+  if (!name) return 0;
+  for (size_t i = 0; i < YAME_REF_ROWS_N; ++i)
+    if (strcasecmp(YAME_REF_ROWS[i].name, name) == 0) return YAME_REF_ROWS[i].rows;
+  return 0;
+}
+
 /* ------------------------------------------------- resolving several names */
 
 /* The row space a name refers to, independent of any row count. Lets

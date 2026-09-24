@@ -1706,8 +1706,21 @@ static const char *browse_header(void) {
   static char h[128];
   char tail[64];
   snprintf(tail, sizeof(tail), TAIL_FMT, "TAG", "IN STORE");
-  snprintf(h, sizeof(h), "TARGET\tKIND\t%s", tail);
+  snprintf(h, sizeof(h), "TARGET\tKIND\t%10s\t%s", "ROWS", tail);
   return h;
+}
+
+/* Digits grouped in threes, 866553 -> "866,553": a row count is compared by
+ * eye against `yame info`, and ungrouped it is easy to misread by a digit. */
+static void commify(uint64_t v, char *out, size_t n) {
+  char raw[32];
+  int len = snprintf(raw, sizeof raw, "%" PRIu64, v);
+  size_t o = 0;
+  for (int i = 0; i < len && o + 2 < n; ++i) {
+    if (i && (len - i) % 3 == 0) out[o++] = ',';
+    out[o++] = raw[i];
+  }
+  out[o] = '\0';
 }
 
 /* Fill in one root row: a species heading, or a unit. Every count in it is a
@@ -1725,8 +1738,18 @@ static void root_row(browse_t *b, size_t i, const char *group,
      * wrong, in the column the eye is already in. */
     size_t stale = unit_stale_count(b->root, unit);
     if (stale) snprintf(note, sizeof(note), "%zu stale: -f", stale);
-    snprintf(line, sizeof(line), "%s\t%s\t" TAIL_FMT, unit,
-             unit_is_array(unit) ? "array" : "genome", unit_tag(unit), note);
+    /* The row space's size: a knowledgebase is only usable against a query
+     * in the same row space, and this is the number to compare with `yame
+     * info` on the query before fetching anything. */
+    char rows[32] = "";
+    uint64_t nr = yame_ref_rows_by_name(unit);
+    if (nr) {                       /* right-aligned, so sizes compare by eye */
+      char c[24];
+      commify(nr, c, sizeof c);
+      snprintf(rows, sizeof rows, "%10s", c);
+    }
+    snprintf(line, sizeof(line), "%s\t%s\t%s\t" TAIL_FMT, unit,
+             unit_is_array(unit) ? "array" : "genome", rows, unit_tag(unit), note);
   } else {
     char upper[64];
     size_t k = 0;
@@ -1739,7 +1762,7 @@ static void root_row(browse_t *b, size_t i, const char *group,
      * which reports its own, and a third number in the same column only
      * invited adding them up. */
     group_counts(b->root, group, &total, &have);
-    snprintf(line, sizeof(line), "%s%s\t\t", group_mark(), upper);
+    snprintf(line, sizeof(line), "%s%s\t\t\t", group_mark(), upper);
   }
 
   free(b->roots[i]);
