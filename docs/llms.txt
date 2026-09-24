@@ -230,7 +230,8 @@ Compare and summarize
   summary [-m mask|-b] [options] <query.cx|-> [query2.cx ...]
         Queries may be fmt 0/1/2/3/4/6/7 and multi-sample. -m accepts a name
         resolved in the query's own row space (`-m CGI`, `-m ChromHMM`); -b
-        picks masks in the browser and fetches what is missing, and -m beside
+        picks masks in the browser (only .cm files are offered; a row list or a
+        model is not a mask) and fetches what is missing, and -m beside
         it names sets that arrive checked (`-b -m CGI,ChromHMM`). In either
         browser, d changes the store. Every query
         sample is summarized against every mask sample. A fmt2 query emits one row

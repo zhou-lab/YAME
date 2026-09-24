@@ -569,6 +569,10 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit,
  *   verb_key    the key that ends the session with the choice; 0 means 'u'
  *   verb        its footer label; NULL means "use"
  *   store       a store root overriding the environment (-d); NULL: the env
+ *   offer       comma-separated globs (fnmatch, `*` crosses `/`) on a file's
+ *               store path: only matching files are offered, and a folder
+ *               with none of them is not shown. NULL offers every file.
+ *               `*.cm` for any mask, `* /KYCG/ *.cm` (no spaces) for sets only
  *
  * `f` fetches what is checked and stays open, `d` changes the store, and the
  * verb returns the chosen paths (fetching any still missing), as
@@ -583,6 +587,7 @@ typedef struct {
   char               verb_key;
   const char        *verb;
   const char        *store;
+  const char        *offer;
 } yame_pick_opt_t;
 
 size_t yame_browse_pick_opt(const yame_fetch_cfg_t *cfg, const yame_pick_opt_t *opt,

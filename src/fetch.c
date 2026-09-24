@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fnmatch.h>
 #include <unistd.h>
 
 #include "assets.h"
@@ -304,6 +305,7 @@ typedef struct {
   const char *const *units;
   size_t              n_units;
   const char         *preselect;
+  const char         *offer;      /* file globs a picker offers; NULL: all */
 
   /* `yame fetch <dir>` on a terminal: exactly the files the plan would move,
    * as "<unit index>|<file name>" -- the same key a file row carries. */
@@ -1053,6 +1055,22 @@ static void emit_entry(browse_t *b, yame_ui_kids_t *out, const ent_t *e) {
  * Files are offered per file rather than per directory because a
  * knowledgebase holds dozens of sets and most callers want a few.
  */
+/* Does a picker offer this file? With `offer` set, only files whose store
+ * path matches one of its comma-separated globs (fnmatch, so `*` also crosses
+ * `/`): `*.cm` for any mask, `* /KYCG/ *.cm` for knowledgebase sets alone. A
+ * picker whose caller can only use sets must not list the row list or a
+ * model, or the choice is refused after it is made. */
+static int offered_file(const browse_t *b, const yame_asset_file_t *f) {
+  if (!b->offer) return 1;
+  char buf[512];
+  snprintf(buf, sizeof buf, "%s", b->offer);
+  for (char *save = NULL, *g = strtok_r(buf, ",", &save); g; g = strtok_r(NULL, ",", &save)) {
+    while (*g == ' ') ++g;
+    if (*g && fnmatch(g, f->store_path, 0) == 0) return 1;
+  }
+  return 0;
+}
+
 static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   browse_t *b = ctx;
   bpath_t p;
@@ -1070,7 +1088,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
 
   /* The index first: it is what everything below it is addressed against. */
   for (size_t i = 0; i < n_ents && out->n < CAP; ++i)
-    if (ents[i].required) emit_entry(b, out, &ents[i]);
+    if (ents[i].required && offered_file(b, ents[i].f)) emit_entry(b, out, &ents[i]);
 
   /* Then the subdirectories, only at the top of a unit. */
   if (!p.sub[0]) {
@@ -1080,6 +1098,12 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
       size_t total, have;
       unit_counts(b->root, p.unit, subs[i], 0, &total, &have);
       if (!total) continue;
+      if (b->offer) {                    /* nothing in it to offer: no row */
+        static ent_t sub_ents[CAP];
+        size_t ns = unit_entries(p.unit, subs[i], 0, sub_ents, CAP), k = 0;
+        while (k < ns && !offered_file(b, sub_ents[k].f)) ++k;
+        if (k == ns) continue;
+      }
 
       char note[64], line[256], subdir[512];
       counts_note(total, have, note, sizeof(note));
@@ -1098,7 +1122,7 @@ static void bx_expand(void *ctx, const char *path, yame_ui_kids_t *out) {
   }
 
   for (size_t i = 0; i < n_ents && out->n < CAP; ++i)
-    if (!ents[i].required) emit_entry(b, out, &ents[i]);
+    if (!ents[i].required && offered_file(b, ents[i].f)) emit_entry(b, out, &ents[i]);
 }
 
 /* ---- the info pane ----
@@ -2011,6 +2035,7 @@ size_t yame_browse_pick_opt(const yame_fetch_cfg_t *cfg, const yame_pick_opt_t *
   b.units = opt->units;
   b.n_units = opt->n_units;
   b.preselect = (opt->preselect && *opt->preselect) ? opt->preselect : NULL;
+  b.offer = (opt->offer && *opt->offer) ? opt->offer : NULL;
 
   memset(roots, 0, sizeof(roots));
   b.roots = roots;

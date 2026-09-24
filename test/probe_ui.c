@@ -12,7 +12,8 @@
  *   probe_ui pick
  *       the catalogue picker as kycg's test/annotate would open it, through
  *       yame_browse_pick_opt: only HM27 and MSA, a title and verb of its own
- *       (t test), HM27 open with CGI arriving checked. Prints "PICKED <n>".
+ *       (t test), only knowledgebase sets offered (no row list), HM27 open
+ *       with CGI arriving checked. Prints "PICKED <n>".
  *
  *   PROBE_UI_LOG=<file> probe_ui [initial-value]
  *       s asks (the answer starts as initial-value, default /old), q quits;
@@ -52,6 +53,7 @@ static int pick(void) {
   o.preselect = "cgi";                 /* set name, any case */
   o.title = "probe pick";
   o.verb_key = 't'; o.verb = "test";
+  o.offer = "*/KYCG/*.cm";             /* knowledgebase sets only, as kycg test */
   char **paths = NULL;
   size_t n = yame_browse_pick_opt(&cfg, &o, &paths);
   printf("PICKED %zu\n", n);

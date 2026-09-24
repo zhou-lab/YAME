@@ -262,7 +262,12 @@ subprocess.run(f"awk 'BEGIN{{for(i=0;i<27722;i++) print (i%2)}}' | {YAME} pack -
                shell=True, check=True)
 code, out = drive(["summary", "-b", "-m", "cgi", cg27], [b"q"], "summary -b -m preselects", want_exit=1)
 frame_has(out, "[x] CGI.", "the -m set arrives checked")
-frame_has(out, "[ ] HM27.ordering", "what -m did not name stays unchecked")
+## (the platform mask is offered too, below the 15 KYCG sets -- past the
+## bottom of this 30-line window, so not asserted as drawn)
+if b"[x] HM27.hg38.mask" in out:
+    print("  FAIL summary -b checked a mask -m did not name"); fails += 1
+if b"HM27.ordering" in out:
+    print("  FAIL summary -b offered the ordering, which is not a mask"); fails += 1
 # 13c. choose with u: the picker fetches what is missing (from the mirror),
 #      then summary runs once per chosen mask under a single header. An
 #      EPIC-sized query opens EPIC; -m blacklist arrives checked.
@@ -503,6 +508,9 @@ check(b"probe pick" in out, "pick: the caller's title was not shown")
 check(b"t test" in out, "pick: the caller's verb was not offered")
 check(b"[x] CGI." in out, "pick: the preselected set did not arrive checked")
 check(b"MSA" in out, "pick: an offered unit is missing")
+## offer = */KYCG/*.cm: the row list and the platform mask are not choices
+check(b"HM27.ordering" not in out, "pick: the ordering is offered, though offer allows only KYCG sets")
+check(b"HM27.hg38.mask" not in out, "pick: the platform mask is offered outside KYCG")
 ## a genome unit's row reads "genome"; HM27's own files carry hg38 in their
 ## names, so the unit name itself is no test
 check(b"EPICv2" not in out and b"genome" not in out, "pick: a unit that was not offered is listed")

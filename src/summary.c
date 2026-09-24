@@ -452,6 +452,7 @@ int main_summary(int argc, char *argv[]) {
     memset(&po, 0, sizeof po);
     po.open_unit = rname;
     po.preselect = config.fname_mask;
+    po.offer = "*.cm";          /* masks only: a row list or model is not one */
     size_t n = yame_browse_pick_opt(cfg, &po, &masks);
     if (!n) {
       if (!yame_ui_fancy())
