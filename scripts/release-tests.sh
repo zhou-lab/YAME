@@ -2,7 +2,7 @@
 ## The release tests: the suite run every way a release needs, unattended and
 ## all at once. Step 3 of the release SOP in one command.
 ##
-## Four of the six lanes run the SAME suite (test/run.sh). They differ only in
+## Five of the lanes run the SAME suite (test/run.sh). They differ only in
 ## how the binary was built, or which shell runs them. The first lane adds the
 ## one check that is not a test: the coverage number in the badge against the
 ## number the suite actually measures.
@@ -29,6 +29,12 @@
 ##   docs     t_docs.sh: every command docs/llms.txt and docs/index.html show,
 ##            actually run. Same fixtures as layer5, and it copies them out of
 ##            the caller's store rather than downloading them again.
+##   posix    the whole suite, t_ui included, with POSIXLY_CORRECT=1: GNU
+##            getopt then stops at the first non-option, as macOS's always
+##            does. Linux permutes options forward and so hides an option
+##            placed after a file name; v1.57's first tag failed on the macOS
+##            leg for exactly that (summary -b appended its -m). Last and
+##            alone, since t_ui is in it.
 ##
 ## On a 4-core box the lanes mostly trade CPU rather than add throughput -- the
 ## suite already runs its tests JOBS-wide -- so the win here is that all five
@@ -159,9 +165,14 @@ stamp cov
   rc=$?; elapsed cov; exit $rc ) > "$logs/cov" 2>&1
 rc_cov=$?
 
+stamp posix
+( POSIXLY_CORRECT=1 YAME_SKIP_UI= JOBS="$ncpu" YAME="$root/yame" bash test/run.sh
+  rc=$?; elapsed posix; exit $rc ) > "$logs/posix" 2>&1
+rc_posix=$?
+
 ## ---- report -----------------------------------------------------------------
 fails=0; serial=0
-for g in tree ndebug ubtrap bash32 layer5 kb docs ui cov; do
+for g in tree ndebug ubtrap bash32 layer5 kb docs ui cov posix; do
   eval "rc=\$rc_$g"
   tail=$(grep -E '^[0-9]+ passed|^skip:|^ok:|^docs:|^coverage:' "$logs/$g" | tail -1)
   [ -n "$tail" ] || tail=$(tail -1 "$logs/$g" 2>/dev/null)
@@ -186,6 +197,6 @@ for g in tree ndebug ubtrap bash32 layer5 kb docs ui cov; do
     fi
   fi
 done
-printf '%d of 9 lanes passed in %d s; one after another they would be %d s\n' \
-  $((9 - fails)) $(( $(date +%s) - t_start )) "$serial"
+printf '%d of 10 lanes passed in %d s; one after another they would be %d s\n' \
+  $((10 - fails)) $(( $(date +%s) - t_start )) "$serial"
 [ "$fails" = 0 ]

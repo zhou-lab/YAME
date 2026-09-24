@@ -31,10 +31,15 @@ mkdir -p "$tree" && cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 ( cd "$d/mirror" && exec python3 -m http.server --bind 127.0.0.1 "$port" ) >"$d/server.log" 2>&1 &
 srv=$!
-for i in $(seq 1 50); do
-  python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$port/', timeout=1)" 2>/dev/null && break
+## Up to 30 s: under the release lanes a loaded box has taken over 5 s to
+## start python, and a test that went on anyway failed its first fetch with
+## "couldn't connect", which read as a fetch bug. Never up is its own error.
+up=0
+for i in $(seq 1 300); do
+  python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$port/', timeout=1)" 2>/dev/null && { up=1; break; }
   sleep 0.1
 done
+[ "$up" = 1 ] || { echo "the local mirror on port $port never started"; cat "$d/server.log" 2>/dev/null; exit 1; }
 export YAME_ASSETS_MIRROR="http://127.0.0.1:$port"
 export FIXTURES="$here/fixtures"
 
