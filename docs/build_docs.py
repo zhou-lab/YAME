@@ -109,10 +109,12 @@ def host(src, tag):
             "https://github.com/%s/tree/%s" % (src, tag))
 
 def human(n):
+    """Bytes as `yame fetch` prints them (yame_human_size): a 1024 ladder, one
+    decimal, so a size on the page matches the terminal and methscope's page."""
     for u in ("B", "KB", "MB", "GB"):
-        if n < 1000 or u == "GB":
+        if n < 1024 or u == "GB":
             return ("%d %s" % (n, u)) if u == "B" else ("%.1f %s" % (n, u))
-        n /= 1000.0
+        n /= 1024.0
 
 def zenodo(rs):
     """The Zenodo archive DOIs a host's files cite, in first-seen order."""
