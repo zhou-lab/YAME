@@ -130,31 +130,9 @@ cdata_t fmt5_decompress(const cdata_t c) {
   return expanded;
 }
 
-/* the input has only 0,1,2 */
-cdata_t* fmt5_read_raw(char *fname, int verbose) {
-
-  gzFile fh = wzopen(fname, 1);
-  char *line = NULL;
-  uint64_t n = 0, m=1<<22;
-  uint8_t *s = wzcalloc(m, 1);
-  while (gzFile_read_line(fh, &line) > 0) {
-    if (line[0] == '0' || line[0] == '1') s[n++] = line[0]-'0';
-    else s[n++] = 2;
-    if (n+2>m) { m<<=1; s=wzrealloc(s,m); }
-  }
-  free(line);
-  wzclose(fh);
-  if (verbose) {
-    fprintf(stderr, "[%s:%d] Vector of length %"PRIu64" loaded\n", __func__, __LINE__, n);
-    fflush(stderr);
-  }
-  cdata_t *c = wzcalloc(sizeof(cdata_t),1);
-  c->s = (uint8_t*) s;
-  c->n = n;
-  c->compressed = 0;
-  c->fmt = '5';
-  return c;
-}
+/* No fmt5_read_raw: format 5 cannot be packed any more, and the reader the
+ * commented-out `pack -f 5` case once called was dead code. The encoder below
+ * stays -- rowsub and subset re-encode a format-5 record they slice. */
 
 /*
   8 bits = 0 (1bit) | run length of NA (7bits)

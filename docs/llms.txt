@@ -228,7 +228,9 @@ Compare and summarize
         resolved in the query's own row space (`-m CGI`, `-m ChromHMM`); -b
         picks masks in the browser and fetches what is missing. Every query
         sample is summarized against every mask sample. A fmt2 mask emits one
-        row per state. With no mask, Mask is 'global'.
+        row per state. With no mask, Mask is 'global' and the universe plays
+        the mask: N_mask = N_univ and N_overlap = N_query, for every query
+        format. A binary (fmt0/1) query is a set, so its Beta is NA.
         Columns (-V set, default; also -V 2bit): QFile Query MFile Mask N_univ
         N_query N_mask N_overlap Log2OddsRatio Beta Depth.
         -V meth (all records must be fmt6): QFile Query MFile Mask N_covered

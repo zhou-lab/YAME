@@ -216,6 +216,7 @@ stats_t* summarize1_queryfmt4(
     *n_st = 1;
     st = wzcalloc(1, sizeof(stats_t));
     st[0].n_u = c->n;
+    st[0].n_m = c->n;            /* no mask: the universe plays the mask role */
 
     for (uint64_t i = 0; i < c->n; ++i) {
       double b = vals[i];

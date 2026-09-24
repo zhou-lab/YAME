@@ -58,6 +58,21 @@ printf 'five\nzero\n' > nm.txt
 "$YAME" subset mixed.cg five 2>/dev/null | "$YAME" unpack - 2>/dev/null > back.txt
 diff want.txt back.txt || { echo "format 5 did not survive subset out of a mixed store"; exit 1; }
 
+## ---- 3b. re-encoding: every command that rewrites a record runs the ------
+## encoder, fmt5_compress, which nothing else can reach. A whole-record rowsub
+## decodes and re-encodes, so it must hand back exactly what went in. Each
+## vector hits one transition: an NA run straight into values, an NA run long
+## enough that its 7-bit count has to start a second byte, and a trailing run.
+for v in "2 2 0 1 1 0 1" \
+         "$(python3 -c 'print(" ".join(["2"]*130 + ["1", "0"]))')" \
+         "1 0 1 2 2 2" "0 1 1 0 1 2" "2 1 2 0 2 1 2"; do
+  python3 "$here/make_fmt5.py" re.cg $v > re.line
+  n=$(wc -w < re.line)
+  "$YAME" rowsub -B 0_$n re.cg 2>/dev/null | "$YAME" unpack - 2>/dev/null | paste -sd' ' - > re.got
+  diff re.line re.got >/dev/null ||
+    { echo "format 5 did not survive re-encoding: $(head -c 60 re.line)..."; diff re.line re.got; exit 1; }
+done
+
 ## ---- 4. and it is still not packable, which is the other half of the claim -
 if "$YAME" pack -f 5 want.txt >/dev/null 2>&1; then
   echo "pack accepted -f 5; format 5 is supposed to be unwritable"; exit 1

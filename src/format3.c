@@ -329,6 +329,7 @@ stats_t* summarize1_queryfmt3(
         st[0].n_o++;
         st[0].n_q++;
       }}
+    st[0].n_m = c->n;             /* no mask: the universe plays the mask role */
     st[0].sm = wzstrdup(sm);
     st[0].sq = wzstrdup(sq);
     st[0].beta = sum_beta / st[0].n_o; // may have Inf

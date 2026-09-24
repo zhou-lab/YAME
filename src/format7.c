@@ -883,8 +883,8 @@ stats_t* summarize1_queryfmt7(
       stats_t *s = &st[ichr];
       s->n_u   = n;                    /* universe = all CpGs */
       s->n_q   = chrm_cnts[ichr];      /* CpGs on this chromosome */
-      s->n_m   = 0;
-      s->n_o   = 0;
+      s->n_m   = n;                    /* no mask: the universe is the mask */
+      s->n_o   = s->n_q;
       s->beta  = -1.0;                 /* force Beta to NA; sum_depth stays 0 */
 
       s->sm = wzstrdup(sm);

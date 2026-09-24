@@ -306,6 +306,9 @@ stats_t* summarize1_queryfmt0(
     fflush(stderr);
     exit(1);
   }
+  /* A set has no methylation level, so Beta is NA rather than the 0.000 an
+   * untouched sum printed: -1 is how a row asks for NA (format 7 does too). */
+  for (uint64_t k = 0; k < *n_st; ++k) st[k].beta = -1.0;
   return st;
 }
 

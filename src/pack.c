@@ -90,7 +90,6 @@ cdata_t *fmt1_read_raw(char *fname, int verbose);
 cdata_t *fmt2_read_raw(char *fname, int verbose);
 cdata_t *fmt3_read_raw(char *fname, uint8_t unit, int verbose);
 cdata_t *fmt4_read_raw(char *fname, int verbose);
-/* cdata_t *fmt5_read_raw(char *fname, int verbose); */
 cdata_t *fmt6_read_raw(char *fname, int verbose);
 cdata_t *fmt7_read_raw(char *fname, int verbose);
 /* void fmta_tryBinary2byteRLE_ifsmaller(cdata_t *c); */
@@ -168,10 +167,6 @@ int main_pack(int argc, char *argv[]) {
     c = fmt4_read_raw(argv[optind], verbose);
     break;
   }
-  /* case '5': { */
-  /*   c = fmt5_read_raw(argv[optind], verbose); */
-  /*   break; */
-  /* } */
   case '6': {
     c = fmt6_read_raw(argv[optind], verbose);
     break;

@@ -503,8 +503,8 @@ stats_t* summarize1_queryfmt2(
     for (uint64_t k=0; k<aux->nk; ++k) {
       st[k].n_u = c->n;
       st[k].n_q = cnts[k];
-      st[k].n_m = 0;
-      st[k].n_o = 0;
+      st[k].n_m = c->n;         /* no mask: the universe plays the mask role */
+      st[k].n_o = cnts[k];
       st[k].sm = wzstrdup(sm);
       if (config->section_name) {
         kstring_t tmp = {0};
