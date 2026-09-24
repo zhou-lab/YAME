@@ -550,4 +550,37 @@ const yame_fetch_cfg_t *yame_default_fetch_cfg(void);
 size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit,
                         char ***paths);
 
+/**
+ * The same picker, for a caller that needs to narrow it -- the shape kycg's
+ * `test` and `annotate` browsers had, so no tool needs a browser of its own.
+ * Zero-initialise and set what you need; every field may be left empty.
+ *
+ *   open_unit   the unit to open on entry ("hg38", "EPIC"), or NULL
+ *   preselect   with open_unit: comma-separated names that arrive checked,
+ *               each a file's full name or its set name (before the first
+ *               dot), ignoring case -- the rule `-m` resolves by
+ *   units       offer only these units (n_units of them); NULL offers all
+ *   title       the widget's title; NULL: "<tool> * choose, then <key>"
+ *   verb_key    the key that ends the session with the choice; 0 means 'u'
+ *   verb        its footer label; NULL means "use"
+ *   store       a store root overriding the environment (-d); NULL: the env
+ *
+ * `f` fetches what is checked and stays open, `d` changes the store, and the
+ * verb returns the chosen paths (fetching any still missing), as
+ * yame_browse_pick does. Returns the number of paths, 0 for none.
+ */
+typedef struct {
+  const char        *open_unit;
+  const char        *preselect;
+  const char *const *units;
+  size_t             n_units;
+  const char        *title;
+  char               verb_key;
+  const char        *verb;
+  const char        *store;
+} yame_pick_opt_t;
+
+size_t yame_browse_pick_opt(const yame_fetch_cfg_t *cfg, const yame_pick_opt_t *opt,
+                            char ***paths);
+
 #endif /* _YAME_ASSETS_H */

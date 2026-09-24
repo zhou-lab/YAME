@@ -234,6 +234,15 @@ cg = os.path.join(tmpd, "q.cg")
 subprocess.run(f"awk 'BEGIN{{for(i=0;i<8;i++) print (i%2)}}' | {YAME} pack -f b - > {cg}",
                shell=True, check=True)
 drive(["summary", "-b", cg], [b"j", b"q"], "summary -b over a real query", want_exit=1)
+# 13b. -m beside -b names what arrives checked. A query in a row space the
+#      build knows (HM27's 27,722 rows) opens the picker on that unit, and
+#      CGI -- a set name, any case -- is ticked inside its knowledgebase.
+cg27 = os.path.join(tmpd, "q27.cg")
+subprocess.run(f"awk 'BEGIN{{for(i=0;i<27722;i++) print (i%2)}}' | {YAME} pack -f b - > {cg27}",
+               shell=True, check=True)
+code, out = drive(["summary", "-b", "-m", "cgi", cg27], [b"q"], "summary -b -m preselects", want_exit=1)
+frame_has(out, "[x] CGI.", "the -m set arrives checked")
+frame_has(out, "[ ] HM27.ordering", "what -m did not name stays unchecked")
 
 # 14. the help screen, reached with h and listing the key groups it documents
 code, out = drive(["fetch"], [b"h", ESC, b"q"], "help screen")
@@ -287,6 +296,37 @@ frame_has(out, "1 stale: -f", "knowledgebase row counts its stale file")
 code, out = drive(["fetch", "-q"], [b"q"], "-q skips the dialog")
 if b"Replace them now?" in out:
     print("  FAIL -q: the dialog was still asked"); fails += 1
+
+# 21. naming a directory on a terminal opens the browser on it, with exactly
+#     what the plan would move already checked: the browser is the
+#     confirmation. q leaves without fetching.
+code, out = drive(["fetch", "-g", "CGI", "EPIC/KYCG"], [b"q"], "a named directory opens checked")
+frame_has(out, "[x] CGI.", "the planned file arrives checked")
+frame_has(out, "[ ] ChromHMM.", "a file the -g filter left out stays unchecked")
+if b"Proceed?" in out:
+    print("  FAIL a named directory still asked Proceed? on a terminal"); fails += 1
+# names in two units cannot open as one tree: the prompt stays, n declines
+code, out = drive(["fetch", "EPIC", "MSA"], [b"n\r"], "two units keep the prompt", want_exit=1)
+frame_has(out, "Proceed?", "two units are confirmed with the prompt")
+
+# 20. d: point the browser at another store without leaving it. The second
+#     store holds one stale file, so the switch shows in the rows as well as
+#     in the title. Backspaces clear the current path from the prompt.
+other = os.path.join(os.path.dirname(tmpd), "other")
+od = os.path.join(other, "hg38"); os.makedirs(od, exist_ok=True)
+open(os.path.join(od, "cpg_nocontig.cr"), "wb").close()
+open(os.path.join(od, "SHA256SUMS"), "w").write("f" * 64 + "  cpg_nocontig.cr\n")
+clear = b"\x7f" * (len(tmpd) + 8)
+code, out = drive(["fetch", "-q"], [b"d", clear, other.encode(), b"\r", b"?", b" ", b"q"], "d switches the store")
+frame_has(out, "store (d): " + other, "title names the new store")
+frame_has(out, "1 stale: -f", "rows describe the new store")
+frame_has(out, "change the store", "the help screen lists d")
+# a path that is a file is refused, and the store stays as it was
+notdir = os.path.join(os.path.dirname(tmpd), "afile"); open(notdir, "w").close()
+code, out = drive(["fetch", "-q"], [b"d", clear, notdir.encode(), b"\r", ENTER, b"q"], "d refuses a file")
+frame_has(out, "is not a directory", "d says why it refused")
+if ("store (d): " + notdir).encode() in out:
+    print("  FAIL d: switched to a path that is a file"); fails += 1
 
 if fails:
     print(f"{fails} browser assertion(s) failed"); sys.exit(1)
@@ -366,6 +406,37 @@ st, out, log, lflag = run([], interrupt=True)
 check(os.WIFSIGNALED(st) and os.WTERMSIG(st) == signal.SIGINT, "SIGINT did not end the probe by SIGINT")
 check(b"\x1b[?1049l" in out, "SIGINT: the alternate screen was not left")
 check(bool(lflag & termios.ICANON) and bool(lflag & termios.ECHO), "SIGINT: the terminal was left in raw mode")
+
+## the picker as a downstream tool opens it (yame_browse_pick_opt): only the
+## units it offers, its own title and verb, a unit open with a set checked
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ.update(TERM="xterm", COLUMNS="110", LINES="40")
+    os.environ.pop("NO_COLOR", None)
+    os.execv(PROBE, [PROBE, "pick"])
+out = b""
+end = time.time() + 1.5 * _SLOW
+while time.time() < end:
+    r, _, _ = select.select([fd], [], [], 0.05)
+    if r:
+        try: out += os.read(fd, 65536)
+        except OSError: break
+os.write(fd, b"q")
+end = time.time() + 1.0 * _SLOW
+while time.time() < end:
+    r, _, _ = select.select([fd], [], [], 0.05)
+    if r:
+        try: out += os.read(fd, 65536)
+        except OSError: break
+_, st = os.waitpid(pid, 0)
+check(os.waitstatus_to_exitcode(st) == 0, "pick: probe_ui did not exit 0")
+check(b"probe pick" in out, "pick: the caller's title was not shown")
+check(b"t test" in out, "pick: the caller's verb was not offered")
+check(b"[x] CGI." in out, "pick: the preselected set did not arrive checked")
+check(b"MSA" in out, "pick: an offered unit is missing")
+## a genome unit's row reads "genome"; HM27's own files carry hg38 in their
+## names, so the unit name itself is no test
+check(b"EPICv2" not in out and b"genome" not in out, "pick: a unit that was not offered is listed")
 
 if fails:
     print(f"{fails} probe_ui assertion(s) failed"); sys.exit(1)

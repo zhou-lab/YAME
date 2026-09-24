@@ -79,6 +79,8 @@ options. Others: `-d <dir>` store root, `-q` no progress. The pre-1.50
 `<source>/<target>` spelling (`genomes/hg38`, `InfiniumAnnotation/EPICv2`)
 no longer resolves; the store path is the only address.
 
+On a terminal, naming a DIRECTORY opens the browser on it with exactly the
+planned files checked (`f` fetches, `q` leaves); `-y` skips that and fetches.
 Off a terminal a fetch of a DIRECTORY will not proceed without `-y` — it prints
 the plan and exits with "Refusing to fetch ... Re-run with -y", so a scripted or
 agent fetch of a folder needs `-y` (or `-n` to plan only). A name that picks out
@@ -226,7 +228,9 @@ Compare and summarize
   summary [-m mask|-b] [options] <query.cx|-> [query2.cx ...]
         Queries may be fmt 0/1/2/3/4/6/7 and multi-sample. -m accepts a name
         resolved in the query's own row space (`-m CGI`, `-m ChromHMM`); -b
-        picks masks in the browser and fetches what is missing. Every query
+        picks masks in the browser and fetches what is missing, and -m beside
+        it names sets that arrive checked (`-b -m CGI,ChromHMM`). In either
+        browser, d changes the store. Every query
         sample is summarized against every mask sample. A fmt2 mask emits one
         row per state. With no mask, Mask is 'global' and the universe plays
         the mask: N_mask = N_univ and N_overlap = N_query, for every query

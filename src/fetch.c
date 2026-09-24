@@ -187,9 +187,11 @@ static int usage(void) {
   yame_usage_cont("script can check first. -l gives the same set as TSV.");
   yame_usage_opt("-y", "Fetch a whole folder without asking. A folder is confirmed");
   yame_usage_cont("first, since a short name can reach a lot -- `hg38` is 3.5");
-  yame_usage_cont("GB. A name that picks out ONE file needs no -y: naming the");
-  yame_usage_cont("file is the confirmation, so a documented fetch line runs");
-  yame_usage_cont("in a script as it stands.");
+  yame_usage_cont("GB. On a terminal the browser is the confirmation: it opens");
+  yame_usage_cont("on the folder with exactly those files checked, f fetches,");
+  yame_usage_cont("q leaves. Off one, a folder needs -y. A name that picks out");
+  yame_usage_cont("ONE file needs neither: naming the file is the confirmation,");
+  yame_usage_cont("so a documented fetch line runs in a script as it stands.");
   yame_usage_opt("-q", "No progress output.");
   yame_usage_opt("-u <url>", "Single-file form: what to download.");
   yame_usage_opt("-s <sha256>", "Single-file form: the digest it must have.");
@@ -290,6 +292,23 @@ typedef struct {
   char          **roots;
   unsigned char  *styles;
   size_t          n_roots;
+
+  /* The widget's title buffer, which names the store: `d` rewrites it in
+   * place when the store changes, since the widget holds the pointer. */
+  char           *title;
+  size_t          title_sz;
+
+  /* A caller's narrowing (yame_browse_pick_opt): only these units are
+   * offered, and these names arrive checked. NULL for the whole catalogue
+   * and nothing checked, which is what the fetch browser always has. */
+  const char *const *units;
+  size_t              n_units;
+  const char         *preselect;
+
+  /* `yame fetch <dir>` on a terminal: exactly the files the plan would move,
+   * as "<unit index>|<file name>" -- the same key a file row carries. */
+  char   **pre_keys;
+  size_t   n_pre_keys;
 } browse_t;
 
 /* Defined below, next to the code that builds these rows in the first place:
@@ -1595,6 +1614,52 @@ static int bx_commit(void *ctx) {
   return 1;
 }
 
+/**
+ * `d` in either browser: point it at a different store.
+ *
+ * The store is the one thing the browser shows that cannot otherwise be
+ * changed from inside it -- every other question is about its contents -- so
+ * without this a wrong $YAME_DATA_HOME meant quitting and starting again with
+ * -d. The path is edited in place (a leading ~ is the home directory); a path
+ * that does not exist yet is a new, empty store, as -d would make it; one
+ * that exists and is not a directory is refused. Returning 1 makes the tree
+ * reload everything, folds and checks included: they described the old store.
+ */
+static int bx_on_key(void *ctx, char key, const char *path, const char *node_key) {
+  browse_t *b = ctx;
+  (void) path; (void) node_key;           /* about the store, not a row */
+  if (key != 'd') return 0;
+
+  char buf[4096];
+  snprintf(buf, sizeof buf, "%s", b->root);
+  yame_ui_panel_open(3);
+  yame_ui_panel_line(0, "  %s%s%s", yame_ui_dim(),
+                     "store directory (enter to accept, esc to cancel)", yame_ui_reset());
+  int ok = yame_ui_panel_ask(1, "store:", buf, sizeof buf);
+  if (!ok || !buf[0] || strcmp(buf, b->root) == 0) { yame_ui_panel_close(); return 0; }
+
+  char want[4096];
+  const char *home = getenv("HOME");
+  if (buf[0] == '~' && (buf[1] == '/' || !buf[1]) && home)
+    snprintf(want, sizeof want, "%s%s", home, buf + 1);
+  else
+    snprintf(want, sizeof want, "%s", buf);
+  if (yame_assets_is_file(want)) {
+    char msg[4200];
+    snprintf(msg, sizeof msg, "  %s is not a directory; the store is unchanged", want);
+    yame_ui_panel_pause(2, msg);
+    yame_ui_panel_close();
+    return 0;
+  }
+  yame_ui_panel_close();
+
+  snprintf(b->root, sizeof b->root, "%s", want);
+  if (b->title) snprintf(b->title, b->title_sz, "store (d): %s", b->root);
+  b->n_pick = 0; b->n_dropped = 0;
+  refresh_roots(b);
+  return 1;
+}
+
 static void fetch_picks(browse_t *b, int in_widget, int *ok_out, int *bad_out,
                         uint64_t *bytes_out) {
   int ok = 0, bad = 0;
@@ -1713,17 +1778,85 @@ static void root_row(browse_t *b, size_t i, const char *group,
   b->styles[i] = count_style(total, have);
 }
 
+/* Is this unit offered? Everything is, unless a caller narrowed the list. */
+static int unit_offered(const browse_t *b, const char *unit) {
+  if (!b->units) return 1;
+  for (size_t i = 0; i < b->n_units; ++i)
+    if (b->units[i] && strcmp(b->units[i], unit) == 0) return 1;
+  return 0;
+}
+
+/* The offered units of one group, and so whether its heading is shown: a
+ * heading over nothing would be a row that opens onto nothing. */
+static size_t offered_units(const browse_t *b, const char *group,
+                            char units[][256], size_t cap) {
+  char all[32][256];
+  size_t n = group_units(group, all, 32 < cap ? 32 : cap), k = 0;
+  for (size_t j = 0; j < n; ++j)
+    if (unit_offered(b, all[j])) memcpy(units[k++], all[j], 256);
+  return k;
+}
+
+/* Lay out the root rows -- a heading per group, then its units -- into
+ * `branch` (headings never open) and return how many. Building and
+ * refreshing both walk this, so a narrowed list stays aligned with the
+ * arrays the widget holds. */
+static size_t layout_roots(const browse_t *b, unsigned char *branch, size_t cap) {
+  char groups[16][64];
+  size_t ng = all_groups(groups, 16), n = 0;
+  for (size_t g = 0; g < ng && n < cap; ++g) {
+    char units[32][256];
+    size_t nu = offered_units(b, groups[g], units, 32);
+    if (!nu) continue;
+    branch[n++] = 0;
+    for (size_t j = 0; j < nu && n < cap; ++j) branch[n++] = 1;
+  }
+  return n;
+}
+
 /* Re-read every root row from the store. */
 static void refresh_roots(browse_t *b) {
   char groups[16][64];
   size_t ng = all_groups(groups, 16), i = 0;
   for (size_t g = 0; g < ng && i < b->n_roots; ++g) {
-    root_row(b, i++, groups[g], NULL);
     char units[32][256];
-    size_t nu = group_units(groups[g], units, 32);
+    size_t nu = offered_units(b, groups[g], units, 32);
+    if (!nu) continue;
+    root_row(b, i++, groups[g], NULL);
     for (size_t j = 0; j < nu && i < b->n_roots; ++j)
       root_row(b, i++, groups[g], units[j]);
   }
+}
+
+/* Does a file answer a preselect list? Each comma-separated name matches a
+ * file named in full or its set name -- the part before the first dot --
+ * ignoring case: the same rule `-m ChromHMM` resolves by, so a name means
+ * the same thing checked in the browser as typed on the command line. */
+static int preselect_match(const char *fname, const char *names) {
+  const char *dot = strchr(fname, '.');
+  size_t setlen = dot ? (size_t)(dot - fname) : strlen(fname);
+  for (const char *p = names; p && *p; ) {
+    const char *comma = strchr(p, ',');
+    size_t len = comma ? (size_t)(comma - p) : strlen(p);
+    while (len && *p == ' ') { ++p; --len; }
+    if (len && ((strlen(fname) == len && strncasecmp(fname, p, len) == 0) ||
+                (setlen == len && strncasecmp(fname, p, len) == 0)))
+      return 1;
+    p = comma ? comma + 1 : NULL;
+  }
+  return 0;
+}
+
+/* The tree asks this of every selectable file under the opened unit. A file
+ * row's key is "<registry index>|<file name>". */
+static int bx_preselect(void *ctx, const char *path, const char *key) {
+  const browse_t *b = ctx;
+  (void) path;
+  if (!key) return 0;
+  for (size_t i = 0; i < b->n_pre_keys; ++i)
+    if (strcmp(b->pre_keys[i], key) == 0) return 1;
+  const char *bar = strchr(key, '|');
+  return bar && b->preselect && preselect_match(bar + 1, b->preselect);
 }
 
 /* Before the browser opens over a store holding stale files: say which,
@@ -1782,7 +1915,8 @@ static int stale_dialog(const char *dopt, const yame_fetch_opt_t *opt) {
 /* The catalogue as a browsable tree: species, then platform or build, then
  * what each publishes. Returns 0 when it ran, -1 when the terminal cannot
  * host it and the caller should print the list instead. */
-static int browse_catalog(const char *dopt, int force) {
+static int browse_catalog(const char *dopt, int force, const char *open_unit,
+                          char **pre_keys, size_t n_pre_keys) {
   enum { MAXROOT = 64 };
   static char *roots[MAXROOT];
   static unsigned char styles[MAXROOT], branch[MAXROOT];
@@ -1791,6 +1925,8 @@ static int browse_catalog(const char *dopt, int force) {
 
   memset(&b, 0, sizeof(b));
   b.force = force;
+  b.pre_keys = pre_keys;
+  b.n_pre_keys = n_pre_keys;
   yame_assets_root(dopt, cfg_->tool_env, b.root, sizeof(b.root));
 
   /* Every unit at the top level, with its species as a heading above it: a
@@ -1799,14 +1935,7 @@ static int browse_catalog(const char *dopt, int force) {
   b.roots = roots;
   b.styles = styles;
 
-  char groups[16][64];
-  size_t ng = all_groups(groups, 16);
-  for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
-    branch[n_roots++] = 0;                  /* a heading never opens */
-    char units[32][256];
-    size_t nu = group_units(groups[i], units, 32);
-    for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
-  }
+  n_roots = layout_roots(&b, branch, MAXROOT);   /* a heading never opens */
   b.n_roots = n_roots;
   refresh_roots(&b);
 
@@ -1842,7 +1971,15 @@ static int browse_catalog(const char *dopt, int force) {
   spec.actions[0].accept = bx_accept;
   spec.actions[0].commit = bx_commit;   /* non-NULL: the tree stays open */
   spec.n_actions   = 1;
-  spec.have_selectable = 0;             /* nothing to ask for if it is here */
+  /* nothing to ask for if it is here -- unless -f, which re-fetches it */
+  spec.have_selectable = force;
+  if (open_unit) {
+    spec.open_root = open_unit;
+    if (n_pre_keys) spec.preselect = bx_preselect;
+  }
+  spec.on_key      = bx_on_key;
+  spec.hint        = "d        change the store";
+  b.title = title; b.title_sz = sizeof title;
   spec.ctx         = &b;
 
   return yame_ui_tree(&spec) < 0 ? -1 : 0;
@@ -1860,6 +1997,14 @@ static int browse_catalog(const char *dopt, int force) {
  * the array), or 0 if nothing was chosen or the terminal cannot host a tree.
  */
 size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char ***out_paths) {
+  yame_pick_opt_t o;
+  memset(&o, 0, sizeof o);
+  o.open_unit = open_unit;
+  return yame_browse_pick_opt(cfg, &o, out_paths);
+}
+
+size_t yame_browse_pick_opt(const yame_fetch_cfg_t *cfg, const yame_pick_opt_t *opt,
+                            char ***out_paths) {
   cfg_ = cfg;
   build_units();
   enum { MAXROOT = 64 };
@@ -1870,25 +2015,24 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char
 
   *out_paths = NULL;
   memset(&b, 0, sizeof(b));
-  yame_assets_root(NULL, cfg_->tool_env, b.root, sizeof(b.root));
+  yame_assets_root(opt->store, cfg_->tool_env, b.root, sizeof(b.root));
+  b.units = opt->units;
+  b.n_units = opt->n_units;
+  b.preselect = (opt->preselect && *opt->preselect) ? opt->preselect : NULL;
 
   memset(roots, 0, sizeof(roots));
   b.roots = roots;
   b.styles = styles;
-
-  char groups[16][64];
-  size_t ng = all_groups(groups, 16);
-  for (size_t i = 0; i < ng && n_roots < MAXROOT; ++i) {
-    branch[n_roots++] = 0;
-    char units[32][256];
-    size_t nu = group_units(groups[i], units, 32);
-    for (size_t j = 0; j < nu && n_roots < MAXROOT; ++j) branch[n_roots++] = 1;
-  }
+  n_roots = layout_roots(&b, branch, MAXROOT);
+  if (!n_roots) return 0;                       /* the narrowing left nothing */
   b.n_roots = n_roots;
   refresh_roots(&b);
 
+  char vkey = opt->verb_key ? opt->verb_key : 'u';
   static char title[4200];
-  snprintf(title, sizeof(title), "yame  %s   choose, then u", yame_ui_bullet());
+  if (opt->title) snprintf(title, sizeof(title), "%s", opt->title);
+  else snprintf(title, sizeof(title), "%s  %s   choose, then %c",
+                cfg_->tool ? cfg_->tool : "yame", yame_ui_bullet(), vkey);
 
   yame_ui_tree_t spec;
   memset(&spec, 0, sizeof(spec));
@@ -1903,19 +2047,23 @@ size_t yame_browse_pick(const yame_fetch_cfg_t *cfg, const char *open_unit, char
   spec.detail_key  = 'i';
   spec.detail_verb = "info";
   spec.facets      = bx_facets;
-  spec.open_root   = open_unit;         /* start where the caller is working */
+  spec.open_root   = opt->open_unit;    /* start where the caller is working */
+  if (opt->open_unit && b.preselect) spec.preselect = bx_preselect;
   spec.actions[0].key    = 'f';
   spec.actions[0].verb   = "fetch";
   spec.actions[0].accept = bx_accept;
   spec.actions[0].commit = bx_commit;   /* stays open */
-  spec.actions[1].key    = 'u';
-  spec.actions[1].verb   = "use";
+  spec.actions[1].key    = vkey;
+  spec.actions[1].verb   = opt->verb ? opt->verb : "use";
   spec.actions[1].accept = bx_choose;
   spec.actions[1].commit = NULL;        /* ends the session, returns the pick */
   spec.n_actions   = 2;
   /* Something already in the store is exactly what a caller wants to use, so
    * unlike a fetch it stays selectable. */
   spec.have_selectable = 1;
+  spec.on_key      = bx_on_key;
+  spec.hint        = "d        change the store";
+  b.title = title; b.title_sz = sizeof title;
   spec.ctx         = &b;
 
   if (yame_ui_tree(&spec) != 2 || !b.n_chosen) return 0;
@@ -2502,7 +2650,7 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
       return dump_registry(dopt, lsel, n_l, filter);
     if (!quiet) stale_dialog(dopt, &opt);
-    if (browse_catalog(dopt, force) == 0) return 0;
+    if (browse_catalog(dopt, force, NULL, NULL, 0) == 0) return 0;
     return dump_registry(dopt, lsel, n_l, filter); /* no terminal for the widget */
   }
 
@@ -2680,6 +2828,37 @@ int yame_fetch_main(const yame_fetch_cfg_t *cfg, int argc, char *argv[]) {
               "Re-run with -y.\n", n_files - n_have,
               (n_files - n_have) == 1 ? "" : "s", hs);
       return 1;
+    }
+    /* On a terminal the browser is the confirmation: it opens on the unit
+     * with exactly the files this plan would move already checked, so the
+     * list can be read, narrowed, and fetched with f -- or left with q. The
+     * tree opens one unit, so names spanning several keep the prompt. -c
+     * writes outside the store the browser shows, so it keeps it too. */
+    if (!here && isatty(STDERR_FILENO) && yame_ui_fancy()) {
+      char top[256] = "", u[256], sb[256];
+      int one_unit = 1;
+      for (size_t i = 0; i < n_sel && one_unit; ++i) {
+        unit_of(sel[i].a, u, sizeof u, sb, sizeof sb);
+        if (!top[0]) snprintf(top, sizeof top, "%s", u);
+        else if (strcmp(top, u)) one_unit = 0;
+      }
+      if (one_unit && top[0]) {
+        char **keys = wzcalloc(n_files ? n_files : 1, sizeof(char *));
+        size_t nk = 0;
+        for (size_t i = 0; i < n_sel; ++i)
+          for (size_t j = 0; j < sel[i].a->n_files && nk < n_files; ++j) {
+            const char *fn = yame_file_name(sel[i].a->files[j]);
+            if (!file_wanted(sel[i].a, fn, filter, sel[i].only, sel[i].n_only)) continue;
+            char k[512];
+            snprintf(k, sizeof k, "%zu|%s", (size_t) (sel[i].a - YAME_ASSETS), fn);
+            keys[nk++] = wzstrdup(k);
+          }
+        int rc = browse_catalog(dopt, force, top, keys, nk);
+        for (size_t i = 0; i < nk; ++i) free(keys[i]);
+        free(keys);
+        if (rc == 0) return 0;
+        /* no widget after all (a terminal too small, say): ask as before */
+      }
     }
     fprintf(stderr, "Proceed? [y/N] ");
     int c = getchar();

@@ -134,7 +134,8 @@ static int usage(void) {
   yame_usage_cont("space: -m ChromHMM finds the newest ChromHMM set.");
   yame_usage_opt("-b", "Browse the catalogue instead, choose masks there, and");
   yame_usage_cont("summarize against each. Fetches what is missing. The tree");
-  yame_usage_cont("opens at the query's own row space.");
+  yame_usage_cont("opens at the query's own row space; with -m, those set");
+  yame_usage_cont("names arrive checked (`-b -m CGI,ChromHMM`). d changes the store.");
   yame_usage_cont("If provided, every query sample is summarized against every");
   yame_usage_cont("mask sample (cartesian product).");
   yame_usage_opt("-M", "Load all masks into memory, for a mask file on slow IO.");
@@ -434,7 +435,13 @@ int main_summary(int argc, char *argv[]) {
       wzfatal("[summary] -b browses this tool's registry, and this build has "
               "not registered one (yame_set_default_fetch_cfg). Name the mask "
               "with -m instead.\n");
-    size_t n = yame_browse_pick(cfg, rname, &masks);
+    /* -m beside -b names what arrives checked, so the picker opens on the
+     * sets the person already had in mind and asks only for a look and u. */
+    yame_pick_opt_t po;
+    memset(&po, 0, sizeof po);
+    po.open_unit = rname;
+    po.preselect = config.fname_mask;
+    size_t n = yame_browse_pick_opt(cfg, &po, &masks);
     if (!n) {
       if (!yame_ui_fancy())
         fprintf(stderr, "-b needs a terminal it can draw on. Name the mask "

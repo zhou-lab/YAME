@@ -373,7 +373,9 @@
   <p>Arrows move, <code class="inl">/</code> filters by name, source,
   collection or title, <code class="inl">x</code> takes a row (a folder takes
   everything under it) and <code class="inl">f</code> fetches. What the store
-  already holds shows as present and cannot be re-taken.</p>
+  already holds shows as present and cannot be re-taken.
+  <code class="inl">d</code> points the browser at another store without
+  leaving it.</p>
   <p>Opened over a store that holds files from an earlier release than this
   build pins, the browser first lists them under their directories and asks
   whether to replace them now; declined, it marks each such file
@@ -400,8 +402,11 @@ EPICv2        937,690   Mammal40       38,607
 EPIC          866,553   HM27           27,722</pre>
   <p>Piped or redirected, <code class="inl">fetch</code> prints the catalogue
   as TSV instead, so a script never blocks on a keystroke. A folder is
-  confirmed before it transfers &mdash; off a terminal that means
-  <code class="inl">-y</code>, since a short name can reach a lot &mdash; but
+  confirmed before it transfers. On a terminal that is the browser, opened
+  on the folder with exactly the files it would fetch already checked
+  (<code class="inl">f</code> to fetch, <code class="inl">q</code> to leave);
+  off one it means <code class="inl">-y</code>, since a short name can reach a
+  lot &mdash; but
   <b>a name that picks out one file is its own confirmation</b>. A
   <i>filtered</i> directory is still a directory, though, even when the filter
   leaves exactly one file, so the two <code class="inl">-g</code> lines below
@@ -3274,7 +3279,8 @@ Masking:
                     space: -m ChromHMM finds the newest ChromHMM set.
   -b                Browse the catalogue instead, choose masks there, and
                     summarize against each. Fetches what is missing. The tree
-                    opens at the query's own row space.
+                    opens at the query's own row space; with -m, those set
+                    names arrive checked (`-b -m CGI,ChromHMM`). d changes the store.
                     If provided, every query sample is summarized against every
                     mask sample (cartesian product).
   -M                Load all masks into memory, for a mask file on slow IO.
@@ -3610,9 +3616,11 @@ Options:
                     script can check first. -l gives the same set as TSV.
   -y                Fetch a whole folder without asking. A folder is confirmed
                     first, since a short name can reach a lot -- `hg38` is 3.5
-                    GB. A name that picks out ONE file needs no -y: naming the
-                    file is the confirmation, so a documented fetch line runs
-                    in a script as it stands.
+                    GB. On a terminal the browser is the confirmation: it opens
+                    on the folder with exactly those files checked, f fetches,
+                    q leaves. Off one, a folder needs -y. A name that picks out
+                    ONE file needs neither: naming the file is the confirmation,
+                    so a documented fetch line runs in a script as it stands.
   -q                No progress output.
   -u &lt;url&gt;          Single-file form: what to download.
   -s &lt;sha256&gt;       Single-file form: the digest it must have.
