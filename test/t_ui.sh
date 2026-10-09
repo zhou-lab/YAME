@@ -26,7 +26,7 @@ export YAME_DATA_HOME="$d/store"; mkdir -p "$YAME_DATA_HOME"
 ## A local mirror serving the one real set the repo carries, so a picker run
 ## can choose it and have it fetched, as t_fetch.sh does, with no network.
 here=$(cd "$(dirname "$0")" && pwd)
-tree="$d/mirror/zhou-lab/InfiniumAnnotation/v8.2/EPIC/KYCG"
+tree="$d/mirror/zhou-lab/InfiniumAnnotation/v8.3/EPIC/KYCG"
 mkdir -p "$tree" && cp "$here/fixtures/Blacklist.20220304.cm" "$tree/"
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 ( cd "$d/mirror" && exec python3 -m http.server --bind 127.0.0.1 "$port" ) >"$d/server.log" 2>&1 &
