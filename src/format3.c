@@ -232,6 +232,13 @@ void fmt3_compress(cdata_t *c) {
   c->compressed = 1;
 }
 
+/* The inflated width is the smallest that holds every M and U EXACTLY.
+ * fitMU() keeps a value only while it is below 2^bits - 1, so the width has
+ * to clear that bound, not 2^bits: with `>= 2^nbits` here, a record whose
+ * largest count was exactly 15, 255, 4095, ... got a width one bit short
+ * for it, and decompress halved M and U at every such site. The row index,
+ * which decodes at 8 bytes, gave the true counts and so disagreed with a
+ * full decode on those rows; that is how this was found. */
 static uint64_t get_data_length(const cdata_t *c, uint8_t *unit) {
   uint8_t nbits = 1; // half unit nbits, M or U.
   uint64_t n = 0;
@@ -243,21 +250,21 @@ static uint64_t get_data_length(const cdata_t *c, uint8_t *unit) {
     } else if ((c->s[i] & 0x3) == 1) {
       uint64_t M = (c->s[i])>>5;
       uint64_t U = ((c->s[i])>>2) & 0x7;
-      while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
+      while (M >= (1ul << nbits) - 1 || U >= (1ul << nbits) - 1) nbits++;
       n++; i++;
     } else if ((c->s[i] & 0x3) == 2) {
       uint16_t v; memcpy(&v, c->s+i, 2);
       uint64_t M = v >> 2;
       uint64_t U = M & ((1<<7)-1);
       M >>= 7;
-      while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
+      while (M >= (1ul << nbits) - 1 || U >= (1ul << nbits) - 1) nbits++;
       n++; i += 2;
     } else {
       uint64_t v; memcpy(&v, c->s+i, 8);
       uint64_t M = v >> 2;
       uint64_t U = M & ((1ul<<31)-1);
       M >>= 31;
-      while (M >= (1ul << nbits) || U >= (1ul << nbits)) nbits++;
+      while (M >= (1ul << nbits) - 1 || U >= (1ul << nbits) - 1) nbits++;
       n++; i += 8;
     }
   }

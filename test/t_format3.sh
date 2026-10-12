@@ -59,4 +59,16 @@ for m in m6s m2s; do
   fi
   grep -q 'different lengths' err.txt || { echo "the short $m mask failed without saying why"; exit 1; }
 done
+## ---- a record's largest count is exactly 2^k - 1 ---------------------------
+## The decoder sizes its unpacked width from the record's largest M or U.
+## The width was one bit short when that maximum was exactly 15, 255, 4095
+## or 65535, and every site holding it came back with M and U halved:
+## (0, 15) unpacked as (0, 7). Each value must come back as packed.
+for v in 15 255 4095 65535 16 256 7 6; do
+  printf '0\t%s\n%s\t%s\n3\t4\n0\t0\n' "$v" "$v" "$v" > top.txt
+  "$YAME" pack -f m top.txt > top.cg
+  "$YAME" unpack -f -1 top.cg > top.out
+  diff top.txt top.out > /dev/null ||
+    { echo "max count $v did not survive pack/unpack:"; paste top.txt top.out; exit 1; }
+done
 echo "ok: t_format3"
