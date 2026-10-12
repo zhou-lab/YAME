@@ -157,3 +157,20 @@ if "$YAME" index -s short.txt two.cg 2>err.txt; then
 fi
 grep -q "more records than the sample name list" err.txt ||
   { echo "the short-list refusal does not say why"; cat err.txt; exit 1; }
+
+## ---- an index that cannot be written ---------------------------------------
+## fopen() failing on the .idx used to go unchecked: writeIndex() wrote
+## through a NULL FILE and the process died with SIGSEGV (rc 139). It is an
+## error with a message now. Root ignores the mode, so skip there.
+mkdir ro; printf '1\t2\n0\t0\n' | "$YAME" pack -f m - > ro/x.cg; chmod 555 ro
+if [ -w ro ]; then
+  echo "  note: directory still writable (root?); unwritable-index check skipped"
+else
+  if "$YAME" index ro/x.cg 2> ro.err; then
+    chmod 755 ro; echo "index into an unwritable directory succeeded"; exit 1
+  else rc=$?; fi
+  chmod 755 ro
+  [ $rc -lt 128 ] || { echo "index into an unwritable directory crashed (rc $rc)"; exit 1; }
+  grep -q 'Cannot write' ro.err || { echo "unwritable index: no message"; cat ro.err; exit 1; }
+fi
+chmod 755 ro

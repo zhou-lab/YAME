@@ -11,6 +11,7 @@
  */
 
 #include <stdio.h>
+#include <errno.h>
 #include "yame_ui.h"
 #include <stdlib.h>
 #include <string.h>
@@ -299,7 +300,8 @@ int main_index(int argc, char *argv[]) {
 
     FILE *out;
     if (console) out = stdout;
-    else out = fopen(fname_index, "w");
+    else if (!(out = fopen(fname_index, "w")))
+      wzfatal("[index] Cannot write %s: %s\n", fname_index, strerror(errno));
     rdx_write_index(out, idx, rdx);
     if (!console) fclose(out);
     rdx_free(rdx);
@@ -356,7 +358,8 @@ int main_index(int argc, char *argv[]) {
     
     FILE *out;
     if (console) out = stdout;
-    else out = fopen(fname_index, "w");
+    else if (!(out = fopen(fname_index, "w")))
+      wzfatal("[index] Cannot write %s: %s\n", fname_index, strerror(errno));
     rdx_write_index(out, idx, rdx);
     if (!console) fclose(out);
     rdx_free(rdx);

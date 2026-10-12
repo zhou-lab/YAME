@@ -10,6 +10,7 @@
  * See the LICENSE file at the root of the repository for the full terms.
  */
 
+#include <errno.h>
 #include <unistd.h>
 #include "cfile.h"
 #include "rdx.h"
@@ -162,6 +163,8 @@ void subset_fmt2_states(cfile_t cf, snames_t snames, char *fname_out,
   if (fname_out) {              // output index
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
+    if (!out)
+      wzfatal("[subset] Cannot write %s: %s\n", fname_index2, strerror(errno));
     writeIndex(out, idx2);
     fclose(out);
     free(fname_index2);
@@ -308,6 +311,8 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
 
     char *fname_index2 = get_fname_index(fname_out);
     FILE *fidx = fopen(fname_index2, "w");
+    if (!fidx)
+      wzfatal("[subset] Cannot write %s: %s\n", fname_index2, strerror(errno));
     rdx_write_index(fidx, idx2, rdx_out);
     fclose(fidx);
     free(fname_index2);
@@ -435,6 +440,8 @@ void subset_samples(cfile_t cf, index_t *idx, snames_t snames, char *fname_in,
   if (fname_out) {              // output index
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
+    if (!out)
+      wzfatal("[subset] Cannot write %s: %s\n", fname_index2, strerror(errno));
     writeIndex(out, idx2);
     fclose(out);
     free(fname_index2);

@@ -10,6 +10,7 @@
  * See the LICENSE file at the root of the repository for the full terms.
  */
 
+#include <errno.h>
 #include <sys/stat.h>
 #include "yame_ui.h"
 #include <sys/types.h>
@@ -194,6 +195,8 @@ int main_binarize(int argc, char *argv[]) {
 
     char *fname_index2 = get_fname_index(fname_out);
     FILE *out = fopen(fname_index2, "w");
+    if (!out)
+      wzfatal("[binarize] Cannot write %s: %s\n", fname_index2, strerror(errno));
     writeIndex(out, idx2);
     fclose(out);
     free(fname_index2);
