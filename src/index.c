@@ -16,6 +16,7 @@
 #include <string.h>
 #include "kstring.h"
 #include "cfile.h"
+#include "rdx.h"
 
 char *get_fname_index(const char *fname_cx) {
   char *fname_index = NULL;
@@ -233,6 +234,10 @@ void writeIndex(FILE *fp, index_t *idx) {
 static int usage() {
   yame_usage_head("yame index [options] <in.cx>");
   yame_usage_text("The index file name default to <in.cx>.idx");
+  yame_usage_text("Each line is name<TAB>offset. When the file has format-3 records, a");
+  yame_usage_text("third column holds their row index, which rowsub uses to read");
+  yame_usage_text("selected rows without decoding whole records; readers that take");
+  yame_usage_text("the first two columns are unaffected.");
   yame_usage_sec("Options:");
   yame_usage_opt("-s [file path]", "tab-delimited sample name list (use first column)");
   yame_usage_opt("-1 [sample name]", "add one sample to the end of the index");
@@ -277,17 +282,36 @@ int main_index(int argc, char *argv[]) {
       idx = append_index(idx, &cf, sname_to_append);
     }
 
+    /* Keep the row index of the records already listed -- loadIndex() reads
+     * names and offsets only -- and add the appended record's. */
+    rdx_t *old = rdx_load_index(argv[optind]);
+    rdx_t *rdx = rdx_open_build(argv[optind]);
+    if (rdx) {
+      for (uint64_t i = 0; old && i < old->nrec; ++i)
+        rdx_add_moved(rdx, &old->rec[i], old->rec[i].rec_voff, 0,
+                      old->rec[i].end_voff);
+      int64_t addr = getIndex(idx, sname_to_append);
+      if (addr >= 0 && bgzf_seek(cf.fh, addr, SEEK_SET) == 0 &&
+          read_cdata2(&cf, &c))
+        rdx_add(rdx, addr, &c);
+    }
+    rdx_free(old);
+
     FILE *out;
     if (console) out = stdout;
     else out = fopen(fname_index, "w");
-    writeIndex(out, idx);
+    rdx_write_index(out, idx, rdx);
     if (!console) fclose(out);
+    rdx_free(rdx);
     
   } else {                      /* index all samples */
     
     snames_t snames = loadSampleNames(fname_snames, 1);
     int n=0; kstring_t *sname_v = NULL; int64_t *addr_v = NULL;
     index_t* idx = kh_init(index);
+    /* the row index rides on the same pass: the records are read here
+     * anyway, and the block map it needs comes from headers alone */
+    rdx_t *rdx = rdx_open_build(argv[optind]);
 
     if (snames.n >0) {               /* sample names is given */
       int64_t addr = bgzf_tell(cf.fh);
@@ -298,6 +322,7 @@ int main_index(int argc, char *argv[]) {
           exit(1);
         }
         insert_index(idx, snames.s[i], addr);
+        rdx_add(rdx, addr, &c);
         addr = bgzf_tell(cf.fh);
       }
       /* Names pair to records BY POSITION, so a list shorter than the file
@@ -321,6 +346,7 @@ int main_index(int argc, char *argv[]) {
         memset(&sname_v[n], 0, sizeof(kstring_t));
         ksprintf(&sname_v[n], "Unnamed_%d", n+1);
         addr_v[n] = addr;
+        rdx_add(rdx, addr, &c);
       }
       
       for (int i=0; i<n; ++i) {
@@ -331,8 +357,9 @@ int main_index(int argc, char *argv[]) {
     FILE *out;
     if (console) out = stdout;
     else out = fopen(fname_index, "w");
-    writeIndex(out, idx);
+    rdx_write_index(out, idx, rdx);
     if (!console) fclose(out);
+    rdx_free(rdx);
 
     if (snames.n >0) {
       cleanSampleNames(&snames);

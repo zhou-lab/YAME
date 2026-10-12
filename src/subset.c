@@ -12,6 +12,7 @@
 
 #include <unistd.h>
 #include "cfile.h"
+#include "rdx.h"
 #include "kstring.h"
 
 #include "yame_ui.h"
@@ -255,9 +256,14 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
 
   index_t *idx2 = fname_out ? kh_init(index) : NULL;
   int64_t written = 0;
+  /* A record's bytes move unchanged, so its row index moves with them: the
+   * same checkpoints, every compressed address shifted by where it lands. */
+  rdx_t *rdx_in = fname_out ? rdx_load_index(fname_in) : NULL;
+  rdx_t *rdx_out = rdx_in ? wzcalloc(1, sizeof(rdx_t)) : NULL;
 
   for (int i = 0; i < snames.n; ++i) {
-    int64_t beg = getIndex(idx, snames.s[i]) >> 16, end = fsize;
+    int64_t voff_in = getIndex(idx, snames.s[i]);
+    int64_t beg = voff_in >> 16, end = fsize;
     for (int j = 0; j < npairs; ++j)     /* first boundary past this record */
       if (addr[j] > beg) { end = addr[j]; break; }
 
@@ -271,6 +277,9 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
 
     if (!cx_copy_bytes(in, beg, end, out))
       wzfatal("Failed copying %s out of %s.\n", snames.s[i], fname_in);
+    const rdx_rec_t *r = rdx_find(rdx_in, voff_in);
+    if (r) rdx_add_moved(rdx_out, r, written << 16, written - beg,
+                         (written + end - beg) << 16);
     written += end - beg;
   }
   if (fwrite(CX_BGZF_EOF, 1, sizeof(CX_BGZF_EOF), out) != sizeof(CX_BGZF_EOF))
@@ -299,11 +308,12 @@ static int subset_raw(char *fname_in, index_t *idx, snames_t snames,
 
     char *fname_index2 = get_fname_index(fname_out);
     FILE *fidx = fopen(fname_index2, "w");
-    writeIndex(fidx, idx2);
+    rdx_write_index(fidx, idx2, rdx_out);
     fclose(fidx);
     free(fname_index2);
     freeIndex(idx2);
   }
+  rdx_free(rdx_in); rdx_free(rdx_out);
   return 1;
 }
 

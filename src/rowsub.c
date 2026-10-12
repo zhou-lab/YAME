@@ -18,6 +18,7 @@
 #include "cfile.h"
 #include "assets.h"
 #include "cdata.h"
+#include "rdx.h"
 
 /**
  * yame rowsub
@@ -154,6 +155,8 @@ static int usage(config_t *config) {
   yame_usage_cont("end0 = (blockIndex0+1)*blockSize - 1");
   fprintf(stderr, "         If <blockSize> is omitted, default blockSize=%"PRIu64".\n", (uint64_t)config->isize);
   yame_usage_sec("Other options:");
+  yame_usage_opt("-S <samples.txt>", "Only these records, one name per line, in that order,");
+  yame_usage_cont("found through <in.cx>.idx (so in.cx must be a file).");
   yame_usage_opt("-h", "Show this help message.");
   yame_usage_sec("Index conventions:");
   yame_usage_text("- '0' suffix means 0-based (beg0, blockIndex0).");
@@ -162,6 +165,10 @@ static int usage(config_t *config) {
   yame_usage_sec("Notes:");
   yame_usage_text("* For format 2 (state data), the key section is preserved when slicing.");
   yame_usage_text("* Format 7 (row coordinates) is sliced with fmt7_* helpers.");
+  yame_usage_text("* When <in.cx>.idx carries a row index (`yame index` writes it), -l, -L, -B and");
+  yame_usage_cont("-I read a format-3 record's selected rows without decoding the");
+  yame_usage_cont("rest; output is the same bytes. No row index, a stale one, a pipe,");
+  yame_usage_cont("or -m reads records in full.");
   yame_usage_text("* If multiple selection options are given, the effective precedence is:");
   yame_usage_opt("-l/-L", ">  -m  >  -B/-I  >  default.");
   fprintf(stderr, "\n");
@@ -571,6 +578,60 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
 }
 
 
+/* Slice one record read in full and write it: the path every record took
+ * before the row index, and still the one any record it cannot serve takes. */
+static void write_sliced(BGZF *fp_out, cdata_t *c, int64_t *row_indices,
+                         int64_t n_indices, cdata_t *c_mask, config_t *config) {
+  if (c->fmt == '7') {
+    cdata_t c2;
+    if (row_indices) c2 = fmt7_sliceToIndices(c, row_indices, n_indices);
+    else if (c_mask->n) c2 = fmt7_sliceToMask(c, c_mask);
+    else c2 = fmt7_sliceToBlock(c, config->beg, config->end);
+    bgzf_flush(fp_out);         /* start this record on a block boundary */
+    cdata_write1(fp_out, &c2);
+    free_cdata(&c2);
+  } else {
+    cdata_t c2 = decompress(*c);
+    cdata_t c3 = {0};
+    if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
+    else if (c_mask->n) c3 = sliceToMask(&c2, c_mask);
+    else c3 = sliceToBlock(&c2, config->beg, config->end);
+    cdata_compress(&c3);
+    bgzf_flush(fp_out);         /* start this record on a block boundary */
+    cdata_write1(fp_out, &c3);
+    free(c3.s); free(c2.s);
+  }
+}
+
+/* Serve one format-3 record from the row index: 1 written, 0 not a case it
+ * covers (the caller reads in full, which also reports a bad row exactly as
+ * before), -1 the file no longer matches the index. */
+static int write_from_rdx(BGZF *fh, const rdx_rec_t *r, BGZF *fp_out,
+                          int64_t *row_indices, int64_t n_indices,
+                          config_t *config) {
+  int64_t *rows = row_indices, n = n_indices;
+  if (row_indices) {
+    for (int64_t i = 0; i < n; ++i)
+      if (rows[i] < 1 || (uint64_t) rows[i] > r->nrows) return 0;
+  } else {
+    if (r->nrows == 0 || config->beg > r->nrows - 1) return 0;
+    uint64_t end = config->end > r->nrows - 1 ? r->nrows - 1 : config->end;
+    if (end < config->beg) return 0;
+    n = (int64_t) (end - config->beg + 1);
+    rows = wzmalloc(n * sizeof(int64_t));
+    for (int64_t i = 0; i < n; ++i) rows[i] = (int64_t) config->beg + i + 1;
+  }
+  cdata_t c3 = {0};
+  int ok = rdx_read_rows(fh, r, rows, n, &c3);
+  if (rows != row_indices) free(rows);
+  if (!ok) return -1;
+  cdata_compress(&c3);
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
+  cdata_write1(fp_out, &c3);
+  free(c3.s);
+  return 1;
+}
+
 int main_rowsub(int argc, char *argv[]) {
 
   config_t config = {
@@ -579,8 +640,8 @@ int main_rowsub(int argc, char *argv[]) {
   int c; char *fname_row = NULL; char *fname_mask = NULL;
   char *fname_rnindex = NULL; int add_row_coordinates = 0;
   char *B_option = NULL, *I_option = NULL;
-  int64_t window = -1; char *fname_map = NULL;
-  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:w:M:h"))>=0) {
+  int64_t window = -1; char *fname_map = NULL; char *fname_samples = NULL;
+  while ((c = getopt(argc, argv, "1R:m:l:L:B:I:w:M:S:h"))>=0) {
     switch (c) {
     case '1': add_row_coordinates = 1; break;
     case 'R': fname_row = wzstrdup(optarg); break;
@@ -591,6 +652,7 @@ int main_rowsub(int argc, char *argv[]) {
     case 'I': I_option = wzstrdup(optarg); break;
     case 'w': window = (int64_t) parse_row_index(optarg, "-w"); break;
     case 'M': fname_map = wzstrdup(optarg); break;
+    case 'S': fname_samples = wzstrdup(optarg); break;
     case 'h': return usage(&config); break;
     default: usage(&config); wzfatal("Unrecognized option: %c.\n", c);
     }
@@ -743,30 +805,74 @@ int main_rowsub(int argc, char *argv[]) {
       wzfatal("[rowsub] Writing -M %s failed: %s\n", fname_map, strerror(errno));
   }
 
-  while (1) {
-    cdata_t c = read_cdata1(&cf);
-    if (c.n == 0) break;
-    if (c.fmt == '7') {
-      cdata_t c2;
-      if (row_indices) c2 = fmt7_sliceToIndices(&c, row_indices, n_indices);
-      else if (c_mask.n) c2 = fmt7_sliceToMask(&c, &c_mask);
-      else c2 = fmt7_sliceToBlock(&c, config.beg, config.end);
-      bgzf_flush(fp_out);       /* start this record on a block boundary */
-      cdata_write1(fp_out, &c2);
-      free_cdata(&c2);
-    } else {
-      cdata_t c2 = decompress(c);
-      cdata_t c3 = {0};
-      if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
-      else if (c_mask.n) c3 = sliceToMask(&c2, &c_mask);
-      else c3 = sliceToBlock(&c2, config.beg, config.end);
-      cdata_compress(&c3);
-      bgzf_flush(fp_out);       /* start this record on a block boundary */
-      cdata_write1(fp_out, &c3);
-      free(c3.s); free(c2.s);
+  /* The row index serves format-3 records by seeking, so only a file has
+   * one, and a mask (which reads every row anyway) does not use it. */
+  rdx_t *rdx = c_mask.n ? NULL : rdx_load_index(fname);
+  int64_t n_stale = 0;
+
+  if (fname_samples) {
+    if (strcmp(fname, "-") == 0)
+      wzfatal("[rowsub] -S finds records through the input's .idx, so the "
+              "input must be a file, not a stream.\n");
+    char *fname_idx = get_fname_index(fname);
+    index_t *sidx = loadIndex(fname_idx);
+    if (!sidx)
+      wzfatal("[rowsub] -S needs %s; make it with `yame index %s`.\n",
+              fname_idx, fname);
+    snames_t sn = loadSampleNames(fname_samples, 1);
+    for (int i = 0; i < sn.n; ++i) {
+      int64_t voff = getIndex(sidx, sn.s[i]);
+      if (voff < 0)
+        wzfatal("[rowsub] Sample %s is not in %s.\n", sn.s[i], fname_idx);
+      const rdx_rec_t *r = rdx_find(rdx, voff);
+      if (r) {
+        int st = write_from_rdx(cf.fh, r, fp_out, row_indices, n_indices,
+                                &config);
+        if (st == 1) continue;
+        if (st < 0) ++n_stale;
+      }
+      if (bgzf_seek(cf.fh, voff, SEEK_SET) < 0)
+        wzfatal("[rowsub] Cannot seek to %s in %s.\n", sn.s[i], fname);
+      cdata_t c = read_cdata1(&cf);
+      if (c.n == 0)
+        wzfatal("[rowsub] %s points past the data for %s.\n", fname_idx,
+                sn.s[i]);
+      write_sliced(fp_out, &c, row_indices, n_indices, &c_mask, &config);
+      free_cdata(&c);
     }
-    free_cdata(&c);
+    cleanSampleNames(&sn);
+    cleanIndex(sidx);
+    free(fname_idx);
+  } else {
+    while (1) {
+      /* Only a file has a row index. On a pipe the reader's block address
+       * can be negative, and bgzf_tell() shifts it left: undefined. */
+      int64_t addr = rdx ? bgzf_tell(cf.fh) : 0;
+      const rdx_rec_t *r = rdx_find(rdx, addr);
+      if (r && r->end_voff >= 0) {
+        int st = write_from_rdx(cf.fh, r, fp_out, row_indices, n_indices,
+                                &config);
+        if (st == 1) {
+          if (bgzf_seek(cf.fh, r->end_voff, SEEK_SET) < 0)
+            wzfatal("[rowsub] Cannot seek in %s.\n", fname);
+          continue;
+        }
+        if (st < 0) ++n_stale;
+        if (bgzf_seek(cf.fh, addr, SEEK_SET) < 0)
+          wzfatal("[rowsub] Cannot seek in %s.\n", fname);
+      }
+      cdata_t c = read_cdata1(&cf);
+      if (c.n == 0) break;
+      write_sliced(fp_out, &c, row_indices, n_indices, &c_mask, &config);
+      free_cdata(&c);
+    }
   }
+  if (n_stale)
+    fprintf(stderr, "[rowsub] %"PRId64" record(s) no longer match the row index in %s.idx and "
+            "were read in full; rebuild it with `yame index %s`.\n",
+            n_stale, fname, fname);
+  rdx_free(rdx);
+  free(fname_samples);
   bgzf_close(cf.fh);
   bgzf_close(fp_out);
 

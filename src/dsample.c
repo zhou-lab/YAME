@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "cfile.h"
+#include "rdx.h"
 #include "snames.h"
 
 static int usage(void) {
@@ -244,6 +245,7 @@ static void write_index_with_rep(char *fname,
   // open output CX for reading to recover BGZF offsets
   cfile_t cf2 = open_cfile(fname_out);
   index_t *idx2 = kh_init(index);
+  rdx_t *rdx = rdx_open_build(fname_out);   /* this pass reads every record */
 
   int64_t addr = bgzf_tell(cf2.fh);
   cdata_t c_tmp = (cdata_t){0};
@@ -289,6 +291,7 @@ static void write_index_with_rep(char *fname,
       }
 
       insert_index(idx2, s, addr);
+      rdx_add(rdx, addr, &c_tmp);
 
       // addr for the *next* record
       addr = bgzf_tell(cf2.fh);
@@ -308,9 +311,10 @@ static void write_index_with_rep(char *fname,
     fflush(stderr);
     exit(1);
   }
-  writeIndex(out, idx2);
+  rdx_write_index(out, idx2, rdx);
   fclose(out);
   free(fname_index2);
+  rdx_free(rdx);
 
   cleanIndex(idx2); // free the keys too
   if (pairs) free(pairs);

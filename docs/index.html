@@ -3095,6 +3095,10 @@ Symbols (per-site):  fmt6: █ meth  ░ unmeth  . NA   fmt3/4: H/M/L/.   fmt0: 
     <pre class="help"><code>Usage:
   yame index [options] &lt;in.cx&gt;
   The index file name default to &lt;in.cx&gt;.idx
+  Each line is name&lt;TAB&gt;offset. When the file has format-3 records, a
+  third column holds their row index, which rowsub uses to read
+  selected rows without decoding whole records; readers that take
+  the first two columns are unaffected.
 
 Options:
   -s [file path]    tab-delimited sample name list (use first column)
@@ -3223,6 +3227,8 @@ Purpose:
          If &lt;blockSize&gt; is omitted, default blockSize=1000000.
 
 Other options:
+  -S &lt;samples.txt&gt;  Only these records, one name per line, in that order,
+                    found through &lt;in.cx&gt;.idx (so in.cx must be a file).
   -h                Show this help message.
 
 Index conventions:
@@ -3233,6 +3239,10 @@ Index conventions:
 Notes:
   * For format 2 (state data), the key section is preserved when slicing.
   * Format 7 (row coordinates) is sliced with fmt7_* helpers.
+  * When &lt;in.cx&gt;.idx carries a row index (`yame index` writes it), -l, -L, -B and
+                    -I read a format-3 record's selected rows without decoding the
+                    rest; output is the same bytes. No row index, a stale one, a pipe,
+                    or -m reads records in full.
   * If multiple selection options are given, the effective precedence is:
   -l/-L             &gt;  -m  &gt;  -B/-I  &gt;  default.</code></pre>
   </details>
