@@ -500,8 +500,22 @@ static int cmp_by_row(const void *a, const void *b) {
   return (x > y) - (x < y);
 }
 
+/* A failed attempt hands the record back to the full read, on the same
+ * reader. An index that points into the middle of compressed data leaves
+ * the reader's error flag set, and the full read then reported the whole
+ * file unreadable; the error was the index's, so it is cleared with it. */
+static int read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
+                     int64_t n, cdata_t *out);
+
 int rdx_read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
                   int64_t n, cdata_t *out) {
+  int ok = read_rows(fh, r, rows, n, out);
+  if (!ok) fh->errcode = 0;
+  return ok;
+}
+
+static int read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
+                     int64_t n, cdata_t *out) {
 
   /* the record header must still be the one the index describes */
   if (bgzf_seek(fh, r->rec_voff, SEEK_SET) < 0) return 0;
@@ -538,6 +552,21 @@ int rdx_read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
     f3_set_mu(&c, ord[i], k.M, k.U);
   }
   free(ord);
+
+  /* Finish the record: from the last checkpoint, read to the end of the
+   * stream and require the row count and the reader's position there to be
+   * the ones recorded. Everything above can come out right on an index that
+   * is wrong about block addresses -- token boundaries belong to the stream,
+   * not the blocks -- and the caller then seeks to the recorded end for the
+   * next record. Costs the record's last block. */
+  uint64_t last = r->nckpt - 1;
+  int ok = 1;
+  if (!k.positioned || r->ckpt[last].spos > k.spos) ok = cur_seek(&k, last);
+  while (ok && k.spos < r->nbytes) ok = cur_next(&k);
+  if (!ok || k.row + k.rows != r->nrows ||
+      (r->end_voff >= 0 && bgzf_tell(fh) != r->end_voff)) {
+    free(c.s); return 0;
+  }
   *out = c;
   return 1;
 }

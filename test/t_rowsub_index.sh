@@ -251,4 +251,88 @@ cut -f1,2 k.cg.idx > k2.idx; mv k2.idx k.cg.idx
 "$YAME" rowsub -l rows.txt k.cg > want.cg
 cmp want.cg got.cg || { echo "k column: rows differ from a full decode"; exit 1; }
 
+## ---- 9. a column that is valid, checksummed and wrong ----------------------
+## Rewrite one record's column and sign it again, the way a buggy writer
+## would: the checksum then passes, and only the reader's checks stand
+## between the column and the output.
+resign() {   # resign <in.idx> <out.idx> <name> <python expression on ck>
+  python3 - "$@" <<'PY'
+import sys, zlib
+src, dst, name, expr = sys.argv[1:5]
+D = "0123456789abcdefghijklmnopqrstuvwxyz"
+def e36(n):
+    o = ""
+    while True:
+        o = D[n % 36] + o; n //= 36
+        if not n: return o
+out = []
+for line in open(src):
+    f = line.rstrip("\n").split("\t")
+    if f[0] == name:
+        p = f[2].split(".")[:-1]                 # drop .k<crc>
+        ck = [[int(x, 36) for x in c.split("_")] for c in p[4:]]
+        exec(expr)                               # edits ck in place
+        p[4:] = ["_".join(e36(x) for x in c) for c in ck]
+        body = ".".join(p)
+        f[2] = body + ".k" + e36(zlib.crc32(body.encode()) & 0xffffffff)
+    out.append("\t".join(f) + "\n")
+open(dst, "w").write("".join(out))
+PY
+}
+full -l rows.txt > want.cg
+## (a) a checkpoint whose block address lands inside compressed data: the
+## seek fails, and the reader's error must not outlive the attempt -- the
+## full read after it reported the whole file unreadable
+resign three.idx bad.idx a "ck[2][2] += 1; ck[3][2] -= 1"
+cmp -s three.idx bad.idx && { echo "fixture: resign changed nothing"; exit 1; }
+## rows inside that checkpoint's block, so the reader seeks to it
+awk -F'\t' '$1 == "a" {print $3}' three.idx | python3 -c '
+import sys; p = sys.stdin.read().strip().split(".")[4:-1]
+r = [sum(int(c.split("_")[0], 36) for c in p[:k + 1]) for k in (2, 3)]
+print("\n".join(str(x) for x in range(r[0] + 2, min(r[0] + 8, r[1] + 1))))' > rows_b.txt
+full -S a.txt -l rows_b.txt > want_b.cg
+cp bad.idx s.cg.idx
+"$YAME" rowsub -S a.txt -l rows_b.txt s.cg > got.cg ||
+  { echo "a checkpoint into compressed data broke the full read"; exit 1; }
+cmp want_b.cg got.cg || { echo "checkpoint into compressed data: rows differ"; exit 1; }
+path "row-index 0, full 1" -S a.txt -l rows_b.txt s.cg
+## without -S the read goes on to the end of the file, where an error flag
+## left by the failed attempt turned the clean end into "Truncated or
+## corrupt BGZF stream", exit 1
+full -l rows_b.txt > want_b.cg
+cp bad.idx s.cg.idx
+"$YAME" rowsub -l rows_b.txt s.cg > got.cg 2> err.txt ||
+  { echo "a failed checkpoint broke the end of the file:"; cat err.txt; exit 1; }
+cmp want_b.cg got.cg || { echo "checkpoint into compressed data (no -S): rows differ"; exit 1; }
+path "row-index 2, full 2" -l rows_b.txt s.cg
+## (b) the same data laid out in other blocks, with that layout's columns on
+## this file's names and offsets. Rows still come out right -- token
+## boundaries belong to the stream -- but the recorded end of the record is
+## somewhere else, and the next record was read from there: exit 1.
+python3 - s.cg recut.cg <<'PY'
+import gzip, struct, sys, zlib
+raw = gzip.open(sys.argv[1], "rb").read()
+def blk(b):
+    c = zlib.compressobj(6, zlib.DEFLATED, -15); co = c.compress(b) + c.flush()
+    return struct.pack("<BBBBIBBHBBHH", 31, 139, 8, 4, 0, 0, 255, 6, 66, 67, 2,
+                       len(co) + 25) + co + struct.pack("<II", zlib.crc32(b), len(b))
+with open(sys.argv[2], "wb") as f:
+    for i in range(0, len(raw), 30001): f.write(blk(raw[i:i + 30001]))
+    f.write(bytes.fromhex("1f8b08040000000000ff0600424302001b0003000000000000000000"))
+PY
+"$YAME" index -s names.txt recut.cg
+paste <(cut -f1,2 three.idx) <(cut -f3 recut.cg.idx) > s.cg.idx
+"$YAME" rowsub -l rows.txt s.cg > got.cg ||
+  { echo "another layout's columns: rowsub failed"; exit 1; }
+cmp want.cg got.cg || { echo "another layout's columns: rows differ"; exit 1; }
+path "row-index 0, full 4" -l rows.txt s.cg
+## and recut.cg with its own columns, records starting mid-block, is served
+cp recut.cg.idx keep.idx; cut -f1,2 keep.idx > recut.cg.idx
+"$YAME" rowsub -l rows.txt recut.cg > want2.cg
+cp keep.idx recut.cg.idx
+"$YAME" rowsub -l rows.txt recut.cg > got.cg
+cmp want2.cg got.cg && cmp want.cg got.cg || { echo "mid-block records: rows differ"; exit 1; }
+path "row-index 3, full 1" -l rows.txt recut.cg
+cp three.idx s.cg.idx
+
 echo "ok: rowsub through the row index (byte-identical to a full decode)"
