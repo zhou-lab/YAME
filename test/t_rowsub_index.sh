@@ -55,6 +55,17 @@ cp s.cg.idx three.idx
 
 ## the full-decode answer: the same file with a two-column index
 full() { cp two.idx s.cg.idx; "$YAME" rowsub "$@" s.cg; cp three.idx s.cg.idx; }
+## Both paths write the same bytes, so a cmp alone passes just as well when
+## the row index is silently never used -- which is how a parse bug in the
+## column's checksum went unnoticed by every check below but one. Each run
+## that should take the row index asserts that it did.
+path() {   # path <want> <rowsub args...>
+  local want=$1; shift
+  local got
+  got=$(YAME_ROWSUB_PATH=1 "$YAME" rowsub "$@" 2>&1 >/dev/null | grep '^\[rowsub\] row-index')
+  [ "$got" = "[rowsub] $want" ] ||
+    { echo "rowsub $*: expected '$want', got '$got'"; exit 1; }
+}
 
 ## ---- 1. -l: rows in any order, repeated, first and last ---------------------
 awk -v N=$N 'BEGIN { srand(7); for (i = 0; i < 300; i++) print int(rand() * N) + 1
@@ -63,6 +74,7 @@ full -l rows.txt > want.cg
 "$YAME" rowsub -l rows.txt s.cg > got.cg 2> err.txt
 cmp want.cg got.cg || { echo "-l: row index and full decode differ"; exit 1; }
 [ ! -s err.txt ] || { echo "-l: unexpected stderr"; cat err.txt; exit 1; }
+path "row-index 3, full 1" -l rows.txt s.cg
 ## and the values are the ones packed: row 5 of a.cg, via unpack
 "$YAME" unpack -f -1 got.cg 2>/dev/null | sed -n '304p' > r5.txt
 mk 1 1 | sed -n '5p' > r5.want
@@ -73,6 +85,7 @@ for sel in "-B 0_1" "-B 1000_150000" "-B 199990_200000" "-I 3_40000" "-B 199999"
   full $sel > want.cg
   "$YAME" rowsub $sel s.cg > got.cg
   cmp want.cg got.cg || { echo "$sel: row index and full decode differ"; exit 1; }
+  path "row-index 3, full 1" $sel s.cg
 done
 
 ## ---- 3. -S: chosen records, in the order asked -------------------------------
@@ -80,6 +93,7 @@ printf 'small\na\nbits\n' > pick.txt
 full -S pick.txt -l rows.txt > want.cg
 "$YAME" rowsub -S pick.txt -l rows.txt s.cg > got.cg
 cmp want.cg got.cg || { echo "-S: row index and full decode differ"; exit 1; }
+path "row-index 2, full 1" -S pick.txt -l rows.txt s.cg
 ## the same as subset | rowsub, the pipe form, which cannot seek
 "$YAME" subset -l pick.txt s.cg | "$YAME" rowsub -l rows.txt - > pipe.cg
 cmp want.cg pipe.cg || { echo "-S and subset | rowsub differ"; exit 1; }
@@ -124,6 +138,9 @@ cp two.idx s.cg.idx
 "$YAME" rowsub -l rows.txt s.cg > got.cg 2> err.txt
 full -l rows.txt > want.cg
 cmp want.cg got.cg && [ ! -s err.txt ] || { echo "two-column index: wrong"; exit 1; }
+cp two.idx s.cg.idx
+path "row-index 0, full 4" -l rows.txt s.cg
+cp three.idx s.cg.idx
 ## a stale one: the file rewritten behind an index that described it
 cp three.idx stale.cg.idx
 cat b.cg bits.cg a.cg small.cg > stale.cg       # same names, other bytes
@@ -136,10 +153,49 @@ cp stale3.idx stale.cg.idx
 "$YAME" rowsub -l rows.txt stale.cg 2>&1 > /dev/null | grep -q 'no longer match' ||
   { echo "stale index: no message"; exit 1; }
 ## garbage in the column is ignored, not believed
-awk -F'\t' 'BEGIN {OFS = "\t"} {print $1, $2, "r1.zz.q_"}' three.idx > s.cg.idx
-"$YAME" rowsub -l rows.txt s.cg > got.cg
 full -l rows.txt > want.cg
+awk -F'\t' 'BEGIN {OFS = "\t"} {print $1, $2, "r1.zz.q_"}' three.idx > garb.idx
+cp garb.idx s.cg.idx
+"$YAME" rowsub -l rows.txt s.cg > got.cg
 cmp want.cg got.cg || { echo "garbled index: output differs"; exit 1; }
+path "row-index 0, full 4" -l rows.txt s.cg
+## A plausible edit is the dangerous kind. Shift one checkpoint's row by one
+## and ask only for rows inside its block: the reader seeks straight there,
+## its first byte matches, no other checkpoint is crossed, and the rows come
+## back numbered one off -- exit 0. The column's checksum is what refuses it.
+python3 - three.idx edit.idx rows_k.txt <<'PY'
+import sys
+src, dst, rows = sys.argv[1:4]
+def b36(s): return int(s, 36)
+def e36(n):
+    d = "0123456789abcdefghijklmnopqrstuvwxyz"; o = ""
+    while True:
+        o = d[n % 36] + o; n //= 36
+        if not n: return o
+out = []
+for line in open(src):
+    f = line.rstrip("\n").split("\t")
+    if f[0] == "a":
+        p = f[2].split(".")          # r1 nbytes nrows end ck1 ck2 ... kCRC
+        ck = [c.split("_") for c in p[4:-1]]
+        k = len(ck) // 2             # a checkpoint in the middle
+        row0 = sum(b36(c[0]) for c in ck[:k + 1])
+        nxt = row0 + b36(ck[k + 1][0])
+        ck[k][0] = e36(b36(ck[k][0]) + 1)
+        ck[k + 1][0] = e36(b36(ck[k + 1][0]) - 1)   # later rows unchanged
+        p[4:-1] = ["_".join(c) for c in ck]
+        f[2] = ".".join(p)
+        open(rows, "w").write("".join("%d\n" % r for r in
+                                      range(row0 + 2, min(row0 + 12, nxt + 1))))
+    out.append("\t".join(f) + "\n")
+open(dst, "w").write("".join(out))
+PY
+cmp -s three.idx edit.idx && { echo "fixture: the edit changed nothing"; exit 1; }
+full -S a.txt -l rows_k.txt > want.cg
+cp edit.idx s.cg.idx
+"$YAME" rowsub -S a.txt -l rows_k.txt s.cg > got.cg
+cmp want.cg got.cg || { echo "edited checkpoint: rows differ from a full decode"; exit 1; }
+path "row-index 0, full 1" -S a.txt -l rows_k.txt s.cg
 cp three.idx s.cg.idx
 
 ## ---- 6. writers carry it ----------------------------------------------------
@@ -152,6 +208,7 @@ cut -f1,2 sub.cg.idx > sub2.idx; cp sub.cg.idx sub3.idx; cp sub2.idx sub.cg.idx
 "$YAME" rowsub -l rows.txt sub.cg > want.cg
 cp sub3.idx sub.cg.idx
 cmp want.cg got.cg || { echo "subset -o: moved row index gives other rows"; exit 1; }
+path "row-index 2, full 0" -l rows.txt sub.cg
 ## index -1 keeps the records already there and adds the new one
 cp a.cg ap.cg; "$YAME" index -1 one ap.cg
 cat small.cg >> ap.cg; "$YAME" index -1 two ap.cg
@@ -161,6 +218,9 @@ cat small.cg >> ap.cg; "$YAME" index -1 two ap.cg
 cut -f1,2 ap.cg.idx > ap2.idx; cp ap2.idx ap.cg.idx
 "$YAME" rowsub -l rows.txt ap.cg > want.cg
 cmp want.cg got.cg || { echo "index -1: row index gives other rows"; exit 1; }
+## the full read above left a two-column .idx; index rebuilds the column
+"$YAME" index ap.cg
+path "row-index 2, full 0" -l rows.txt ap.cg
 
 ## ---- 7. readers of the two-column form see no change -----------------------
 cp three.idx s.cg.idx
@@ -173,5 +233,22 @@ cp three.idx s.cg.idx
 cp two.idx s.cg.idx
 "$YAME" subset s.cg b small > m2.cg
 cmp m2.cg m3.cg || { echo "subset by name reads the third column"; exit 1; }
+
+## ---- 8. a column with ".k" inside it ---------------------------------------
+## The checksum is the field after the LAST ".k"; a base-36 field can begin
+## with k too. 950000 rows is "kc8w" in base 36, so this record's column
+## reads r1.<nbytes>.kc8w... -- taken for the checksum, the whole column was
+## refused and every read went the slow way, with the same bytes out.
+awk 'BEGIN { srand(11); for (i = 0; i < 950000; i++)
+  print (rand() < 0.97) ? "0\t0" : int(rand() * 6) "\t" int(rand() * 6) }' |
+  "$YAME" pack -f 3 - > k.cg
+"$YAME" index k.cg
+awk -F'\t' '$3 !~ /^r1\.[0-9a-z]+\.k/ {bad = 1} END {exit bad}' k.cg.idx ||
+  { echo "fixture: the row count is not k... in base 36"; cut -c1-40 k.cg.idx; exit 1; }
+path "row-index 1, full 0" -l rows.txt k.cg
+"$YAME" rowsub -l rows.txt k.cg > got.cg
+cut -f1,2 k.cg.idx > k2.idx; mv k2.idx k.cg.idx
+"$YAME" rowsub -l rows.txt k.cg > want.cg
+cmp want.cg got.cg || { echo "k column: rows differ from a full decode"; exit 1; }
 
 echo "ok: rowsub through the row index (byte-identical to a full decode)"

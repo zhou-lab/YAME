@@ -808,7 +808,7 @@ int main_rowsub(int argc, char *argv[]) {
   /* The row index serves format-3 records by seeking, so only a file has
    * one, and a mask (which reads every row anyway) does not use it. */
   rdx_t *rdx = c_mask.n ? NULL : rdx_load_index(fname);
-  int64_t n_stale = 0;
+  int64_t n_stale = 0, n_rdx = 0, n_full = 0;
 
   if (fname_samples) {
     if (strcmp(fname, "-") == 0)
@@ -828,9 +828,10 @@ int main_rowsub(int argc, char *argv[]) {
       if (r) {
         int st = write_from_rdx(cf.fh, r, fp_out, row_indices, n_indices,
                                 &config);
-        if (st == 1) continue;
+        if (st == 1) { ++n_rdx; continue; }
         if (st < 0) ++n_stale;
       }
+      ++n_full;
       if (bgzf_seek(cf.fh, voff, SEEK_SET) < 0)
         wzfatal("[rowsub] Cannot seek to %s in %s.\n", sn.s[i], fname);
       cdata_t c = read_cdata1(&cf);
@@ -855,6 +856,7 @@ int main_rowsub(int argc, char *argv[]) {
         if (st == 1) {
           if (bgzf_seek(cf.fh, r->end_voff, SEEK_SET) < 0)
             wzfatal("[rowsub] Cannot seek in %s.\n", fname);
+          ++n_rdx;
           continue;
         }
         if (st < 0) ++n_stale;
@@ -863,10 +865,16 @@ int main_rowsub(int argc, char *argv[]) {
       }
       cdata_t c = read_cdata1(&cf);
       if (c.n == 0) break;
+      ++n_full;
       write_sliced(fp_out, &c, row_indices, n_indices, &c_mask, &config);
       free_cdata(&c);
     }
   }
+  /* Both paths write the same bytes, so this line is the only way to tell
+   * which one ran -- what a test of the row index has to assert. */
+  if (getenv("YAME_ROWSUB_PATH"))
+    fprintf(stderr, "[rowsub] row-index %"PRId64", full %"PRId64"\n",
+            n_rdx, n_full);
   if (n_stale)
     fprintf(stderr, "[rowsub] %"PRId64" record(s) no longer match the row index in %s.idx and "
             "were read in full; rebuild it with `yame index %s`.\n",

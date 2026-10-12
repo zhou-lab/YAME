@@ -238,7 +238,8 @@ Subset
         is the BGZF blocks touched, not the record's length. Output is the
         same bytes. No row index, a stale one (rowsub says so), a pipe or
         -m reads records in full. `subset | rowsub` is a pipe; for few rows
-        of a large store use `rowsub -S`.
+        of a large store use `rowsub -S`. YAME_ROWSUB_PATH=1 reports on
+        stderr how many records each path served.
   chunk [-s size] [-v] <in.cx> [outdir]   fixed row blocks; fatal on fmt2/fmt7
 
 Compare and summarize

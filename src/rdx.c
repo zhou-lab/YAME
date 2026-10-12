@@ -27,6 +27,7 @@
  */
 
 #include <errno.h>
+#include <zlib.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -249,13 +250,17 @@ static int want(const char **p, char c) {
   ++*p; return 1;
 }
 
-/* r1.<nbytes>.<nrows>.<end>.<ckpt>.<ckpt>...
+/* r1.<nbytes>.<nrows>.<end>.<ckpt>.<ckpt>....k<crc>
  *   end   = x when unknown, else <coff - rec coff>_<uoff>
  *   ckpt  = <drow>_<dspos>_<dcoff>_<uoff>_<byte0>, each d a difference from
  *           the checkpoint before (the first from row 0, byte 0 and the
- *           record's own compressed address) */
+ *           record's own compressed address)
+ *   crc   = CRC32 of everything before ".k". A digit edited by hand or by a
+ *           tool would otherwise shift row numbers past every check the
+ *           reader can make cheaply, and give wrong rows with exit 0. */
 static void rdx_encode(kstring_t *ks, const rdx_rec_t *r) {
   int64_t c0 = r->rec_voff >> 16;
+  size_t l0 = ks->l;
   kputs("r1.", ks);
   put36(ks, r->nbytes); kputc('.', ks);
   put36(ks, r->nrows); kputc('.', ks);
@@ -275,6 +280,10 @@ static void rdx_encode(kstring_t *ks, const rdx_rec_t *r) {
     put36(ks, k->byte0);
     prow = k->row0; pspos = k->spos; pcoff = k->voff >> 16;
   }
+  uint32_t crc = (uint32_t) crc32(0L, (const Bytef *) ks->s + l0,
+                                  (uInt) (ks->l - l0));
+  kputs(".k", ks);
+  put36(ks, crc);
 }
 
 /* 1 when s is a column this build writes and r now holds it */
@@ -285,6 +294,14 @@ static int rdx_decode(const char *s, int64_t rec_voff, rdx_rec_t *r) {
   const char *p = s;
   uint64_t a, b, c, d, e;
   if (strncmp(p, "r1.", 3) != 0) return 0;
+  /* the checksum first: nothing below is believed unless it matches */
+  /* the LAST '.': a base-36 field may itself begin with k */
+  const char *ck = strrchr(s, '.');
+  if (!ck || ck[1] != 'k') return 0;
+  { const char *q = ck + 2; uint64_t want_crc;
+    if (!get36(&q, &want_crc) || *q != '\0') return 0;
+    uint32_t got = (uint32_t) crc32(0L, (const Bytef *) s, (uInt) (ck - s));
+    if ((uint64_t) got != want_crc) return 0; }
   p += 3;
   if (!get36(&p, &r->nbytes) || !want(&p, '.') ||
       !get36(&p, &r->nrows) || !want(&p, '.')) return 0;
@@ -295,7 +312,7 @@ static int rdx_decode(const char *s, int64_t rec_voff, rdx_rec_t *r) {
     r->end_voff = ((c0 + (int64_t) a) << 16) | (int64_t) b;
   }
   uint64_t m = 0, prow = 0, pspos = 0; int64_t pcoff = c0;
-  while (*p == '.') {
+  while (p < ck && *p == '.') {
     ++p;
     if (!get36(&p, &a) || !want(&p, '_') || !get36(&p, &b) || !want(&p, '_') ||
         !get36(&p, &c) || !want(&p, '_') || !get36(&p, &d) || !want(&p, '_') ||
@@ -310,14 +327,16 @@ static int rdx_decode(const char *s, int64_t rec_voff, rdx_rec_t *r) {
     k->byte0 = (uint8_t) e;
     prow = k->row0; pspos = k->spos; pcoff = k->voff >> 16;
   }
-  if (*p != '\0') goto fail;
+  if (p != ck) goto fail;
   /* checkpoints climb, and the first is the stream's first token, or the
    * searches the reader does are meaningless */
   if (r->nckpt == 0 || r->ckpt[0].row0 != 0 || r->ckpt[0].spos != 0)
     goto fail;
   for (uint64_t i = 1; i < r->nckpt; ++i)
-    if (r->ckpt[i].spos <= r->ckpt[i-1].spos) goto fail;
-  if (r->ckpt[r->nckpt - 1].spos >= r->nbytes) goto fail;
+    if (r->ckpt[i].spos <= r->ckpt[i-1].spos ||
+        r->ckpt[i].row0 < r->ckpt[i-1].row0) goto fail;
+  if (r->ckpt[r->nckpt - 1].spos >= r->nbytes ||
+      r->ckpt[r->nckpt - 1].row0 >= r->nrows) goto fail;
   return 1;
 fail:
   free(r->ckpt); r->ckpt = NULL; r->nckpt = 0;
@@ -409,33 +428,49 @@ typedef struct {
   uint64_t spos;         /* stream position after the current token */
   uint64_t row, rows;    /* current token covers [row, row + rows) */
   uint64_t M, U;
+  uint64_t nextck;       /* the first checkpoint not yet passed */
 } rdx_cur_t;
 
-/* Read the token at the reader's position. The first byte is compared with
- * `want` when it is >= 0 (a checkpoint's byte0). */
-static int cur_next(rdx_cur_t *k, int want) {
-  if (k->spos >= k->r->nbytes) return 0;
+/* Read the token at the reader's position. Reading on across a checkpoint
+ * is a free check of the index against the data: the token there must have
+ * the checkpoint's first byte and start on its row. Any disagreement, or a
+ * token running past the record's rows or bytes, means the file is not the
+ * one indexed. */
+static int cur_next(rdx_cur_t *k) {
+  const rdx_rec_t *r = k->r;
+  if (k->spos >= r->nbytes) return 0;
   uint8_t t[8];
   if (bgzf_read(k->fh, t, 1) != 1) return 0;
-  if (want >= 0 && t[0] != (uint8_t) want) return 0;
+  uint64_t row = k->row + k->rows;  /* the row this token starts on */
+  if (k->nextck < r->nckpt) {
+    const rdx_ckpt_t *c = &r->ckpt[k->nextck];
+    if (k->spos > c->spos) return 0;  /* stepped over it */
+    if (k->spos == c->spos) {
+      if (t[0] != c->byte0 || row != c->row0) return 0;
+      ++k->nextck;
+    }
+  }
   int len = (t[0] & 0x3) == 1 ? 1 : (t[0] & 0x3) == 3 ? 8 : 2;
-  if (k->spos + len > k->r->nbytes) return 0;
+  if (k->spos + len > r->nbytes) return 0;
   if (len > 1 && bgzf_read(k->fh, t + 1, len - 1) != len - 1) return 0;
   uint64_t rows = 0;
   if (!f3_token(t, len, &rows, &k->M, &k->U)) return 0;
-  k->row += k->rows;
+  if (row + rows > r->nrows) return 0;
+  k->row = row;
   k->rows = rows;
   k->spos += len;
   return 1;
 }
 
-static int cur_seek(rdx_cur_t *k, const rdx_ckpt_t *c) {
+static int cur_seek(rdx_cur_t *k, uint64_t j) {
+  const rdx_ckpt_t *c = &k->r->ckpt[j];
   if (bgzf_seek(k->fh, c->voff, SEEK_SET) < 0) return 0;
   k->positioned = 1;
   k->spos = c->spos;
   k->row = c->row0;
   k->rows = 0;
-  return cur_next(k, c->byte0);
+  k->nextck = j;                /* checked by the read that follows */
+  return cur_next(k);
 }
 
 /* the last checkpoint with row0 <= w */
@@ -496,7 +531,7 @@ int rdx_read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
        * ahead, reading on reaches it without inflating anything twice. */
       int seek = !k.positioned ||
         (r->ckpt[j].spos > k.spos && j != ckpt_at_or_after(r, k.spos));
-      if (!(seek ? cur_seek(&k, &r->ckpt[j]) : cur_next(&k, -1))) {
+      if (!(seek ? cur_seek(&k, j) : cur_next(&k))) {
         free(c.s); free(ord); return 0;
       }
     }
