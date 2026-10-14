@@ -331,7 +331,10 @@ Compare and summarize
                  between edges acts as the nearer one, and `q95_0 <= 0.15`
                  behaves as `<= 0.125`. They tolerate an outlier per side only
                  once a group holds more than 20 samples; below that they
-                 collapse like delta_beta.
+                 collapse like delta_beta. -b moves the low/high split from
+                 0.5 (e.g. -b 0.1 for 5hmC; strictly between 0 and 1); "0.5"
+                 above then reads as the split, and the histogram keeps 8 bins
+                 each side, so edges are split/8 apart below it.
         binstring fmt3 -> text row-wise binary strings (-b threshold 0.5,
                  -m max ambiguous fraction, -M min majority fold)
         cometh   fmt3 -> text packed UU/UM/MU/MM per neighbor offset

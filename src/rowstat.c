@@ -15,6 +15,7 @@
 
 void yame_rowstat_init(yame_rowstat_t *a, uint64_t n) {
   a->n      = n;
+  a->split  = 0.5;
   a->hist   = wzcalloc(n * NB, sizeof(uint16_t));
   a->cnts   = wzcalloc(n, sizeof(uint32_t));
   a->sum    = wzcalloc(n, sizeof(int64_t));
@@ -35,8 +36,21 @@ void yame_rowstat_free(yame_rowstat_t *a) {
   memset(a, 0, sizeof(*a));
 }
 
-/* The <0.5 / >0.5 split still tests the double, so which side a beta lands on
- * is decided exactly as before; only the accumulation is fixed point. */
+/* The low/high split tests the double, so which side a beta lands on is exact;
+ * only the accumulation is fixed point. Histogram bins: NB/2 equal bins over
+ * [0, split) and NB/2 over (split, 1]. At split 0.5 this is (int)(x * NB),
+ * bit for bit (x / 0.5 and x - 0.5 are exact), so the output is unchanged. */
+static int stat_bin(double x, double split) {
+  int half = NB / 2, b;
+  if (x < split) {
+    b = (int)(x / split * half);
+    return b >= half ? half - 1 : b;
+  }
+  b = half + (int)((x - split) / (1.0 - split) * half);
+  return b >= NB ? NB - 1 : b;
+}
+
+
 void yame_rowstat_add_fmt3(yame_rowstat_t *a, cdata_t *c, uint32_t mincov) {
   for (uint64_t i = 0; i < c->n; ++i) {
     uint64_t mu0 = f3_get_mu(c, i);
@@ -55,18 +69,16 @@ void yame_rowstat_add_fmt3(yame_rowstat_t *a, cdata_t *c, uint32_t mincov) {
       a->sum[i] += xf;
       a->sum_sq[i] += xf2;
       a->cnts[i]++;
-      if (x != 0.5) {                         /* exactly 0.5 joins neither group */
-        int bin = (int)(x * NB);
-        if (bin >= NB) bin = NB - 1;
-        uint16_t *h = a->hist + i * NB;
-        if (h[bin] < UINT16_MAX) h[bin]++;    /* saturate rather than wrap */
+      if (x != a->split) {                    /* on the split: neither side */
+        uint16_t *h = a->hist + i * NB + stat_bin(x, a->split);
+        if (*h < UINT16_MAX) (*h)++;          /* saturate rather than wrap */
       }
-      if (x < 0.5) {
+      if (x < a->split) {
         a->b0n[i]++;
         a->b0sum[i] += xf;
         if (xf > a->b0max[i]) a->b0max[i] = xf;
       }
-      if (x > 0.5) {
+      if (x > a->split) {
         a->b1n[i]++;
         a->b1sum[i] += xf;
         if (xf < a->b1min[i]) a->b1min[i] = xf;
@@ -119,12 +131,13 @@ int yame_rowstat_get(const yame_rowstat_t *a, uint64_t i,
   o->delta_mean = ((double) a->b1sum[i] / a->b1n[i]
                  - (double) a->b0sum[i] / a->b0n[i]) / STAT_FX_SCALE;
 
-  /* delta_q = q05(beta > 0.5) - q95(beta < 0.5): the same worst-case idea as
+  /* delta_q = q05(beta > split) - q95(beta < split): the same worst-case idea as
    * delta_beta but tolerant of a few outliers on each side. delta_beta uses
    * min and max, so ONE sample sitting near the middle collapses it; delta_mean
    * uses group centres and cannot see a straggler at all. The quantile gap sits
    * between them, which is where a useful separation filter belongs. Read off
-   * the histogram, so the value is a bin edge (0.0625 granularity) -- and a
+   * the histogram, so the value is a bin edge (0.0625 granularity at split 0.5,
+   * split/8 below and (1-split)/8 above in general) -- and a
    * threshold falling between edges therefore behaves as the nearer edge. */
   const uint16_t *h = a->hist + i * NB;
   uint32_t lo_n = 0, hi_n = 0;
@@ -147,8 +160,9 @@ int yame_rowstat_get(const yame_rowstat_t *a, uint64_t i,
   /* upper edge of the low bin against the lower edge of the high bin, so the
    * gap is never optimistic about how close the two groups came */
   o->has_quantiles = 1;
-  o->q95_0 = (double)(qb + 1) / NB;
-  o->q05_1 = (double)qb1 / NB;
+  double half = NB / 2;
+  o->q95_0 = (qb + 1) / half * a->split;
+  o->q05_1 = a->split + (qb1 - half) / half * (1.0 - a->split);
   o->delta_q = o->q05_1 - o->q95_0;
   return 1;
 }

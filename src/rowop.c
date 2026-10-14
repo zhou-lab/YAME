@@ -60,6 +60,8 @@
  *      Compute per-row summary statistics across samples.
  *    Filters:
  *      skip mu==0 and cov < mincov.
+ *    Groups: low = beta < split, high = beta > split; split = -b (default
+ *      0.5, e.g. 0.1 for 5hmC). "0.5" below stands for the split.
  *    Output columns:
  *      count        number of contributing samples
  *      mean_beta   mean beta value across samples
@@ -149,6 +151,8 @@ static int usage(void) {
   yame_usage_cont("Input: fmt3 only.");
   yame_usage_cont("Output columns:");
   yame_usage_cont(" count  mean_beta  sd_beta  delta_beta  min_n  delta_mean  q95_0  q05_1  delta_q");
+  yame_usage_cont("Samples are split into low (beta < b) and high (beta > b) at -b");
+  yame_usage_cont("(default 0.5; e.g. -b 0.1 for 5hmC); 0.5 below stands for b.");
   yame_usage_cont("q95_0 = 95th pct of beta<0.5; q05_1 = 5th pct of beta>0.5.");
   yame_usage_cont("delta_q = q05_1 - q95_0: delta_beta's worst-case idea, but tolerant of");
   yame_usage_cont("an outlier per side. Both quantiles are reported, not just the gap,");
@@ -183,14 +187,15 @@ static int usage(void) {
   yame_usage_cont("holds its own accumulator, so memory is N x (8 bytes/row) for");
   yame_usage_cont("binasum/musum and N x (84 bytes/row) for stat -- at hg38 scale,");
   yame_usage_cont("235 MB and 2.2 GB per thread (stat also carries a 16-bin beta");
-  yame_usage_cont("histogram per row for delta_q). Output is byte-identical at every");
-  yame_usage_cont("N for all three ops.");
+  yame_usage_cont("histogram per row for delta_q, 8 bins each side of the -b split).");
+  yame_usage_cont("Output is byte-identical at every N for all three ops.");
   yame_usage_text("binasum (fmt3 input) thresholds:");
   yame_usage_opt("-p <beta0>", "Call unmethylated if beta < beta0 (default: 0.4).");
   yame_usage_opt("-q <beta1>", "Call methylated   if beta > beta1 (default: 0.6).");
   yame_usage_cont("Betas in [beta0, beta1] are ignored.");
-  yame_usage_text("binstring options:");
-  yame_usage_opt("-b <beta>", "Call methylated if beta > threshold (default: 0.5).");
+  yame_usage_text("stat and binstring options:");
+  yame_usage_opt("-b <beta>", "Call methylated if beta > threshold (default: 0.5). For stat,");
+  yame_usage_cont("the low/high group split, strictly between 0 and 1.");
   yame_usage_opt("-m <frac>", "Max ambiguous fraction per CpG; above this the line is emitted");
   yame_usage_cont("as an all-'2' sentinel (default: 1.0 = no filtering).");
   yame_usage_opt("-M <fold>", "Min majority fold (hi/lo of confident calls) to trust the fill");
@@ -360,6 +365,7 @@ static void rowop_stat(cfile_t cf, char *fname_out, config_rowop_t *cfg) {
   if (c.n == 0) return; // nothing in cfile, output nothing
   uint64_t n = cdata_n(&c);
   yame_rowstat_t a; yame_rowstat_init(&a, n);
+  a.split = cfg->beta_threshold;               /* -b: the low/high split */
 
   for (uint64_t k = 0; ; ++k) {
     if (k) c = read_cdata1(&cf); // skip 1st cdata
@@ -906,8 +912,10 @@ static int rowop_parallel(char *fname, rowop_kind_t kind, config_rowop_t *cfg,
     w[t].n = n; w[t].fmt = fmt;
     w[t].q = streaming ? &q : NULL;
     w[t].d = streaming ? NULL : &disp;
-    if (kind == ROWOP_STAT) yame_rowstat_init(&w[t].st, n);
-    else {
+    if (kind == ROWOP_STAT) {
+      yame_rowstat_init(&w[t].st, n);
+      w[t].st.split = cfg->beta_threshold;     /* same split in every worker */
+    } else {
       w[t].acc.n = n; w[t].acc.compressed = 0;
       w[t].acc.fmt = '3'; w[t].acc.unit = 8;
       w[t].acc.s = wzcalloc(n, sizeof(uint64_t));
@@ -1049,6 +1057,11 @@ int main_rowop(int argc, char *argv[]) {
 
   if (config.threads < 1) wzfatal("-t takes a thread count >= 1, given %d.\n",
                                   config.threads);
+  /* stat splits samples into low and high at -b; both sides must exist */
+  if (op && strcmp(op, "stat") == 0 &&
+      !(config.beta_threshold > 0 && config.beta_threshold < 1))
+    wzfatal("-b for stat takes a split strictly between 0 and 1, given %g.\n",
+            config.beta_threshold);
 
   /* The reducing ops can split the record list; the rest are serial. */
   if (config.threads > 1) {

@@ -1,8 +1,8 @@
 #!/bin/bash
 ## rowop beyond the fmt3 sums t_rowop_summary.sh checks: binasum over binary
 ## (fmt0) and byte (fmt1) inputs, threaded and not; the refusals for mixed
-## formats and lengths on both paths; -d, -t with an op that cannot thread,
-## the positional output and -v.
+## formats and lengths on both paths; -d, stat's -b split, -t with an op that
+## cannot thread, the positional output and -v.
 set -euo pipefail
 YAME=${YAME:?export YAME=/path/to/yame}
 d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
@@ -56,6 +56,30 @@ cat m6.cg m6.cg > mm.cg
   { echo "-d 2 did not print two decimals"; exit 1; }
 if "$YAME" rowop -o stat -d 12 mm.cg >/dev/null 2>err.txt; then echo "-d 12 was accepted"; exit 1; fi
 grep -q 'takes 0-9 decimals' err.txt || { echo "-d 12 failed without saying why"; exit 1; }
+## -b sets stat's low/high split (5hmC: 0.1). Four samples at 0.02, 0.04,
+## 0.30, 0.40: at the default 0.5 they are all low, so the group columns are
+## NA; at 0.1 the groups are {0.02, 0.04} vs {0.30, 0.40}. The histogram keeps
+## 8 bins each side, so q95_0 = 0.05 (0.04 in the 4th 0.0125-wide bin) and
+## q05_1 = 0.2125 (0.30 in the 2nd 0.1125-wide bin above 0.1).
+for mu in "2 98" "4 96" "30 70" "40 60"; do
+  printf '%s\t%s\n' $mu | "$YAME" pack -f m - h_${mu% *}.cg
+done
+cat h_2.cg h_4.cg h_30.cg h_40.cg > h.cg
+[ "$("$YAME" rowop -o stat h.cg 2>/dev/null | sed -n 2p | cut -f4-)" = "$(printf 'NA\t0\tNA\tNA\tNA\tNA')" ] ||
+  { echo "stat at the default split saw two groups"; exit 1; }
+want=$(printf '0.260000\t2\t0.320000\t0.050000\t0.212500\t0.162500')
+for t in 1 2; do
+  [ "$("$YAME" rowop -t $t -o stat -b 0.1 h.cg 2>/dev/null | sed -n 2p | cut -f4-)" = "$want" ] ||
+    { echo "stat -b 0.1 (-t $t)"; exit 1; }
+done
+## -b 0.5 is the default, byte for byte
+[ "$("$YAME" rowop -o stat -b 0.5 mm.cg 2>/dev/null)" = "$("$YAME" rowop -o stat mm.cg 2>/dev/null)" ] ||
+  { echo "stat -b 0.5 differs from the default"; exit 1; }
+## a split with no room on one side is refused
+for b in 0 1; do
+  if "$YAME" rowop -o stat -b $b h.cg >/dev/null 2>err.txt; then echo "stat -b $b was accepted"; exit 1; fi
+  grep -q 'strictly between 0 and 1' err.txt || { echo "stat -b $b failed without saying why"; exit 1; }
+done
 ## -t on an op that has no threaded form says so and still runs
 "$YAME" rowop -t 2 -o binstring mm.cg > bs.txt 2>err.txt
 grep -q 'runs single-threaded' err.txt || { echo "-t on binstring did not say it runs single-threaded"; exit 1; }

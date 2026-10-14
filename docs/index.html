@@ -3514,6 +3514,8 @@ Text-output operations:
                     Input: fmt3 only.
                     Output columns:
                      count  mean_beta  sd_beta  delta_beta  min_n  delta_mean  q95_0  q05_1  delta_q
+                    Samples are split into low (beta &lt; b) and high (beta &gt; b) at -b
+                    (default 0.5; e.g. -b 0.1 for 5hmC); 0.5 below stands for b.
                     q95_0 = 95th pct of beta&lt;0.5; q05_1 = 5th pct of beta&gt;0.5.
                     delta_q = q05_1 - q95_0: delta_beta's worst-case idea, but tolerant of
                     an outlier per side. Both quantiles are reported, not just the gap,
@@ -3550,14 +3552,15 @@ Threads:
                     holds its own accumulator, so memory is N x (8 bytes/row) for
                     binasum/musum and N x (84 bytes/row) for stat -- at hg38 scale,
                     235 MB and 2.2 GB per thread (stat also carries a 16-bin beta
-                    histogram per row for delta_q). Output is byte-identical at every
-                    N for all three ops.
+                    histogram per row for delta_q, 8 bins each side of the -b split).
+                    Output is byte-identical at every N for all three ops.
   binasum (fmt3 input) thresholds:
   -p &lt;beta0&gt;        Call unmethylated if beta &lt; beta0 (default: 0.4).
   -q &lt;beta1&gt;        Call methylated   if beta &gt; beta1 (default: 0.6).
                     Betas in [beta0, beta1] are ignored.
-  binstring options:
-  -b &lt;beta&gt;         Call methylated if beta &gt; threshold (default: 0.5).
+  stat and binstring options:
+  -b &lt;beta&gt;         Call methylated if beta &gt; threshold (default: 0.5). For stat,
+                    the low/high group split, strictly between 0 and 1.
   -m &lt;frac&gt;         Max ambiguous fraction per CpG; above this the line is emitted
                     as an all-'2' sentinel (default: 1.0 = no filtering).
   -M &lt;fold&gt;         Min majority fold (hi/lo of confident calls) to trust the fill

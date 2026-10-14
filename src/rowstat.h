@@ -19,10 +19,10 @@
 #include <stdint.h>
 #include "cdata.h"
 
-/* Beta histogram bins per row. 16 puts a boundary exactly at 0.5 -- matching
- * the <0.5 / >0.5 group split the other fields use -- and 1/16 = 0.0625 is
- * finer than the data: a pooled single-cell reference beta is M/(M+U) over
- * ~11 cells, so its true granularity is ~1/11. */
+/* Beta histogram bins per row: half below the group split, half above, so a
+ * boundary always sits exactly at the split. At the default split of 0.5 the
+ * bins are 1/16 = 0.0625 wide, finer than the data: a pooled single-cell
+ * reference beta is M/(M+U) over ~11 cells, so its true granularity is ~1/11. */
 #define YAME_ROWSTAT_NBINS 16
 
 /* Open, because rowop embeds one per worker and merges them pairwise. Callers
@@ -30,6 +30,9 @@
  * which is where fixed point turns back into a fraction. */
 typedef struct {
   uint64_t  n;                             /* rows */
+  double    split;                         /* low/high group split, (0,1);
+                                              0.5 from init, set before adding
+                                              (e.g. 0.1 for 5hmC) */
   uint32_t *cnts;
   int64_t  *sum, *sum_sq, *b0sum, *b1sum;  /* fixed point, scale 2^31 */
   uint32_t *b0max, *b1min;                 /* fixed point, scale 2^31 */
@@ -37,8 +40,9 @@ typedef struct {
   uint16_t *hist;                          /* n * YAME_ROWSTAT_NBINS */
 } yame_rowstat_t;
 
-/* One row, decoded. `has_groups` is false when every observed sample fell on
- * the same side of 0.5, which leaves delta_beta / delta_mean / the quantiles
+/* One row, decoded. Below, "0.5" stands for the accumulator's split: a beta
+ * below it is low, above it high, exactly on it neither. `has_groups` is false
+ * when every observed sample fell on the same side of 0.5, which leaves delta_beta / delta_mean / the quantiles
  * undefined -- `rowop` prints NA for exactly those. `has_quantiles` can be
  * false even when has_groups is true, in the degenerate case where the
  * histogram holds no counts on one side (only reachable via saturation at
@@ -56,7 +60,8 @@ typedef struct {
   double   delta_q;      /* q05_1 - q95_0 */
 } yame_rowstat_row_t;
 
-/* Allocate for `n` rows, zeroed and with b1min primed to 1.0. */
+/* Allocate for `n` rows, zeroed, b1min primed to 1.0 and split 0.5. A caller
+ * merging several accumulators must give them all the same split. */
 void yame_rowstat_init(yame_rowstat_t *a, uint64_t n);
 void yame_rowstat_free(yame_rowstat_t *a);
 
