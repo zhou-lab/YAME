@@ -169,6 +169,9 @@ static int usage(config_t *config) {
   yame_usage_cont("-I read a format-3 record's selected rows without decoding the");
   yame_usage_cont("rest; output is the same bytes. No row index, a stale one, a pipe,");
   yame_usage_cont("or -m reads records in full.");
+  yame_usage_text("* Format-0 and format-6 records are fixed width: read from a file,");
+  yame_usage_cont("the same selections read only the blocks holding the rows (their");
+  yame_usage_cont(".idx column locates them; without it, the record's block headers).");
   yame_usage_text("* If multiple selection options are given, the effective precedence is:");
   yame_usage_opt("-l/-L", ">  -m  >  -B/-I  >  default.");
   fprintf(stderr, "\n");
@@ -578,6 +581,44 @@ static cdata_t sliceToMask(cdata_t *c, cdata_t *c_mask) {
 }
 
 
+/* Slice an inflated record and write it. */
+static void write_inflated(BGZF *fp_out, cdata_t *c2, int64_t *row_indices,
+                           int64_t n_indices, cdata_t *c_mask,
+                           config_t *config) {
+  cdata_t c3 = {0};
+  if (row_indices) c3 = sliceToIndices(c2, row_indices, n_indices);
+  else if (c_mask->n) c3 = sliceToMask(c2, c_mask);
+  else c3 = sliceToBlock(c2, config->beg, config->end);
+  cdata_compress(&c3);
+  bgzf_flush(fp_out);           /* start this record on a block boundary */
+  cdata_write1(fp_out, &c3);
+  free(c3.s);
+}
+
+/* A format-0 or format-6 record, read for just the bytes holding the rows
+ * asked for (see rdx_read_fixed()) and sliced by the same code as a full
+ * read, so the output is the same bytes. r is the record's .idx column, or
+ * NULL to locate bytes from the record's own block headers. 1 when written;
+ * 0 when the record is another format, or with need_end its end cannot be
+ * placed; -1 when r does not describe the record (stale). */
+static int write_fixed(BGZF *fh, const char *fname, const rdx_rec_t *r,
+                       int64_t voff, int need_end, BGZF *fp_out,
+                       int64_t *row_indices, int64_t n_indices,
+                       cdata_t *c_mask, config_t *config, int64_t *end_voff) {
+  if (!r) {
+    char fmt = rdx_peek_fmt(fh, voff);
+    if (fmt != '0' && fmt != '6') return 0;
+  }
+  cdata_t full = {0};
+  if (!rdx_read_fixed(fh, fname, r, voff, row_indices, n_indices,
+                      config->beg, config->end, &full, end_voff))
+    return r ? -1 : 0;
+  if (need_end && *end_voff < 0) { free(full.s); return 0; }
+  write_inflated(fp_out, &full, row_indices, n_indices, c_mask, config);
+  free(full.s);
+  return 1;
+}
+
 /* Slice one record read in full and write it: the path every record took
  * before the row index, and still the one any record it cannot serve takes. */
 static void write_sliced(BGZF *fp_out, cdata_t *c, int64_t *row_indices,
@@ -592,14 +633,8 @@ static void write_sliced(BGZF *fp_out, cdata_t *c, int64_t *row_indices,
     free_cdata(&c2);
   } else {
     cdata_t c2 = decompress(*c);
-    cdata_t c3 = {0};
-    if (row_indices) c3 = sliceToIndices(&c2, row_indices, n_indices);
-    else if (c_mask->n) c3 = sliceToMask(&c2, c_mask);
-    else c3 = sliceToBlock(&c2, config->beg, config->end);
-    cdata_compress(&c3);
-    bgzf_flush(fp_out);         /* start this record on a block boundary */
-    cdata_write1(fp_out, &c3);
-    free(c3.s); free(c2.s);
+    write_inflated(fp_out, &c2, row_indices, n_indices, c_mask, config);
+    free(c2.s);
   }
 }
 
@@ -808,7 +843,10 @@ int main_rowsub(int argc, char *argv[]) {
   /* The row index serves format-3 records by seeking, so only a file has
    * one, and a mask (which reads every row anyway) does not use it. */
   rdx_t *rdx = c_mask.n ? NULL : rdx_load_index(fname);
-  int64_t n_stale = 0, n_rdx = 0, n_full = 0;
+  int64_t n_stale = 0, n_rdx = 0, n_full = 0, n_fixed = 0;
+  /* formats 0 and 6 need no index, only a seekable file */
+  int fixed_ok = !c_mask.n && strcmp(fname, "-") != 0;
+  int64_t endv = -1;
 
   if (fname_samples) {
     if (strcmp(fname, "-") == 0)
@@ -825,11 +863,22 @@ int main_rowsub(int argc, char *argv[]) {
       if (voff < 0)
         wzfatal("[rowsub] Sample %s is not in %s.\n", sn.s[i], fname_idx);
       const rdx_rec_t *r = rdx_find(rdx, voff);
-      if (r) {
+      if (r && !r->fixed) {
         int st = write_from_rdx(cf.fh, r, fp_out, row_indices, n_indices,
                                 &config);
         if (st == 1) { ++n_rdx; continue; }
         if (st < 0) ++n_stale;
+      }
+      if (fixed_ok) {
+        const rdx_rec_t *rf = r && r->fixed ? r : NULL;
+        int st = write_fixed(cf.fh, fname, rf, voff, 0, fp_out, row_indices,
+                             n_indices, &c_mask, &config, &endv);
+        if (st < 0) {           /* a stale column: locate from the headers */
+          ++n_stale;
+          st = write_fixed(cf.fh, fname, NULL, voff, 0, fp_out, row_indices,
+                           n_indices, &c_mask, &config, &endv);
+        }
+        if (st == 1) { ++n_fixed; continue; }
       }
       ++n_full;
       if (bgzf_seek(cf.fh, voff, SEEK_SET) < 0)
@@ -848,9 +897,9 @@ int main_rowsub(int argc, char *argv[]) {
     while (1) {
       /* Only a file has a row index. On a pipe the reader's block address
        * can be negative, and bgzf_tell() shifts it left: undefined. */
-      int64_t addr = rdx ? bgzf_tell(cf.fh) : 0;
+      int64_t addr = rdx || fixed_ok ? bgzf_tell(cf.fh) : 0;
       const rdx_rec_t *r = rdx_find(rdx, addr);
-      if (r && r->end_voff >= 0) {
+      if (r && !r->fixed && r->end_voff >= 0) {
         int st = write_from_rdx(cf.fh, r, fp_out, row_indices, n_indices,
                                 &config);
         if (st == 1) {
@@ -860,6 +909,24 @@ int main_rowsub(int argc, char *argv[]) {
           continue;
         }
         if (st < 0) ++n_stale;
+        if (bgzf_seek(cf.fh, addr, SEEK_SET) < 0)
+          wzfatal("[rowsub] Cannot seek in %s.\n", fname);
+      }
+      if (fixed_ok) {
+        const rdx_rec_t *rf = r && r->fixed ? r : NULL;
+        int st = write_fixed(cf.fh, fname, rf, addr, 1, fp_out, row_indices,
+                             n_indices, &c_mask, &config, &endv);
+        if (st < 0) {           /* a stale column: locate from the headers */
+          ++n_stale;
+          st = write_fixed(cf.fh, fname, NULL, addr, 1, fp_out, row_indices,
+                           n_indices, &c_mask, &config, &endv);
+        }
+        if (st == 1) {
+          if (bgzf_seek(cf.fh, endv, SEEK_SET) < 0)
+            wzfatal("[rowsub] Cannot seek in %s.\n", fname);
+          ++n_fixed;
+          continue;
+        }
         if (bgzf_seek(cf.fh, addr, SEEK_SET) < 0)
           wzfatal("[rowsub] Cannot seek in %s.\n", fname);
       }
@@ -873,8 +940,8 @@ int main_rowsub(int argc, char *argv[]) {
   /* Both paths write the same bytes, so this line is the only way to tell
    * which one ran -- what a test of the row index has to assert. */
   if (getenv("YAME_ROWSUB_PATH"))
-    fprintf(stderr, "[rowsub] row-index %"PRId64", full %"PRId64"\n",
-            n_rdx, n_full);
+    fprintf(stderr, "[rowsub] row-index %"PRId64", full %"PRId64
+            ", fixed-width %"PRId64"\n", n_rdx, n_full, n_fixed);
   if (n_stale)
     fprintf(stderr, "[rowsub] %"PRId64" record(s) no longer match the row index in %s.idx and "
             "were read in full; rebuild it with `yame index %s`.\n",

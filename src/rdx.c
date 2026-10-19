@@ -72,6 +72,11 @@ static int f3_token(const uint8_t *p, uint64_t avail, uint64_t *rows,
   }
 }
 
+static int cmp_u64(const void *a, const void *b) {
+  uint64_t x = *(const uint64_t *) a, y = *(const uint64_t *) b;
+  return (x > y) - (x < y);
+}
+
 /* ---- builder ------------------------------------------------------------ */
 
 static void blk_push(rdx_t *x, uint64_t *m, int64_t coff, uint64_t upos,
@@ -141,7 +146,13 @@ static rdx_rec_t *rec_push(rdx_t *x) {
   return r;
 }
 
+static void rdx_add_fixed(rdx_t *x, int64_t rec_voff, const cdata_t *c);
+
 void rdx_add(rdx_t *x, int64_t rec_voff, const cdata_t *c) {
+  if (x && (c->fmt == '0' || c->fmt == '6') && c->n) {
+    rdx_add_fixed(x, rec_voff, c);
+    return;
+  }
   if (!x || c->fmt != '3' || !c->compressed || c->n == 0) return;
 
   /* the block the record's offset names, by exact compressed address */
@@ -200,6 +211,58 @@ void rdx_add(rdx_t *x, int64_t rec_voff, const cdata_t *c) {
   r->nrows = row;
   r->nckpt = nck;
   r->ckpt = ck;
+}
+
+/* Formats 0 and 6: the stream is the packed bits themselves, so a
+ * checkpoint is simply the first byte of each block -- the block map the
+ * reader would otherwise rebuild by walking headers at every access. */
+static void rdx_add_fixed(rdx_t *x, int64_t rec_voff, const cdata_t *c) {
+  int64_t coff = rec_voff >> 16;
+  uint64_t lo = 0, hi = x->nblk;
+  while (lo < hi) {
+    uint64_t mid = (lo + hi) / 2;
+    if (x->blk_coff[mid] < coff) lo = mid + 1; else hi = mid;
+  }
+  if (lo == x->nblk || x->blk_coff[lo] != coff) return;
+  uint64_t s0 = x->blk_upos[lo] + (uint64_t) (rec_voff & 0xFFFF) + RDX_HDR;
+  int shift = c->fmt == '0' ? 3 : 2;
+  uint64_t nb = cdata_nbytes(c);
+  rdx_ckpt_t *ck = NULL;
+  uint64_t nck = 0, mck = 0, b = blk_of(x, lo, s0);
+  for (; b < x->nblk && x->blk_upos[b] < s0 + nb; ++b) {
+    if (x->blk_usize[b] == 0) continue;
+    uint64_t u = x->blk_upos[b] > s0 ? x->blk_upos[b] : s0;
+    if (u >= x->blk_upos[b] + x->blk_usize[b]) continue;
+    if (nck == mck) {
+      mck = mck ? mck * 2 : 64;
+      ck = wzrealloc(ck, mck * sizeof(rdx_ckpt_t));
+    }
+    uint64_t p = u - s0;
+    ck[nck].row0 = p << shift;
+    ck[nck].spos = p;
+    ck[nck].voff = (x->blk_coff[b] << 16) | (int64_t) (u - x->blk_upos[b]);
+    ck[nck].byte0 = c->s[p];
+    ++nck;
+  }
+  if (!nck || x->blk_upos[b - 1] + x->blk_usize[b - 1] < s0 + nb) {
+    free(ck); return;                     /* the file ends early */
+  }
+  uint64_t ue = s0 + nb, bl = blk_of(x, lo, ue - 1);
+  int64_t end_voff = -1;
+  if (bl < x->nblk) {
+    if (ue < x->blk_upos[bl] + x->blk_usize[bl])
+      end_voff = (x->blk_coff[bl] << 16) | (int64_t) (ue - x->blk_upos[bl]);
+    else if (bl + 1 < x->nblk)
+      end_voff = x->blk_coff[bl + 1] << 16;
+  }
+  rdx_rec_t *r = rec_push(x);
+  r->rec_voff = rec_voff;
+  r->end_voff = end_voff;
+  r->nbytes = nb;
+  r->nrows = c->n;
+  r->nckpt = nck;
+  r->ckpt = ck;
+  r->fixed = 1;
 }
 
 static int64_t voff_shift(int64_t v, int64_t coff_delta) {
@@ -261,7 +324,9 @@ static int want(const char **p, char c) {
 static void rdx_encode(kstring_t *ks, const rdx_rec_t *r) {
   int64_t c0 = r->rec_voff >> 16;
   size_t l0 = ks->l;
-  kputs("r1.", ks);
+  /* "f1." for formats 0 and 6, so a reader that knows only "r1." (v1.60)
+   * skips the column quietly instead of calling the record stale */
+  kputs(r->fixed ? "f1." : "r1.", ks);
   put36(ks, r->nbytes); kputc('.', ks);
   put36(ks, r->nrows); kputc('.', ks);
   if (r->end_voff < 0) kputc('x', ks);
@@ -293,7 +358,9 @@ static int rdx_decode(const char *s, int64_t rec_voff, rdx_rec_t *r) {
   int64_t c0 = rec_voff >> 16;
   const char *p = s;
   uint64_t a, b, c, d, e;
-  if (strncmp(p, "r1.", 3) != 0) return 0;
+  if (strncmp(p, "r1.", 3) == 0) r->fixed = 0;
+  else if (strncmp(p, "f1.", 3) == 0) r->fixed = 1;
+  else return 0;
   /* the checksum first: nothing below is believed unless it matches */
   /* the LAST '.': a base-36 field may itself begin with k */
   const char *ck = strrchr(s, '.');
@@ -569,4 +636,191 @@ static int read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
   }
   *out = c;
   return 1;
+}
+
+/* ---- formats 0 and 6: fixed width ------------------------------------- */
+
+/* Where stream byte p of a record sits: from its checkpoints (one per
+ * block, from the .idx) or, with no column, from a map of the record's own
+ * blocks walked from their headers. */
+typedef struct {
+  const rdx_rec_t *r;           /* checkpoints, or NULL */
+  const rdx_t *blk;             /* the record's blocks, upos from its start */
+  uint64_t s0;                  /* the stream's first byte in blk */
+} rdx_loc_t;
+
+static uint64_t blk_at(const rdx_t *x, uint64_t u) {
+  uint64_t lo = 0, hi = x->nblk;
+  while (lo < hi) {             /* the first block starting after u */
+    uint64_t mid = (lo + hi) / 2;
+    if (x->blk_upos[mid] <= u) lo = mid + 1; else hi = mid;
+  }
+  return blk_of(x, lo ? lo - 1 : 0, u);
+}
+
+static int64_t loc_voff(const rdx_loc_t *L, uint64_t p) {
+  if (L->r) {
+    uint64_t lo = 0, hi = L->r->nckpt;   /* the last block start <= p */
+    while (hi - lo > 1) {
+      uint64_t mid = (lo + hi) / 2;
+      if (L->r->ckpt[mid].spos <= p) lo = mid; else hi = mid;
+    }
+    const rdx_ckpt_t *c = &L->r->ckpt[lo];
+    if (p < c->spos) return -1;
+    uint64_t uo = (uint64_t) (c->voff & 0xFFFF) + (p - c->spos);
+    if (uo > 0xFFFF) return -1;
+    return (c->voff & ~(int64_t) 0xFFFF) | (int64_t) uo;
+  }
+  uint64_t u = L->s0 + p, b = blk_at(L->blk, u);
+  if (b >= L->blk->nblk) return -1;
+  return (L->blk->blk_coff[b] << 16) | (int64_t) (u - L->blk->blk_upos[b]);
+}
+
+/* The blocks of one record, from their headers (no inflate): from the
+ * record's own block until `need` uncompressed bytes are covered, plus the
+ * block after (where the next record's read begins). Cold on network
+ * storage a header costs about what reading and inflating its block does,
+ * so walking the whole file is no cheaper than decoding it; this walks only
+ * what the record spans. upos counts from the record's first block. */
+static rdx_t *walk_record(const char *fname, int64_t rec_voff, uint64_t need) {
+  if (!fname || strcmp(fname, "-") == 0) return NULL;
+  int fd = open(fname, O_RDONLY);
+  if (fd < 0) return NULL;
+  struct stat st;
+  if (fstat(fd, &st) != 0) { close(fd); return NULL; }
+  rdx_t *x = wzcalloc(1, sizeof(rdx_t));
+  uint64_t m = 0, upos = 0;
+  int64_t o = rec_voff >> 16;
+  int extra = 0;
+  while (o < st.st_size && extra < 1) {
+    uint8_t h[18], f[4];
+    if (pread(fd, h, 18, o) != 18 || h[0] != 31 || h[1] != 139 || h[2] != 8 ||
+        !(h[3] & 4) || h[10] != 6 || h[11] != 0 || h[12] != 'B' ||
+        h[13] != 'C' || h[14] != 2 || h[15] != 0) break;
+    int64_t bsize = (int64_t) (h[16] | (h[17] << 8)) + 1;
+    if (bsize < 28 || o + bsize > st.st_size ||
+        pread(fd, f, 4, o + bsize - 4) != 4) break;
+    uint32_t isize = (uint32_t) f[0] | ((uint32_t) f[1] << 8) |
+      ((uint32_t) f[2] << 16) | ((uint32_t) f[3] << 24);
+    if (isize > 65536) break;
+    if (upos >= need) extra = 1;          /* the block after the stream */
+    blk_push(x, &m, o, upos, isize);
+    upos += isize;
+    o += bsize;
+  }
+  close(fd);
+  if (upos < need) { rdx_free(x); return NULL; }   /* the file ends early */
+  return x;
+}
+
+static int read_fixed(BGZF *fh, const char *fname, const rdx_rec_t *r,
+                      int64_t rec_voff, const int64_t *rows, int64_t n,
+                      uint64_t beg0, uint64_t end0, cdata_t *full,
+                      int64_t *end_voff) {
+  if (bgzf_seek(fh, rec_voff, SEEK_SET) < 0) return 0;
+  if (fh->block_length == 0 && bgzf_read_block(fh) < 0) return 0;
+  uint64_t sig, nrows; char fmt;
+  if (bgzf_read(fh, &sig, 8) != 8 || sig != CDSIG ||
+      bgzf_read(fh, &fmt, 1) != 1 || (fmt != '0' && fmt != '6') ||
+      bgzf_read(fh, &nrows, 8) != 8 || nrows == 0) return 0;
+  int shift = fmt == '0' ? 3 : 2;           /* rows per byte: 8 or 4 */
+  uint64_t nb = (nrows + (1u << shift) - 1) >> shift;
+  /* a column must describe this record: format, rows, bytes */
+  if (r && (!r->fixed || r->nrows != nrows || r->nbytes != nb ||
+            r->ckpt[0].row0 != 0 || r->ckpt[0].spos != 0)) return 0;
+
+  rdx_loc_t L = { .r = r };
+  rdx_t *blk = NULL;
+  if (!r) {
+    L.s0 = (uint64_t) (rec_voff & 0xFFFF) + RDX_HDR;
+    blk = walk_record(fname, rec_voff, L.s0 + nb);
+    if (!blk) return 0;
+    L.blk = blk;
+  }
+
+  /* the bytes holding the rows asked for; rows out of range are left to
+   * the slicer, which refuses them exactly as a full read does */
+  uint64_t *want = NULL, nw = 0;
+  if (rows) {
+    want = wzmalloc((n ? (size_t) n : 1) * sizeof(uint64_t));
+    for (int64_t i = 0; i < n; ++i)
+      if (rows[i] >= 1 && (uint64_t) rows[i] <= nrows)
+        want[nw++] = (uint64_t) (rows[i] - 1) >> shift;
+  } else if (beg0 < nrows) {
+    uint64_t e = end0 < nrows ? end0 : nrows - 1;
+    if (e >= beg0) {
+      want = wzmalloc(2 * sizeof(uint64_t));
+      want[nw++] = beg0 >> shift; want[nw++] = e >> shift;
+    }
+  }
+  if (nw) qsort(want, nw, sizeof(uint64_t), cmp_u64);
+
+  cdata_t c = {0};
+  c.fmt = fmt; c.n = nrows; c.compressed = 0; c.unit = fmt == '0' ? 1 : 2;
+  c.s = wzcalloc(nb, 1);
+  int ok = 1;
+  /* one read per run; a gap under a block is read through rather than
+   * sought over -- cold, a seek costs about one block's read and inflate */
+  for (uint64_t i = 0; ok && i < nw; ) {
+    uint64_t a = want[i], z = a;
+    while (++i < nw && (rows ? want[i] <= z + 65536 : 1)) z = want[i];
+    if (r) {
+      /* start at the block's first byte, which the inflate pays for
+       * anyway: the seek then lands on a checkpoint, and its byte is
+       * checked below. Seeking into the middle of a block checked nothing,
+       * and a column with a wrong in-block offset gave wrong rows, exit 0. */
+      uint64_t lo = 0, hi = r->nckpt;
+      while (hi - lo > 1) {
+        uint64_t mid = (lo + hi) / 2;
+        if (r->ckpt[mid].spos <= a) lo = mid; else hi = mid;
+      }
+      a = r->ckpt[lo].spos;
+    }
+    int64_t v = loc_voff(&L, a);
+    ok = v >= 0 && bgzf_seek(fh, v, SEEK_SET) == 0 &&
+      bgzf_read(fh, c.s + a, z - a + 1) == (ssize_t) (z - a + 1);
+    /* a block start inside the run must hold the byte the index names */
+    if (ok && r)
+      for (uint64_t k = 0; ok && k < r->nckpt; ++k)
+        if (r->ckpt[k].spos >= a && r->ckpt[k].spos <= z)
+          ok = c.s[r->ckpt[k].spos] == r->ckpt[k].byte0;
+  }
+  free(want);
+
+  /* where the next record's read begins, checked by reading the stream's
+   * last byte: the reader must then stand exactly there */
+  if (ok) {
+    int64_t v = loc_voff(&L, nb - 1);
+    uint8_t last;
+    ok = v >= 0 && bgzf_seek(fh, v, SEEK_SET) == 0 && bgzf_read(fh, &last, 1) == 1;
+    if (ok) {
+      *end_voff = bgzf_tell(fh);
+      if (r && r->end_voff >= 0 && r->end_voff != *end_voff) ok = 0;
+    }
+  }
+  rdx_free(blk);
+  if (!ok) { free(c.s); return 0; }
+  *full = c;
+  return 1;
+}
+
+int rdx_read_fixed(BGZF *fh, const char *fname, const rdx_rec_t *r,
+                   int64_t rec_voff, const int64_t *rows, int64_t n,
+                   uint64_t beg0, uint64_t end0, cdata_t *full,
+                   int64_t *end_voff) {
+  *end_voff = -1;
+  int ok = read_fixed(fh, fname, r, rec_voff, rows, n, beg0, end0, full,
+                      end_voff);
+  if (!ok) fh->errcode = 0;
+  return ok;
+}
+
+char rdx_peek_fmt(BGZF *fh, int64_t rec_voff) {
+  uint64_t sig; char fmt = 0;
+  if (bgzf_seek(fh, rec_voff, SEEK_SET) < 0 ||
+      (fh->block_length == 0 && bgzf_read_block(fh) < 0) ||
+      bgzf_read(fh, &sig, 8) != 8 || sig != CDSIG ||
+      bgzf_read(fh, &fmt, 1) != 1) fmt = 0;
+  fh->errcode = 0;
+  return fmt;
 }

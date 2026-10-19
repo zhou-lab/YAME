@@ -235,8 +235,8 @@ void writeIndex(FILE *fp, index_t *idx) {
 static int usage() {
   yame_usage_head("yame index [options] <in.cx>");
   yame_usage_text("The index file name default to <in.cx>.idx");
-  yame_usage_text("Each line is name<TAB>offset. When the file has format-3 records, a");
-  yame_usage_text("third column holds their row index, which rowsub uses to read");
+  yame_usage_text("Each line is name<TAB>offset. When the file has format-0, 3 or 6 records,");
+  yame_usage_text("a third column holds their row index, which rowsub uses to read");
   yame_usage_text("selected rows without decoding whole records; readers that take");
   yame_usage_text("the first two columns are unaffected.");
   yame_usage_sec("Options:");

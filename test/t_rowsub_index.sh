@@ -36,11 +36,12 @@ cat a.cg bits.cg b.cg small.cg > s.cg
 printf 'a\nbits\nb\nsmall\n' > names.txt
 "$YAME" index -s names.txt s.cg
 
-## every line carries the third column; the format-0 record holds "."
+## every line carries the third column; the format-0 record holds its block
+## map under "f1." (formats 0 and 6), the format-3 records their row index
 [ "$(awk -F'\t' 'NF != 3' s.cg.idx | wc -l)" -eq 0 ] ||
   { echo "index: a line without the third column"; cat s.cg.idx | cut -c1-80; exit 1; }
-[ "$(awk -F'\t' '$1 == "bits" {print $3}' s.cg.idx)" = "." ] ||
-  { echo "index: the format-0 record should carry '.'"; exit 1; }
+awk -F'\t' '$1 == "bits" && $3 !~ /^f1\./ {bad = 1} END {exit bad}' s.cg.idx ||
+  { echo "index: the format-0 record should carry an f1. column"; exit 1; }
 for n in a b small; do
   awk -F'\t' -v n=$n '$1 == n && $3 !~ /^r1\./ {bad = 1} END {exit bad}' s.cg.idx ||
     { echo "index: $n has no row index"; exit 1; }
@@ -74,7 +75,7 @@ full -l rows.txt > want.cg
 "$YAME" rowsub -l rows.txt s.cg > got.cg 2> err.txt
 cmp want.cg got.cg || { echo "-l: row index and full decode differ"; exit 1; }
 [ ! -s err.txt ] || { echo "-l: unexpected stderr"; cat err.txt; exit 1; }
-path "row-index 3, full 1" -l rows.txt s.cg
+path "row-index 3, full 0, fixed-width 1" -l rows.txt s.cg
 ## and the values are the ones packed: row 5 of a.cg, via unpack
 "$YAME" unpack -f -1 got.cg 2>/dev/null | sed -n '304p' > r5.txt
 mk 1 1 | sed -n '5p' > r5.want
@@ -85,7 +86,7 @@ for sel in "-B 0_1" "-B 1000_150000" "-B 199990_200000" "-I 3_40000" "-B 199999"
   full $sel > want.cg
   "$YAME" rowsub $sel s.cg > got.cg
   cmp want.cg got.cg || { echo "$sel: row index and full decode differ"; exit 1; }
-  path "row-index 3, full 1" $sel s.cg
+  path "row-index 3, full 0, fixed-width 1" $sel s.cg
 done
 
 ## ---- 3. -S: chosen records, in the order asked -------------------------------
@@ -93,7 +94,7 @@ printf 'small\na\nbits\n' > pick.txt
 full -S pick.txt -l rows.txt > want.cg
 "$YAME" rowsub -S pick.txt -l rows.txt s.cg > got.cg
 cmp want.cg got.cg || { echo "-S: row index and full decode differ"; exit 1; }
-path "row-index 2, full 1" -S pick.txt -l rows.txt s.cg
+path "row-index 2, full 0, fixed-width 1" -S pick.txt -l rows.txt s.cg
 ## the same as subset | rowsub, the pipe form, which cannot seek
 "$YAME" subset -l pick.txt s.cg | "$YAME" rowsub -l rows.txt - > pipe.cg
 cmp want.cg pipe.cg || { echo "-S and subset | rowsub differ"; exit 1; }
@@ -139,7 +140,7 @@ cp two.idx s.cg.idx
 full -l rows.txt > want.cg
 cmp want.cg got.cg && [ ! -s err.txt ] || { echo "two-column index: wrong"; exit 1; }
 cp two.idx s.cg.idx
-path "row-index 0, full 4" -l rows.txt s.cg
+path "row-index 0, full 3, fixed-width 1" -l rows.txt s.cg
 cp three.idx s.cg.idx
 ## a stale one: the file rewritten behind an index that described it
 cp three.idx stale.cg.idx
@@ -158,7 +159,7 @@ awk -F'\t' 'BEGIN {OFS = "\t"} {print $1, $2, "r1.zz.q_"}' three.idx > garb.idx
 cp garb.idx s.cg.idx
 "$YAME" rowsub -l rows.txt s.cg > got.cg
 cmp want.cg got.cg || { echo "garbled index: output differs"; exit 1; }
-path "row-index 0, full 4" -l rows.txt s.cg
+path "row-index 0, full 3, fixed-width 1" -l rows.txt s.cg
 ## A plausible edit is the dangerous kind. Shift one checkpoint's row by one
 ## and ask only for rows inside its block: the reader seeks straight there,
 ## its first byte matches, no other checkpoint is crossed, and the rows come
@@ -195,7 +196,7 @@ full -S a.txt -l rows_k.txt > want.cg
 cp edit.idx s.cg.idx
 "$YAME" rowsub -S a.txt -l rows_k.txt s.cg > got.cg
 cmp want.cg got.cg || { echo "edited checkpoint: rows differ from a full decode"; exit 1; }
-path "row-index 0, full 1" -S a.txt -l rows_k.txt s.cg
+path "row-index 0, full 1, fixed-width 0" -S a.txt -l rows_k.txt s.cg
 cp three.idx s.cg.idx
 
 ## ---- 6. writers carry it ----------------------------------------------------
@@ -208,7 +209,7 @@ cut -f1,2 sub.cg.idx > sub2.idx; cp sub.cg.idx sub3.idx; cp sub2.idx sub.cg.idx
 "$YAME" rowsub -l rows.txt sub.cg > want.cg
 cp sub3.idx sub.cg.idx
 cmp want.cg got.cg || { echo "subset -o: moved row index gives other rows"; exit 1; }
-path "row-index 2, full 0" -l rows.txt sub.cg
+path "row-index 2, full 0, fixed-width 0" -l rows.txt sub.cg
 ## index -1 keeps the records already there and adds the new one
 cp a.cg ap.cg; "$YAME" index -1 one ap.cg
 cat small.cg >> ap.cg; "$YAME" index -1 two ap.cg
@@ -220,7 +221,7 @@ cut -f1,2 ap.cg.idx > ap2.idx; cp ap2.idx ap.cg.idx
 cmp want.cg got.cg || { echo "index -1: row index gives other rows"; exit 1; }
 ## the full read above left a two-column .idx; index rebuilds the column
 "$YAME" index ap.cg
-path "row-index 2, full 0" -l rows.txt ap.cg
+path "row-index 2, full 0, fixed-width 0" -l rows.txt ap.cg
 
 ## ---- 7. readers of the two-column form see no change -----------------------
 cp three.idx s.cg.idx
@@ -245,7 +246,7 @@ awk 'BEGIN { srand(11); for (i = 0; i < 950000; i++)
 "$YAME" index k.cg
 awk -F'\t' '$3 !~ /^r1\.[0-9a-z]+\.k/ {bad = 1} END {exit bad}' k.cg.idx ||
   { echo "fixture: the row count is not k... in base 36"; cut -c1-40 k.cg.idx; exit 1; }
-path "row-index 1, full 0" -l rows.txt k.cg
+path "row-index 1, full 0, fixed-width 0" -l rows.txt k.cg
 "$YAME" rowsub -l rows.txt k.cg > got.cg
 cut -f1,2 k.cg.idx > k2.idx; mv k2.idx k.cg.idx
 "$YAME" rowsub -l rows.txt k.cg > want.cg
@@ -295,7 +296,7 @@ cp bad.idx s.cg.idx
 "$YAME" rowsub -S a.txt -l rows_b.txt s.cg > got.cg ||
   { echo "a checkpoint into compressed data broke the full read"; exit 1; }
 cmp want_b.cg got.cg || { echo "checkpoint into compressed data: rows differ"; exit 1; }
-path "row-index 0, full 1" -S a.txt -l rows_b.txt s.cg
+path "row-index 0, full 1, fixed-width 0" -S a.txt -l rows_b.txt s.cg
 ## without -S the read goes on to the end of the file, where an error flag
 ## left by the failed attempt turned the clean end into "Truncated or
 ## corrupt BGZF stream", exit 1
@@ -304,7 +305,7 @@ cp bad.idx s.cg.idx
 "$YAME" rowsub -l rows_b.txt s.cg > got.cg 2> err.txt ||
   { echo "a failed checkpoint broke the end of the file:"; cat err.txt; exit 1; }
 cmp want_b.cg got.cg || { echo "checkpoint into compressed data (no -S): rows differ"; exit 1; }
-path "row-index 2, full 2" -l rows_b.txt s.cg
+path "row-index 2, full 1, fixed-width 1" -l rows_b.txt s.cg
 ## (b) the same data laid out in other blocks, with that layout's columns on
 ## this file's names and offsets. Rows still come out right -- token
 ## boundaries belong to the stream -- but the recorded end of the record is
@@ -325,14 +326,14 @@ paste <(cut -f1,2 three.idx) <(cut -f3 recut.cg.idx) > s.cg.idx
 "$YAME" rowsub -l rows.txt s.cg > got.cg ||
   { echo "another layout's columns: rowsub failed"; exit 1; }
 cmp want.cg got.cg || { echo "another layout's columns: rows differ"; exit 1; }
-path "row-index 0, full 4" -l rows.txt s.cg
+path "row-index 0, full 3, fixed-width 1" -l rows.txt s.cg
 ## and recut.cg with its own columns, records starting mid-block, is served
 cp recut.cg.idx keep.idx; cut -f1,2 keep.idx > recut.cg.idx
 "$YAME" rowsub -l rows.txt recut.cg > want2.cg
 cp keep.idx recut.cg.idx
 "$YAME" rowsub -l rows.txt recut.cg > got.cg
 cmp want2.cg got.cg && cmp want.cg got.cg || { echo "mid-block records: rows differ"; exit 1; }
-path "row-index 3, full 1" -l rows.txt recut.cg
+path "row-index 3, full 0, fixed-width 1" -l rows.txt recut.cg
 cp three.idx s.cg.idx
 
 echo "ok: rowsub through the row index (byte-identical to a full decode)"

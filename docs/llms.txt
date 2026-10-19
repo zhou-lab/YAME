@@ -37,8 +37,11 @@ is one file; the `<file>.idx` beside it maps sample name -> BGZF offset, which
 is what makes `subset`/`unpack` by name possible without decompressing the rest.
 For format-3 records `yame index` adds a third column, the row index: one
 checkpoint per BGZF block, so `rowsub` inflates only the blocks holding the rows
-it is asked for. Every line then has three columns ("." for a record without
-one), drawn from [0-9a-z._]; readers that take the first two are unaffected.
+it is asked for. Format-0 and format-6 records get the same column under "f1."
+(each block's first byte; their rows are fixed width), so rowsub never reads a
+block header to find a row. Every line then has three columns ("." for a record
+without one), drawn from [0-9a-z._]; readers that take the first two are
+unaffected.
 
 Position is never stored. Two files are comparable only if they share a row
 space, so an intersection is a bitwise AND rather than a genomic join, and a
@@ -237,9 +240,12 @@ Subset
         format-3 record's selected rows without decoding the rest: the cost
         is the BGZF blocks touched, not the record's length. Output is the
         same bytes. No row index, a stale one (rowsub says so), a pipe or
-        -m reads records in full. `subset | rowsub` is a pipe; for few rows
-        of a large store use `rowsub -S`. YAME_ROWSUB_PATH=1 reports on
-        stderr how many records each path served.
+        -m reads records in full. Format-0 and format-6 records (binary
+        tracks, `binarize` output) are fixed width: from a file the same
+        selections read only the blocks holding the rows, located by their
+        f1. column, or without one by the record's own block headers. `subset | rowsub` is a pipe; for few rows of a large store use
+        `rowsub -S`. YAME_ROWSUB_PATH=1 reports on stderr how many records
+        each path served: row-index, full, fixed-width.
   chunk [-s size] [-v] <in.cx> [outdir]   fixed row blocks; fatal on fmt2/fmt7
 
 Compare and summarize

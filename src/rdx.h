@@ -51,6 +51,7 @@ typedef struct {
   uint64_t nrows;
   uint64_t nckpt;
   rdx_ckpt_t *ckpt;
+  int fixed;          /* a format-0/6 record: checkpoints are block starts */
 } rdx_rec_t;
 
 typedef struct {
@@ -92,5 +93,25 @@ void   rdx_free(rdx_t *x);
  * longer matches r -- the caller then reads the record in full. */
 int    rdx_read_rows(BGZF *fh, const rdx_rec_t *r, const int64_t *rows,
                      int64_t n, cdata_t *out);
+
+/* Formats 0 and 6 are fixed width -- 1 and 2 bits a row, stored as is --
+ * so row r is at byte r/8 or r/4 of the record. Reads the record at
+ * rec_voff into *full, inflated as decompress() would give it but with only
+ * the bytes holding the rows asked for filled in: the 1-based rows[0..n),
+ * or with rows NULL the 0-based block [beg0, end0]. The rest is zero, so
+ * slice it for exactly those rows. Bytes are located by r, the record's
+ * .idx column (an "f1." checkpoint per block), or with r NULL by walking
+ * the headers of the record's own blocks in fname. Sets where the next
+ * record's read begins (-1 when unknown). Returns 0, reading nothing the
+ * caller relies on, when the record is another format or the column does
+ * not describe it. */
+int    rdx_read_fixed(BGZF *fh, const char *fname, const rdx_rec_t *r,
+                      int64_t rec_voff, const int64_t *rows, int64_t n,
+                      uint64_t beg0, uint64_t end0, cdata_t *full,
+                      int64_t *end_voff);
+
+/* The format code of the record at rec_voff, or 0; the reader is left
+ * anywhere, so seek before reading on. */
+char   rdx_peek_fmt(BGZF *fh, int64_t rec_voff);
 
 #endif /* _YAME_RDX_H */
