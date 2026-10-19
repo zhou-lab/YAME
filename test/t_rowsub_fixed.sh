@@ -22,7 +22,7 @@ printf 'f0\nf6\nf3\n' > names.txt
 "$YAME" index -s names.txt s.cg
 
 ## the full read: the same bytes through a pipe, which cannot seek
-full() { cat s.cg | "$YAME" rowsub "$@" -; }
+full() { cat s.cg 2>/dev/null | "$YAME" rowsub "$@" -; }   # cat may see a broken pipe
 path() {   # path <want> <rowsub args...>
   local want=$1; shift
   local got
